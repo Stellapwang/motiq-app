@@ -98,6 +98,15 @@
   #adminbar button, #overlay button { user-select:none; -webkit-user-select:none; }
   #stage.on { display:block; }
   #canvas { position:absolute; inset:0; touch-action:none; display:block; }
+  /* Tap zones are their own elements. Painted on the canvas they shared a pointer
+     handler with drawing, and a finger arriving while the pen was down could be lost.
+     Separate targets cannot interfere, and the flash becomes pure CSS. */
+  .tapzone { position:absolute; border-radius:50%; z-index:1;
+             display:flex; align-items:center; justify-content:center;
+             border:2px solid #8a929c; background:#f2f5f8; color:#5d6570;
+             font:16px system-ui; touch-action:none; user-select:none;
+             -webkit-user-select:none; -webkit-tap-highlight-color:transparent; }
+  .tapzone.lit { background:#1d5fa8; border-color:#1d5fa8; color:#fff; }
   /* The instruction can be taller than the screen. Content scrolls; the action button
      sits in a bar pinned to the bottom so it can never be pushed out of reach. */
   #overlay { position:absolute; inset:0; display:flex; flex-direction:column;
@@ -451,6 +460,7 @@
 
 <div id="stage">
   <canvas id="canvas"></canvas>
+  <div id="zones"></div>
   <div id="adminbar">
     <div id="ctrl" style="display:flex;gap:12px"></div>
     <div id="hud"></div>
@@ -467,7 +477,7 @@
 
 <script>
 "use strict";
-const BUILD = "v8.02 2026-08-17";
+const BUILD = "v9.02 2026-08-19";
 
 /* ============================================================================
    CATALOGUE — the one place conditions are defined.
@@ -510,18 +520,22 @@ const CATALOGUE = [
 // entry at it to introduce a new stream type.
 // Keyed by condition, not by stream type: the lead-in that a dual task needs is not
 // the lead-in a tones-only task needs, and duration differs too.
+// stopMode "fixed"  : the stream runs its full length.
+// stopMode "drawEnd" : the stream stops once drawing has finished, but never before
+//                      floorS, and never after the stream's own length. Keeps a minimum
+//                      exposure without leaving a fast participant tapping to silence.
 const AUDIO_DEFAULTS = {
   DET:     { durS:20, isi:1000, jit:30, ptg:0,    tone:50, lead:500,
              label:"Tones only — respond to every tone" },
   ODT:     { durS:20, isi:700,  jit:30, ptg:0.25, tone:50, lead:500,
              label:"Tones only — respond to high tones" },
-  SP_DET:  { durS:45, isi:1000, jit:30, ptg:0,    tone:50, lead:1000,
+  SP_DET:  { durS:45, isi:1000, jit:30, ptg:0,    tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3,
              label:"Dual task — respond to every tone while drawing" },
-  SP_ODT:  { durS:45, isi:700,  jit:30, ptg:0.25, tone:50, lead:1000,
+  SP_ODT:  { durS:45, isi:700,  jit:30, ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3,
              label:"Dual task — respond to high tones while drawing" },
-  SPF_ODT: { durS:45, isi:700,  jit:30, ptg:0.25, tone:50, lead:1000,
+  SPF_ODT: { durS:45, isi:700,  jit:30, ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3,
              label:"Dual task, finger drawing — high tones only" },
-  SPF_ODC: { durS:45, isi:700,  jit:30, ptg:0.25, tone:50, lead:1000,
+  SPF_ODC: { durS:45, isi:700,  jit:30, ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0,
              label:"Dual task, finger drawing — count high tones silently" }
 };
 
@@ -1270,9 +1284,39 @@ function layout(){
 
   L={p,W,H,g,ux0,uy0,uw,uh,dw,dx0,tapCx,zones,splitX,spiralOn:!!c.spiral,
      cx:dx0+dw/2,cy,safeAreaMM:sa,topPad};
+  buildZones(c);
   $("hud").style.display = (c.tap||c.audio) ? "block" : "none";
   return L;
 }
+// One element per tap zone, positioned from the same geometry the canvas uses.
+function buildZones(c){
+  const host=$("zones"); host.innerHTML="";
+  const d=(+$("tapdia").value)*L.p;
+  const make=(cx,label,id)=>{
+    const el=document.createElement("div");
+    el.className="tapzone"; el.dataset.zone=id; el.textContent=label;
+    el.style.width=d+"px"; el.style.height=d+"px";
+    el.style.left=(cx-d/2)+"px"; el.style.top=(L.cy-d/2)+"px";
+    el.addEventListener("pointerdown", onZoneDown);
+    host.appendChild(el);
+  };
+  if(L.zones) L.zones.forEach(z=>make(z.cx, z.id==="left"?"left hand":"right hand", z.id));
+  else if(L.tapCx!==null) make(L.tapCx,"tap","tap");
+}
+function onZoneDown(e){
+  e.preventDefault(); e.stopPropagation();
+  if(!RUN || RUN.ready || !RUN.perf0) return;          // only during a running trial
+  const z=e.currentTarget.dataset.zone;
+  const t=performance.now()-RUN.perf0;
+  TAPS.push({t:+t.toFixed(2), zone:z, pointerType:e.pointerType});
+  RUN.lastContact=performance.now();
+  if(RUN.firstContactMs===null) RUN.firstContactMs=+t.toFixed(2);
+  const el=e.currentTarget;
+  el.classList.add("lit");
+  setTimeout(()=>el.classList.remove("lit"), FLASH_MS);
+  $("tapcount").textContent = TAPS.length+" taps";
+}
+
 const mm2px=v=>v*L.p;
 const toCanvas=(x,y)=>({x:L.cx+x*L.p,y:L.cy-y*L.p});
 const toMM=(x,y)=>({x:(x-L.cx)/L.p,y:(L.cy-y)/L.p});
@@ -1320,15 +1364,7 @@ function drawScene(){
     g.fillStyle="#2F6B2D"; g.font="13px system-ui"; g.fillText("start",c0.x,c0.y+mm2px(sd/2)+15);
   } else SPIRAL=null;
 
-  const td=+$("tapdia").value;
-  const circle=(cx,label,id)=>{
-    const lit=TAPFLASH&&TAPFLASH.zone===id&&performance.now()<TAPFLASH.until;
-    g.strokeStyle=lit?"#1d5fa8":"#8a929c"; g.fillStyle=lit?"#1d5fa8":"#f2f5f8"; g.lineWidth=2;
-    g.beginPath(); g.arc(cx,L.cy,mm2px(td/2),0,7); g.fill(); g.stroke();
-    g.fillStyle=lit?"#fff":"#5d6570"; g.font="16px system-ui"; g.fillText(label,cx,L.cy+6);
-  };
-  if(L.zones) L.zones.forEach(z=>circle(z.cx,z.id==="left"?"left hand":"right hand",z.id));
-  else if(L.tapCx!==null) circle(L.tapCx,"tap","tap");
+  // tap zones are DOM elements now; see buildZones()
 
   g.strokeStyle="#1d5fa8"; g.lineWidth=2.2; g.lineCap="round"; g.lineJoin="round";
   for(const st of STROKES){ if(st.length<2) continue;
@@ -1441,7 +1477,17 @@ function openTrial(showInstruction){
 // The instruction page, drawn from the same source as the Instructions tab.
 function showInstructionScreen(seq,c,returnToReady){
   const ins=instructionFor(TRIAL.cond,{implement:TRIAL.implement});
-  showOverlay(`<h3>${TRIAL.cond} — ${c.label}</h3>` + instructionHTML(ins) +
+  const a=AUDIO_DEFAULTS[TRIAL.cond];
+  // Let the participant hear the tones before the trial, not for the first time inside it.
+  const soundBtns = c.audio ? `<div style="margin-top:14px">
+      <button class="ghost" style="font-size:18px;padding:14px 26px;margin:4px"
+        onclick="demo('std')">Play the LOW beep</button>` +
+      (a && a.ptg>0 ? `<button class="ghost" style="font-size:18px;padding:14px 26px;margin:4px"
+        onclick="demo('tgt')">Play the HIGH beep</button>
+      <button class="ghost" style="font-size:18px;padding:14px 26px;margin:4px"
+        onclick="demo('alt')">Play both</button>` : ``) +
+      `<div class="note" style="margin-top:6px">Play these before starting.</div></div>` : ``;
+  showOverlay(`<h3>${TRIAL.cond} — ${c.label}</h3>` + instructionHTML(ins) + soundBtns +
     `<p style="font-size:16px;color:#5d6570;margin-top:10px">${ins.length}</p>`,
     [{label:"Ready", onClick:()=>{ hideOverlay(); LAST_COND=TRIAL.cond;
         readyTrial(returnToReady?returnToReady.seq:seq, c); }}]);
@@ -1550,12 +1596,6 @@ function runTrial(seq,c){
 
   const cv=$("canvas");
   const drawOK = pt => TRIAL.implement==="pen" ? (pt==="pen"||pt==="mouse") : (pt==="touch"||pt==="mouse");
-  const tapR=()=>mm2px(+$("tapdia").value/2);
-  const hitZone=(x,y)=>{
-    if(L.zones){ const z=L.zones.find(z=>Math.hypot(x-z.cx,y-L.cy)<=tapR()); return z?z.id:null; }
-    if(L.tapCx!==null&&Math.hypot(x-L.tapCx,y-L.cy)<=tapR()) return "tap";
-    return null;
-  };
   const strokeFor=new Map();       // one stroke per pointerId: a tapping finger must
                                    // never end the pen's stroke
   const addPoint=(st,e,t,co)=>{ const m=toMM(e.clientX,e.clientY);
@@ -1564,11 +1604,6 @@ function runTrial(seq,c){
              k:e.pointerType,c:co?1:0}); };
   const down=e=>{
     const t=performance.now()-perf0; RUN.lastContact=performance.now();
-    const z=hitZone(e.clientX,e.clientY);
-    if(z){ TAPS.push({t:+t.toFixed(2),zone:z,pointerType:e.pointerType});
-      TAPFLASH={zone:z,until:performance.now()+FLASH_MS}; drawScene();
-      $("tapcount").textContent = TAPS.length + " taps";
-      if(RUN.firstContactMs===null) RUN.firstContactMs=+t.toFixed(2); return; }
     if(!c.spiral) return;
     if(!drawOK(e.pointerType)) return;
     if(e.clientX<L.dx0-4) return;
@@ -1580,7 +1615,8 @@ function runTrial(seq,c){
     RUN.lastContact=performance.now();
     const evs=e.getCoalescedEvents?e.getCoalescedEvents():[e];
     for(const ev of evs) addPoint(st,ev,performance.now()-perf0,evs.length>1); };
-  const up=e=>{ strokeFor.delete(e.pointerId); RUN.lastContact=performance.now(); };
+  const up=e=>{ strokeFor.delete(e.pointerId); RUN.lastContact=performance.now();
+    if(strokeFor.size===0) RUN.penUpAt=performance.now(); };
   cv.addEventListener("pointerdown",down); cv.addEventListener("pointermove",move);
   cv.addEventListener("pointerup",up); cv.addEventListener("pointercancel",up);
   RUN.teardown=()=>{ cv.removeEventListener("pointerdown",down);
@@ -1595,9 +1631,24 @@ function runTrial(seq,c){
 
   cancelAnimationFrame(RAF);
   const idleMs=(+$("idle").value||5)*1000;
+  const cfgA=audioCfgFor(TRIAL.cond);
   const loop=()=>{ drawScene();
-    const left=(perf0+durMs-performance.now())/1000;
+    const now=performance.now();
+    const left=(perf0+durMs-now)/1000;
     if(left<=0&&!RUN.toneClockDone){ RUN.toneClockDone=true; if(untimed) stopAudio(); }
+
+    // Adaptive stream end: once drawing has stopped for tailS, and at least floorS of
+    // stream has run, cut the tones. Which tones actually sounded is recorded.
+    if(seq && cfgA && cfgA.stopMode==="drawEnd" && !RUN.toneClockDone){
+      const elapsed=(now-perf0)/1000;
+      const drawnAndStopped = RUN.firstContactMs!==null && strokeFor.size===0 &&
+        RUN.penUpAt && (now-RUN.penUpAt)/1000 >= (cfgA.tailS??3);
+      if(drawnAndStopped && elapsed >= (cfgA.floorS??20)){
+        RUN.toneClockDone=true;
+        RUN.streamCutMs=+(now-perf0).toFixed(1);
+        stopAudio();
+      }
+    }
     if(c.tap||c.audio) $("hud").textContent = untimed
       ? (left>0?left.toFixed(1)+" s":"tones done")
       : Math.max(0,left).toFixed(1)+" s";
@@ -1623,7 +1674,15 @@ function resetTrial(){
 function stopTrial(auto){
   if(!RUN) { stageOn(false); return; }
   if(RUN.ready){ cancelAnimationFrame(RAF); stageOn(false); RUN=null; return; }
-  clearTimeout(RUN.timer); cancelAnimationFrame(RAF); stopAudio();
+  clearTimeout(RUN.timer); cancelAnimationFrame(RAF);
+  // Any ending that silences a stream still running is a cut, not just the adaptive
+  // drawEnd one: END, the idle auto-stop and abandon all land here. Without this,
+  // streamCutMs stays null and n_tones_played falls back to the whole schedule --
+  // reporting 64 tones "played" for a trial the participant heard 2 of.
+  if(RUN.seq && !RUN.toneClockDone && RUN.streamCutMs==null && RUN.perf0){
+    RUN.streamCutMs=+(performance.now()-RUN.perf0).toFixed(1);
+  }
+  stopAudio();
   if(RUN.teardown) RUN.teardown();
   RUN.stoppedEarly=!auto; finish();
 }
@@ -1744,8 +1803,13 @@ function renderResult(seq,c,pts,rate,att,tp){
         <th>Actually presented</th><td class="num">${seq?seq.t:"–"}</td></tr>`
       :`<tr><th>Taps</th><td class="num">${TAPS.length}</td>
         <th>First contact</th><td class="num">${RUN.firstContactMs??"–"} ms</td></tr>`}
-    ${seq?`<tr><th>Tones / targets</th><td class="num">${seq.n} / ${seq.t}</td>
+    ${seq?`<tr><th>Tones / targets</th><td class="num">${
+        RUN.streamCutMs!=null
+          ? `${seq.onsets.filter(o=>o<=RUN.streamCutMs).length} / ${seq.onsets.filter((o,i)=>o<=RUN.streamCutMs&&seq.isTarget[i]).length} played of ${seq.n} / ${seq.t}`
+          : `${seq.n} / ${seq.t}`}</td>
         <th>Seed</th><td class="num">${seq.seed}</td></tr>
+    ${RUN.streamCutMs!=null?`<tr><th>Stream cut at</th><td class="num">${(RUN.streamCutMs/1000).toFixed(1)} s</td>
+        <th>Reason</th><td>drawing finished</td></tr>`:""}
     <tr><th>Output latency</th><td class="num">${RUN.outLat.toFixed(1)} ms</td>
         <th>Lead-in</th><td class="num">${RUN.leadMs} ms</td></tr>`:""}
   </table>
@@ -1753,9 +1817,11 @@ function renderResult(seq,c,pts,rate,att,tp){
     kinematics will be coarse.</div>`:""}
   ${c.count&&seq?(RUN.reportedCount==null
     ? `<div class="warn">No count reported, so this trial has no validity check.</div>`
-    : (()=>{ const err=RUN.reportedCount-seq.t;
+    : (()=>{ const heard=targetsHeard(seq, RUN.streamCutMs);
+        const err=RUN.reportedCount-heard;
         return `<div class="${Math.abs(err)<=2?"good":"warn"}">Count error <b>${err>0?"+":""}${err}</b>
-          (${RUN.reportedCount} reported, ${seq.t} presented). This is a validity criterion for the
+          (${RUN.reportedCount} reported, ${heard} actually played${heard!==seq.t?` of ${seq.t} scheduled`:""}).
+          This is a validity criterion for the
           trial, not a measure — a large error means attention was not on the tones.</div>`; })())
     :""}`;
 
@@ -1856,13 +1922,23 @@ function buildRecord(){
     audio_runtime: R.seq ? { output_latency_ms:R.outLat, base_latency_ms:R.baseLat,
       sample_rate:ctx?ctx.sampleRate:null } : null,
     sequence: R.seq ? { n_tones:R.seq.n, n_targets:R.seq.t, seed:R.seq.seed,
+      stream_cut_ms: R.streamCutMs ?? null,
+      stop_mode: (AUDIO_DEFAULTS[R.cond]&&AUDIO_DEFAULTS[R.cond].stopMode)||"fixed",
+      n_tones_played: R.streamCutMs==null ? R.seq.n
+        : R.seq.onsets.filter(o=>o<=R.streamCutMs).length,
+      n_targets_played: R.streamCutMs==null ? R.seq.t
+        : R.seq.onsets.filter((o,i)=>o<=R.streamCutMs && R.seq.isTarget[i]).length,
       onsets_ms:R.seq.onsets, tone_type:R.seq.isTarget.map(x=>x?"target":"standard"),
       intervals_ms:R.seq.intervals, min_isi_ms:R.seq.minISI } : null,
     tapping:LAST.tp||null,
-    counting: RUN.c.count ? { reported:RUN.reportedCount??null,
-      presented: R.seq?R.seq.t:null,
-      error: (RUN.reportedCount!=null && R.seq) ? RUN.reportedCount-R.seq.t : null,
-      note:"count error is a trial validity criterion, not a measure" } : null,
+    counting: RUN.c.count ? (()=>{
+      const heard = targetsHeard(R.seq, R.streamCutMs);
+      return { reported:RUN.reportedCount??null,
+        presented: heard,
+        presented_scheduled: R.seq?R.seq.t:null,
+        error: (RUN.reportedCount!=null && heard!=null) ? RUN.reportedCount-heard : null,
+        note:"count error is a trial validity criterion, not a measure; presented counts targets that actually sounded" };
+    })() : null,
     spiral_rendered:LAST.SPIRAL||null,
     strokes:LAST.STROKES,
     strokes_units:"x,y mm from spiral centre, y up; t ms from START; p pressure 0-1",
@@ -1965,7 +2041,8 @@ const CSV_HEAD=[
   "pitch_mm","turns","radius_mm","direction","template_path_mm","template_style","tap_zone_mm","zones",
   "audio_key","stream_duration_s","mean_isi_ms","jitter_pct","p_target","tone_ms",
   "f_standard_hz","f_target_hz","tone_level","seed","seed_mode",
-  "n_tones","n_targets","min_isi_ms","output_latency_ms",
+  "n_tones","n_targets","n_tones_played","n_targets_played","stream_cut_ms","stop_mode",
+  "min_isi_ms","output_latency_ms",
   "n_pen_samples","achieved_rate_hz","n_strokes",
   "n_taps_left","n_taps_right","n_taps_single","alternation_pct",
   "count_reported","count_presented","count_error",
@@ -1983,6 +2060,15 @@ function mkRow(meta,o){
   if(unknown.length) throw new Error("unknown column: "+unknown.join());
   return [...meta,...TAIL_HEAD.map(k=>o[k]??"")];
 }
+// Targets that actually sounded. Conditions with stopMode "drawEnd" -- SPF_ODC among
+// them -- are meant to be cut short, so scoring a count against the whole scheduled
+// stream marks a valid trial wrong by however many tones were never played.
+function targetsHeard(seq, cutMs){
+  if(!seq) return null;
+  return cutMs==null ? seq.t
+    : seq.onsets.filter((o,i)=>o<=cutMs && seq.isTarget[i]).length;
+}
+
 function csvRows(rec){
   const P=rec.participant, pm=rec.parameters||{}, sp=pm.spiral||{}, tapp=pm.tap||{}, au=pm.audio||{};
   const S=rec.spiral_rendered||{}, seq=rec.sequence, tp=rec.tapping||{};
@@ -2012,7 +2098,10 @@ function csvRows(rec){
     sp.template_style??"", tapp.zone_mm??"", tapp.zones??"",
     au.key??"", au.durS??"", au.isi??"", au.jit??"", au.ptg??"", au.tone??"",
     au.f_standard??"", au.f_target??"", au.level??"", au.seed??"", au.seed_mode??"",
-    seq?seq.n_tones:"", seq?seq.n_targets:"", seq?Math.round(seq.min_isi_ms):"",
+    seq?seq.n_tones:"", seq?seq.n_targets:"",
+    seq?(seq.n_tones_played??""):"", seq?(seq.n_targets_played??""):"",
+    seq?(seq.stream_cut_ms??""):"", seq?(seq.stop_mode??""):"",
+    seq?Math.round(seq.min_isi_ms):"",
     rec.audio_runtime?rec.audio_runtime.output_latency_ms.toFixed(2):"",
     pts.length, rate, (rec.strokes||[]).length,
     num(tp.nL), num(tp.nR), num(tp.nS),
