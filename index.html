@@ -160,6 +160,11 @@
         <span>I have checked this outline against a real bank card and it matches.</span></label>
       <div id="calwarn"></div>
       <div id="calnote"></div>
+      <div class="btnrow">
+        <button class="ghost sm" onclick="hardReset()">Reset app state</button>
+        <span class="note" style="margin:0">Clears the saved session and calibration if the app
+          misbehaves. Saved trials are not touched.</span>
+      </div>
     </fieldset>
 
     <div class="navrow"><span></span><button class="big" onclick="goPage(2)">Next</button></div>
@@ -462,7 +467,7 @@
 
 <script>
 "use strict";
-const BUILD = "v7.02 2026-08-17";
+const BUILD = "v8.02 2026-08-17";
 
 /* ============================================================================
    CATALOGUE — the one place conditions are defined.
@@ -1341,12 +1346,24 @@ function storageUsed(){
 }
 // A full battery fills browser storage. Warn before the next trial, not after a save
 // has already failed.
+function storagePct(){ return 100*storageUsed().bytes/(5*1024*1024); }
+
 function storageGuard(){
-  const u=storageUsed(), pct=100*u.bytes/(5*1024*1024);
+  const u=storageUsed(), pct=storagePct();
   if(pct<70) return true;
   return confirm(`Storage is ${pct.toFixed(0)}% full (${u.n} trials, ${(u.bytes/1024/1024).toFixed(1)} MB).\n\n` +
     `Saving may fail soon. Export from Results and data, then delete, before continuing.\n\n` +
     `Continue anyway?`);
+}
+
+// Checked immediately before the write, not only at trial start. A session can cross
+// the threshold mid-trial, and finding out at SAVE -- with a finished trial on screen
+// and nowhere to put it -- is the failure this exists to prevent.
+function storageWarnBeforeSave(){
+  const u=storageUsed(), pct=storagePct();
+  if(pct<80) return true;
+  return confirm(`Storage is ${pct.toFixed(0)}% full (${u.n} trials, ${(u.bytes/1024/1024).toFixed(1)} MB).\n\n` +
+    `This save may fail. Export and clear first if you can.\n\nTry saving anyway?`);
 }
 
 let LAST_COND=null, LAST_HAND=null;      // what the participant was last shown
@@ -1368,7 +1385,14 @@ function runCurrent(){
 
 // Every overlay goes through here: body scrolls, buttons stay pinned.
 function showOverlay(bodyHTML, buttons){
-  const ov=$("overlay"); ov.style.display="flex";
+  const ov=$("overlay");
+  // Rebuild the shell if a caller replaced the overlay's innerHTML wholesale. Without
+  // this, display is already "flex" when the next line throws, so the *previous*
+  // overlay content is left on screen with no way forward.
+  if(!$("ovBody") || !$("ovFoot")){
+    ov.innerHTML='<div id="ovBody"></div><div id="ovFoot"></div>';
+  }
+  ov.style.display="flex";
   $("ovBody").innerHTML=bodyHTML;
   $("ovFoot").innerHTML="";
   (buttons||[]).forEach(b=>{
@@ -1664,24 +1688,21 @@ function finish(){
   showEndControls(seq,c,pts,rate,att,tp);
 }
 
+// Uses showOverlay like every other overlay screen. It previously replaced the whole
+// overlay's innerHTML, destroying #ovBody / #ovFoot -- after which every later
+// showOverlay call threw, leaving this very prompt stranded back on screen.
 function askCount(seq){
-  const ov=$("overlay"); ov.style.display="flex";
-  ov.innerHTML=`<h3>How many high beeps?</h3>
+  showOverlay(`<h3>How many high beeps?</h3>
     <p>Ask the participant for their count before showing anything else.</p>
     <input id="countInput" type="number" min="0" max="200"
       style="max-width:200px;font-size:26px;text-align:center;margin-top:6px">
-    <p style="font-size:15px;color:#5d6570;margin-top:14px">Leave blank if they did not give a number.</p>`;
-  const row=document.createElement("div"); row.className="btnrow";
-  row.style.justifyContent="center"; row.style.marginTop="18px";
-  const b=document.createElement("button"); b.className="big"; b.textContent="Record";
-  b.style.fontSize="24px"; b.style.padding="20px 48px";
-  b.onclick=()=>{
-    const v=$("countInput").value;
-    RUN.reportedCount = v===""?null:+v;
-    ov.style.display="none";
-    finish();                       // re-enter now that the count exists
-  };
-  row.appendChild(b); ov.appendChild(row);
+    <p style="font-size:15px;color:#5d6570;margin-top:14px">Leave blank if they did not give a number.</p>`,
+    [{ label:"Record", onClick:()=>{
+        const el=$("countInput"), v=el?el.value:"";
+        RUN.reportedCount = v===""?null:+v;
+        hideOverlay();
+        finish();                   // re-enter now that the count exists
+      }}]);
 }
 
 function showEndControls(seq,c,pts,rate,att,tp){
@@ -1703,7 +1724,13 @@ function showEndControls(seq,c,pts,rate,att,tp){
   renderResult(seq,c,pts,rate,att,tp);
 }
 function okUnsaved(){ if(!RUN||RUN.saved) return true;
-  return confirm("This trial has not been saved.\n\nContinue and discard it?"); }
+  // A failed write leaves the record in MEM: it still exports, but only until reload.
+  // Saying "discard it" there would be wrong, and is how a recoverable trial gets binned.
+  const inMem = LAST && LAST.rec && MEM[STORE_PREFIX+LAST.rec.trial_uid];
+  return confirm(inMem
+    ? "This trial could not be written to storage and is held in memory only.\n\n" +
+      "It is still included in an export, but leaving now and reloading loses it.\n\nContinue?"
+    : "This trial has not been saved.\n\nContinue and discard it?"); }
 
 function renderResult(seq,c,pts,rate,att,tp){
   $("rsum").innerHTML=`<table>
@@ -1848,6 +1875,7 @@ function buildRecord(){
 
 function saveTrial(btn){
   if(!RUN||RUN.saved||!LAST) return;
+  if(!storageWarnBeforeSave()) return;
   const pid=$("pid").value||"unnamed";
   const H = TRIAL.hand==="both" ? "B" : (TRIAL.drawHand||TRIAL.tapHand)==="left" ? "L" : "R";
   const ids=nextIds(pid,TRIAL.cond,H);
@@ -1870,10 +1898,57 @@ function saveTrial(btn){
   } else {
     const k=`${pid}|${TRIAL.cond}|${H}`;
     REPEATS[k]=Math.max(0,(REPEATS[k]||1)-1); SERIES=Math.max(0,SERIES-1);
+    // The record is held in memory and IS included in an export, so the trial is not
+    // lost -- but it dies on reload. Recovery is offered here rather than on another
+    // page, because leaving this screen is what loses it.
     $("saveState").innerHTML=`<div class="bad">Could not write to storage (${res.error}).
-      Export before doing anything else.</div>`;
-    alert("Could not save to this device ("+res.error+").\n\nExport from Results and data now.");
+      <b>This trial is held in memory only</b> — it is included in an export, but a reload
+      loses it. Export now, clear space, then press SAVE again.</div>`;
+    showRescueOverlay(res.error);
   }
+}
+
+// Recovery lives in the stage's own overlay, not on page 6: the stage is fixed at
+// z-index 60, so anything appended to a page sits behind it and cannot be reached
+// without leaving the trial -- and leaving is what loses the trial.
+let RESCUE_EXPORTED=false;
+function showRescueOverlay(errName){
+  const u=storageUsed();
+  const body=()=>`<h3>Storage is full</h3>
+    <p>This trial could not be written to the device (${errName}). It is <b>held in memory</b>
+    and is included in an export — but a reload loses it.</p>
+    <p style="font-size:16px;color:#5d6570">${u.n} trial${u.n===1?"":"s"} stored,
+    ${(u.bytes/1024/1024).toFixed(1)} MB. Export, then clear, then retry.</p>
+    <div id="rescueNote" style="font-size:16px;margin-top:6px">${
+      RESCUE_EXPORTED
+        ? `<span style="color:var(--ok)">Exported. Now clear and retry.</span>`
+        : `Export first — the file includes this trial.`}</div>
+    <textarea id="rescueBox" class="hidden" rows="8" readonly
+      style="width:100%;margin-top:12px;font:12px/1.4 ui-monospace,Menlo,monospace"></textarea>`;
+
+  const markExported=()=>{ RESCUE_EXPORTED=true;
+    const n=$("rescueNote");
+    if(n) n.innerHTML=`<span style="color:var(--ok)">Exported. Now clear and retry.</span>`; };
+
+  showOverlay(body(), [
+    { label:"Export CSV", onClick:()=>{ exportAllCSV(); markExported(); } },
+    { label:"Export JSON", ghost:true, onClick:()=>{ exportAllJSON(); markExported(); } },
+    { label:"Show as text", ghost:true, onClick:()=>{
+        // downloads can be blocked; this is the copy-and-paste fallback, rendered here
+        // on the stage rather than on page 6 where the trial screen would hide it
+        const recs=listTrials().map(t=>getTrial(t.key)).filter(Boolean);
+        const b=$("rescueBox"); b.classList.remove("hidden");
+        b.value=csvText(recs); b.focus(); b.select(); markExported(); } },
+    { label:"Clear and retry", ghost:true, onClick:()=>{
+        if(!RESCUE_EXPORTED &&
+           !confirm("You have not exported in this recovery.\n\nClearing destroys every saved trial on this device. Continue?")) return;
+        if(!confirm("Delete every saved trial on this device and retry the save?\n\nThe trial on screen is re-saved from memory straight afterwards.")) return;
+        listTrials().forEach(t=>{ try{ localStorage.removeItem(t.key); }catch(e){} delete MEM[t.key]; });
+        renderSaved(); RESCUE_EXPORTED=false; hideOverlay();
+        const sb=[...$("ctrl").querySelectorAll("button")].find(b=>/^SAVE/.test(b.textContent));
+        if(sb){ sb.disabled=false; sb.textContent="SAVE"; saveTrial(sb); } } },
+    { label:"Back", ghost:true, onClick:hideOverlay }
+  ]);
 }
 
 /* ------------------------------------------------------- CSV */
@@ -1971,7 +2046,11 @@ const STORE_PREFIX="motiq_trial:"; const MEM={}; let STORAGE_OK=true;
 try{ localStorage.setItem("__probe","1"); localStorage.removeItem("__probe"); }catch(e){ STORAGE_OK=false; }
 function putTrial(rec){
   const key=STORE_PREFIX+rec.trial_uid, s=JSON.stringify(rec);
-  if(STORAGE_OK){ try{ localStorage.setItem(key,s); return {ok:true,bytes:s.length}; }
+  if(STORAGE_OK){ try{ localStorage.setItem(key,s);
+      // A retry after a failed write must not leave the memory copy behind: listTrials
+      // reads both stores, so a stale MEM entry exports the same trial twice.
+      delete MEM[key];
+      return {ok:true,bytes:s.length}; }
     catch(e){ MEM[key]=s; return {ok:false,bytes:s.length,error:e.name}; } }
   MEM[key]=s; return {ok:false,bytes:s.length,error:"storage unavailable"};
 }
@@ -2082,22 +2161,60 @@ function saveState(){
   }catch(e){}
 }
 function restoreState(){
+  // Saved state can be older than the code reading it. Anything that does not match the
+  // current catalogue is repaired or dropped -- a stale plan must never be able to stop
+  // the app from starting, because the state persists and every reload would fail again.
   let st=null;
-  try{ st=JSON.parse(localStorage.getItem(STATE_KEY)||"null"); }catch(e){}
+  try{ st=JSON.parse(localStorage.getItem(STATE_KEY)||"null"); }catch(e){ return false; }
   if(!st||!st.fields||!st.fields.pid) return false;
-  Object.entries(st.fields).forEach(([id,v])=>{ if($(id)) $(id).value=v; });
-  if(st.sessionKey) SESSION_KEY=st.sessionKey;
-  if(st.plan) PLAN=st.plan;
-  if(st.queue){ QUEUE=st.queue; QPOS=st.qpos||0; }
-  SERIES=st.series||0;
-  if(st.repeats) Object.assign(REPEATS, st.repeats);
-  LAST_COND=st.lastCond||null; LAST_HAND=st.lastHand||null;
-  if(st.audio) Object.entries(st.audio).forEach(([k,v])=>{ if(AUDIO_DEFAULTS[k]) Object.assign(AUDIO_DEFAULTS[k],v); });
-  applyCal(); updateAgeNote(); renderStatus(); renderPlan(); renderQueue(); renderAudioTable();
-  const done=QUEUE.filter(q=>q.status==="done").length;
-  $("statusbar").insertAdjacentHTML("beforeend",
-    ` <span style="color:var(--ok)">· restored (${done} of ${QUEUE.length} done)</span>`);
-  return true;
+  try{
+    Object.entries(st.fields).forEach(([id,v])=>{ if($(id)) $(id).value=v; });
+    if(st.sessionKey) SESSION_KEY=st.sessionKey;
+
+    // rebuild the plan from defaults, then overlay whatever the saved plan still fits
+    const fresh=defaultPlan();
+    if(st.plan && typeof st.plan==="object"){
+      CATALOGUE.forEach(c=>{
+        const old=st.plan[c.id]; if(!old) return;                  // condition added since
+        const allowed=handsAllowed(c);
+        fresh[c.id]={ include:!!old.include,
+          repeats:Number(old.repeats)>0?Number(old.repeats):c.repeats,
+          hands:allowed.includes(old.hands)?old.hands:allowed[0],
+          lengthS:(c.lengthS===null?null:(Number(old.lengthS)||c.lengthS)),
+          oneHand:old.oneHand==="nondominant"?"nondominant":"dominant" };
+      });
+    }
+    PLAN=fresh;
+
+    // drop queued trials whose condition no longer exists
+    QUEUE=Array.isArray(st.queue) ? st.queue.filter(q=>q&&byId(q.cond)) : [];
+    QPOS=Math.max(0, Math.min(Number(st.qpos)||0, QUEUE.length));
+    SERIES=Number(st.series)||0;
+    if(st.repeats && typeof st.repeats==="object") Object.assign(REPEATS, st.repeats);
+    LAST_COND=st.lastCond||null; LAST_HAND=st.lastHand||null;
+    if(st.audio) Object.entries(st.audio).forEach(([k,v])=>{
+      if(AUDIO_DEFAULTS[k] && v && typeof v==="object") Object.assign(AUDIO_DEFAULTS[k],v); });
+
+    applyCal(); updateAgeNote(); renderStatus(); renderPlan(); renderQueue(); renderAudioTable();
+    const done=QUEUE.filter(q=>q.status==="done").length;
+    if($("statusbar")) $("statusbar").insertAdjacentHTML("beforeend",
+      ` <span style="color:var(--ok)">· restored (${done} of ${QUEUE.length} done)</span>`);
+    return true;
+  }catch(e){
+    clearState();
+    PLAN=defaultPlan(); QUEUE=[]; QPOS=0;
+    try{ renderPlan(); renderQueue(); }catch(_){}
+    if($("statusbar")) $("statusbar").innerHTML =
+      `<span style="color:var(--warm)">Saved session could not be restored and has been
+       cleared. Participant details need re-entering; saved trials are untouched.</span>`;
+    return false;
+  }
+}
+function hardReset(){
+  if(!confirm("Clear the saved session and calibration?\n\nSaved trials are kept. The page will reload.")) return;
+  clearState();
+  try{ localStorage.removeItem("motiq_ppmm"); }catch(e){}
+  location.reload();
 }
 function clearState(){ try{ localStorage.removeItem(STATE_KEY); }catch(e){} }
 // persist on any change that matters, and after each trial
@@ -2105,6 +2222,18 @@ document.addEventListener("change", e=>{ if(STATE_FIELDS.includes(e.target.id)) 
 document.addEventListener("input",  e=>{ if(STATE_FIELDS.includes(e.target.id)) saveState(); });
 
 window.addEventListener("resize",()=>{ if($("stage").classList.contains("on")){ layout(); drawScene(); }});
+// ?reset in the address clears saved state before anything reads it -- the way back if
+// the app will not start.
+if(/[?&]reset\b/.test(location.search)){ clearState(); }
+
 renderPlan(); renderAudioTable(); renderSaved(); renderStatus();
-if(restoreState()) goPage(3);
+
+// Nothing below start-up should be able to leave a blank page.
+try { if(restoreState()) goPage(3); }
+catch(e){
+  clearState();
+  if($("statusbar")) $("statusbar").innerHTML =
+    `<span style="color:var(--warm)">Start-up recovered from a bad saved session, which has
+     been cleared.</span>`;
+}
 </script>
