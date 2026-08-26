@@ -7,35 +7,24 @@
 <title>MotiQ prototype</title>
 
 <!--
-  MotiQ spiral + audio prototype  v0.2
-  ====================================
-  PROTOTYPE. Browser millimetres and browser timing are approximations. Use it to
-  feel out the interaction and gather indicative data, not to fix template
-  geometry or publish latencies.
+  MotiQ prototype  v5
+  ===================
+  PROTOTYPE. Browser millimetres and browser timing are approximations.
 
-  v0.2 changes
-  ------------
-  * MULTITOUCH FIX. Strokes are keyed by pointerId. Previously a single global
-    "current stroke" meant the tapping finger's pointerup ended the pen's stroke,
-    so drawing stopped after the first tap and dual-task conditions were unusable.
-    setPointerCapture is gone -- it was unnecessary on a full-screen canvas.
-  * Explicit START button on the trial screen. Nothing begins until it is pressed,
-    so the first tap is a response rather than a trigger.
-  * TAP condition (one finger, hand selectable) added; BMIN/BMANT get 5/10/15/20 s.
-  * Three setup pages: calibration, session, parameters. The parameter page shows
-    only the blocks the chosen condition needs.
+  Built to be revised. Every condition is one entry in CATALOGUE below: what it
+  needs, how many repeats, which hands, where it sits in the administration order.
+  Adding, removing or renumbering a condition is an edit to that array and nothing
+  else. Repeat counts and order are defaults, not rules -- BATTERY-001 is expected
+  to change, and the app must not encode a version of it.
 
-  Spiral parameterisation, unchanged from motiq_spiral.R:
-      r = (radius / (turns * 2*pi)) * theta,  theta in [0, turns*2*pi]
-      a = s*theta + phi,   s = -1 cw (right hand), +1 ccw (left hand)
-  so pitch = radius / turns. A single line is drawn, matching the printed set.
+  The app shows consequences and does not block: projected session length, target
+  events per hand, attribution limits. The only hard blocks are the ones that make
+  data uninterpretable -- a response window that cannot attribute a tap, or a target
+  count that cannot be placed.
 
-  Sequence generation mirrors DET_ODT_app.R: fixed target count, no target in the
-  first two tones, no two adjacent, jittered ISI rescaled to the exact duration.
-
-  Millimetres: CSS pixels are not physical. On an iPad Pro 11 the real figure is
-  about 132 CSS px/inch, not the nominal 96. Known devices are auto-detected, then
-  confirmed against an ID-1 bank card (85.60 x 53.98 mm).
+  Every trial records the plan it came from and a verbatim parameters_json, so data
+  collected under one version of the battery still says exactly what was
+  administered when the battery changes.
 
   Nothing is uploaded. Everything stays on the device.
 -->
@@ -47,10 +36,10 @@
   html,body { margin:0; height:100%; overscroll-behavior:none; }
   body { background:var(--bg); color:var(--ink);
          font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
-  .wrap { max-width:840px; margin:0 auto; padding:20px 20px 90px; }
+  .wrap { max-width:900px; margin:0 auto; padding:20px 20px 90px; }
   h1 { font-size:22px; margin:0 0 2px; letter-spacing:-.01em; }
-  h2 { font-size:17px; margin:24px 0 8px; }
-  .sub { color:var(--muted); margin:0 0 18px; font-size:14px; }
+  h2 { font-size:17px; margin:22px 0 8px; }
+  .sub { color:var(--muted); margin:0 0 16px; font-size:14px; }
   fieldset { border:1px solid var(--line); border-radius:8px; margin:0 0 16px;
              padding:14px 16px 16px; background:#fff; }
   legend { font-weight:600; padding:0 6px; font-size:14px; }
@@ -64,8 +53,8 @@
            border:1px solid transparent; background:var(--accent); color:#fff; cursor:pointer; }
   button.ghost { background:#fff; color:var(--accent); border-color:var(--accent); }
   button.sm { font-size:13px; padding:7px 11px; }
-  /* primary navigation and trial control: deliberately much larger */
-  button.big { font-size:23px; padding:20px 44px; border-radius:12px; min-width:190px; }
+  button.big { font-size:23px; padding:20px 44px; border-radius:12px; min-width:180px; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
   .btnrow { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; align-items:center; }
   .navrow { display:flex; gap:14px; justify-content:space-between; margin-top:22px; }
   .note { font-size:13px; color:var(--muted); margin-top:8px; }
@@ -76,24 +65,30 @@
   .good { background:#eef7f1; border:1px solid #b3d9c3; color:#155e39;
           padding:10px 12px; border-radius:7px; font-size:13px; margin-top:10px; }
   table { border-collapse:collapse; width:100%; font-size:14px; margin-top:6px; }
-  th,td { text-align:left; padding:6px 9px; border-bottom:1px solid var(--line); }
+  th,td { text-align:left; padding:6px 9px; border-bottom:1px solid var(--line);
+          vertical-align:middle; }
   th { font-size:12px; text-transform:uppercase; letter-spacing:.05em; color:var(--muted); }
   .num { text-align:right; font-variant-numeric:tabular-nums; }
+  td input, td select { padding:6px 8px; font-size:14px; }
+  td input[type=number] { width:70px; }
+  td input[type=checkbox] { width:auto; }
   .hidden { display:none !important; }
   code { background:#eef1f5; padding:1px 5px; border-radius:4px; font-size:13px; }
-  .steps { display:flex; gap:8px; margin:0 0 18px; font-size:13px; color:var(--muted); flex-wrap:wrap; }
-  .steps span { padding:5px 11px; border-radius:20px; background:#eef1f5; cursor:pointer;
-                user-select:none; }
+  .steps { display:flex; gap:7px; margin:0 0 16px; font-size:13px; color:var(--muted); flex-wrap:wrap; }
+  .steps span { padding:5px 11px; border-radius:20px; background:#eef1f5; cursor:pointer; user-select:none; }
   .steps span:hover { background:#dde3ea; }
   .steps span.on { background:var(--accent); color:#fff; font-weight:600; }
-  #cardokRow { display:flex; align-items:flex-start; gap:9px; margin:0;
-               font-size:14px; color:var(--ink); cursor:pointer; }
-  #cardok { width:auto; flex:0 0 auto; margin:3px 0 0; }
   #cardOutline { border:3px solid var(--warm); border-radius:9px; background:#fff8f2;
                  display:flex; align-items:center; justify-content:center;
                  color:var(--warm); font-size:13px; text-align:center; margin:14px 0; }
+  #cardokRow { display:flex; align-items:flex-start; gap:9px; margin:0;
+               font-size:14px; color:var(--ink); cursor:pointer; }
+  #cardok { width:auto; flex:0 0 auto; margin:3px 0 0; }
+  #penpad { border:1px solid var(--line); border-radius:10px; background:#fff;
+            touch-action:none; display:block; margin-top:10px; width:100%; }
+  .queue td.now { background:#eaf2fb; font-weight:600; }
+  .queue td.done { color:var(--muted); }
 
-  /* ---- run stage ---- */
   #stage { position:fixed; inset:0; background:#fff; z-index:60; display:none; }
   #stage.on { display:block; }
   #canvas { position:absolute; inset:0; touch-action:none; display:block; }
@@ -101,45 +96,42 @@
              justify-content:center; flex-direction:column; text-align:center;
              padding:34px; background:rgba(255,255,255,.98); z-index:3; }
   #overlay h3 { font-size:27px; margin:0 0 14px; }
-  #overlay p { font-size:20px; max-width:660px; margin:0 0 12px; color:#2c3238; }
-  /* administrator bar: the participant uses the canvas, the administrator uses this */
+  #overlay p { font-size:20px; max-width:680px; margin:0 0 12px; color:#2c3238; }
   #adminbar { position:absolute; top:0; left:0; right:0; height:86px; z-index:2;
               display:flex; align-items:center; gap:12px; padding:0 16px;
               border-bottom:1px solid var(--line); background:#f7f9fb; }
-  #adminbar button { font-size:21px; padding:15px 34px; border-radius:10px; min-width:150px; }
+  #adminbar button { font-size:21px; padding:15px 30px; border-radius:10px; min-width:130px; }
   #adminbar .spacer { flex:1; }
-  #hud { font-size:31px; font-weight:600; color:var(--muted);
-         font-variant-numeric:tabular-nums; pointer-events:none;
-         position:absolute; transform:translateX(-50%); }
-  #quit { font-size:14px !important; padding:9px 15px !important; min-width:0 !important;
+  #hud { font-size:16px; font-weight:600; color:var(--muted);
+         font-variant-numeric:tabular-nums; min-width:64px; padding-left:6px; }
+  #reminder { font-size:14px; color:var(--muted); text-align:right; max-width:50%; line-height:1.35; }
+  #quit { font-size:13px !important; padding:9px 14px !important; min-width:0 !important;
           background:#fff; color:var(--muted); border:1px solid var(--line); }
 </style>
 
 <div class="wrap" id="app">
   <h1>MotiQ prototype</h1>
-  <p class="sub">Spiral drawing, tapping, and auditory load. Prototype — millimetres
-  and timing are approximate.<br>
-  <span id="buildstamp"></span></p>
+  <p class="sub">Millimetres and timing are approximate.<br><span id="buildstamp"></span></p>
+
+  <div id="statusbar" class="note" style="background:#eef4fb;border:1px solid #cfe0f2;
+       border-radius:8px;padding:9px 13px;margin:0 0 12px;font-size:14px;color:var(--ink)"></div>
 
   <div class="steps">
-    <span id="s1" class="on" onclick="goPage(1)">1 · Calibration</span>
-    <span id="s2" onclick="goPage(2)">2 · Session</span>
-    <span id="s3" onclick="goPage(3)">3 · Parameters</span>
-    <span id="s4" onclick="goPage(4)">4 · Results &amp; data</span>
+    <span id="s1" class="on" onclick="goPage(1)">1 · Screen</span>
+    <span id="s2" onclick="goPage(2)">2 · Participant &amp; checks</span>
+    <span id="s3" onclick="goPage(3)">3 · Session</span>
+    <span id="s4" onclick="goPage(4)">4 · Parameters</span>
+    <span id="s5" onclick="goPage(5)">5 · Results &amp; data</span>
   </div>
 
-  <!-- ============================ PAGE 1: CALIBRATION ==================== -->
+  <!-- ===================== 1 CALIBRATION ===================== -->
   <div id="pg1">
     <fieldset>
-      <legend>Screen calibration</legend>
+      <legend>Screen calibration <span style="font-weight:400;color:var(--muted)">— per device, done once</span></legend>
       <div id="detected" class="note"></div>
-      <p class="note">Hold a bank card flat on the screen over the outline. Any card
-      works — they are all 85.60 × 53.98 mm. Adjust until the outline matches it exactly.
-      Without this the spiral is the wrong physical size and nothing else is meaningful.</p>
+      <p class="note">Hold a bank card flat on the screen over the outline. Any card works —
+      they are all 85.60 × 53.98 mm. Without this the spiral is the wrong physical size.</p>
       <div id="cardOutline">bank card</div>
-      <label id="cardokRow" for="cardok"><input id="cardok" type="checkbox">
-        <span>I have checked this outline against a real bank card and it matches.</span></label>
-      <div id="calwarn"></div>
       <div class="r3">
         <div><label for="ppmm">CSS pixels per mm</label>
           <input id="ppmm" type="number" step="0.001" value="3.780"></div>
@@ -149,19 +141,23 @@
         <div><label>&nbsp;</label><div class="btnrow" style="margin:0">
           <button class="ghost" onclick="autoDetect()">Auto-detect</button></div></div>
       </div>
+      <label id="cardokRow" for="cardok"><input id="cardok" type="checkbox">
+        <span>I have checked this outline against a real bank card and it matches.</span></label>
+      <div id="calwarn"></div>
       <div id="calnote"></div>
     </fieldset>
-    <div class="navrow"><span></span>
-      <button class="big" onclick="goPage(2)">Next</button></div>
+
+    <div class="navrow"><span></span><button class="big" onclick="goPage(2)">Next</button></div>
   </div>
 
-  <!-- ============================ PAGE 2: SESSION ======================== -->
+  <!-- ===================== 2 PARTICIPANT ===================== -->
   <div id="pg2" class="hidden">
     <fieldset>
-      <legend>Session</legend>
+      <legend>Participant</legend>
       <div class="r3">
-        <div><label for="pid">Participant ID</label><input id="pid" type="text" placeholder="P001"></div>
-        <div><label for="grp">Group / note</label><input id="grp" type="text" placeholder="control, PD…"></div>
+        <div><label for="pid">Participant ID</label>
+          <input id="pid" type="text" placeholder="P0001" maxlength="5"></div>
+        <div><label for="grp">Group / note</label><input id="grp" type="text" placeholder="control"></div>
         <div><label for="sex">Sex</label>
           <select id="sex"><option value="">—</option><option value="female">Female</option>
             <option value="male">Male</option><option value="other">Other</option>
@@ -177,68 +173,137 @@
             <option value="5">May</option><option value="6">June</option>
             <option value="7">July</option><option value="8">August</option>
             <option value="9">September</option><option value="10">October</option>
-            <option value="11">November</option><option value="12">December</option>
-          </select></div>
+            <option value="11">November</option><option value="12">December</option></select></div>
         <div><label for="domhand">Dominant hand</label>
           <select id="domhand"><option value="right">Right</option><option value="left">Left</option>
             <option value="ambidextrous">Ambidextrous</option></select></div>
       </div>
       <div id="agenote" class="note"></div>
-      <div>
-        <label for="notes">Notes</label>
-        <textarea id="notes" rows="4" placeholder="Anything worth recording about this session — glasses, tremor, fatigue, interruptions, deviations from protocol."></textarea>
+      <div class="btnrow">
+        <button class="ghost" onclick="newParticipant()">Start a new participant</button>
+        <span class="note" style="margin:0">Clears these fields, opens a new session and
+          resets the trial list. Saved trials are kept.</span>
       </div>
-      <div class="note">Notes are saved with every trial in this session.</div>
+      <div><label for="notes">Notes</label>
+        <textarea id="notes" rows="3" placeholder="Glasses, tremor, fatigue, interruptions, protocol deviations."></textarea></div>
     </fieldset>
+    <fieldset>
+      <legend>Pen check <span style="font-weight:400;color:var(--muted)">— per participant</span></legend>
+      <p class="note" style="margin-top:0">Ask the participant to draw a straight line from
+      <b>A</b> to <b>B</b>, once with each hand. This checks that the stylus registers, that
+      samples arrive at a usable rate, and that pressure varies. It is a device check, not a
+      trial — no trial record is written.</p>
+      <div class="r3">
+        <div><label for="pchand">Hand</label>
+          <select id="pchand"><option value="right">Right</option><option value="left">Left</option></select></div>
+        <div><label for="pcimpl">Implement</label>
+          <select id="pcimpl"><option value="pen">Stylus</option><option value="finger">Index finger</option></select></div>
+        <div><label>&nbsp;</label><div class="btnrow" style="margin:0">
+          <button class="ghost" onclick="penPadClear()">Clear</button></div></div>
+      </div>
+      <canvas id="penpad" height="150"></canvas>
+      <div id="pcresult" class="note"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Sound check <span style="font-weight:400;color:var(--muted)">— per participant</span></legend>
+      <p class="note" style="margin-top:0">Play both tones at the level the session will use.
+      The participant must hear the difference easily — this is not a discrimination test.
+      Fix the volume here and do not change it during the session.</p>
+      <div class="btnrow" style="margin-top:6px">
+        <button class="ghost" onclick="demo('std')">Play low tone</button>
+        <button class="ghost" onclick="demo('tgt')">Play high tone</button>
+        <button class="ghost" onclick="demo('alt')">Play both, alternating</button>
+      </div>
+      <div class="r2" style="margin-top:10px">
+        <div><label for="audioroute">Delivery</label>
+          <select id="audioroute" onchange="renderAudioCheck()">
+            <option value="speaker">Device speaker</option>
+            <option value="wired">Wired headphones</option>
+          </select></div>
+        <div><label for="volstep">Volume steps used</label>
+          <select id="volstep" onchange="renderAudioCheck()">
+            <option value="0">Starting level</option>
+            <option value="1">Raised once</option>
+            <option value="max">At maximum</option>
+          </select></div>
+      </div>
+      <label id="soundokRow" for="soundok" style="display:flex;align-items:flex-start;gap:9px;margin-top:12px;font-size:14px;cursor:pointer">
+        <input id="soundok" type="checkbox" style="width:auto;flex:0 0 auto;margin:3px 0 0" onchange="renderAudioCheck()">
+        <span>The participant confirms both tones are clearly audible.</span></label>
+      <div id="soundnote"></div>
+    </fieldset>
+
     <div class="navrow">
       <button class="big ghost" onclick="goPage(1)">Back</button>
       <button class="big" onclick="goPage(3)">Next</button></div>
   </div>
 
-  <!-- ============================ PAGE 3: PARAMETERS ===================== -->
+  <!-- ===================== 3 SESSION ===================== -->
   <div id="pg3" class="hidden">
-
     <fieldset>
-      <legend>Condition</legend>
-      <div class="r2">
-        <div><label for="cond">Task</label>
-          <select id="cond">
-            <option value="SP">SP — spiral only</option>
-            <option value="TAP">TAP — single-finger tapping</option>
-            <option value="BMIN">BMIN — bimanual tapping, in phase</option>
-            <option value="BMANT">BMANT — bimanual tapping, antiphase</option>
-            <option value="DET">DET — tones only, tap every tone</option>
-            <option value="ODT">ODT — tones only, tap high tones</option>
-            <option value="SP_DET">SP_DET — spiral + tap every tone</option>
-            <option value="SP_ODT" selected>SP_ODT — spiral + tap high tones</option>
-          </select></div>
-        <div><label>&nbsp;</label><div id="condnote" class="note" style="margin:0"></div></div>
+      <legend>Session</legend>
+      <div class="r4">
+        <div><label for="visitno">Visit number</label>
+          <input id="visitno" type="number" min="1" max="99" value="1" onchange="onVisitChange()"></div>
+        <div><label for="sessnum">Session within visit</label>
+          <input id="sessnum" type="number" min="1" max="99" value="1" onchange="renderStatus()"></div>
+        <div><label for="sessno">Session ID</label>
+          <input id="sessno" type="text" readonly style="background:#f2f5f8"></div>
+        <div><label for="sessnote">Session note</label>
+          <input id="sessnote" type="text" placeholder="baseline, retest…"></div>
+      </div>
+      <div class="btnrow">
+        <button class="ghost" onclick="newVisit()">New visit for this participant</button>
+        <button class="ghost" onclick="newSession()">Another session in this visit</button>
+      </div>
+      <div id="nestnote" class="note"></div>
+    </fieldset>
+
+    <fieldset id="nextUp" class="hidden">
+      <legend>Next trial</legend>
+      <div id="nextUpBody"></div>
+      <div class="btnrow">
+        <button class="big" onclick="runCurrent()">START THIS TRIAL</button>
+        <button class="ghost" onclick="skipCurrent()">Skip it</button>
       </div>
     </fieldset>
 
-    <fieldset id="blkSpiral">
-      <legend>Spiral geometry <span style="font-weight:400;color:var(--muted)">— millimetres</span></legend>
+    <fieldset>
+      <legend>Plan the battery</legend>
+      <p class="note" style="margin-top:0">Repeats are per hand where a condition uses both.
+      Everything here is a default, not a rule — change anything.</p>
+      <div style="overflow-x:auto"><table id="planTable"></table></div>
+      <div id="planSummary"></div>
+      <div class="btnrow">
+        <button onclick="buildQueue()">Build session</button>
+        <button class="ghost" onclick="resetPlan()">Reset to defaults</button>
+      </div>
+    </fieldset>
+
+    <fieldset id="queueBox" class="hidden">
+      <legend>Trial list</legend>
+      <div style="overflow-x:auto"><table id="queueTable" class="queue"></table></div>
+      <div class="note">Use <b>Start this trial</b> at the top of this page to run the next one.</div>
+    </fieldset>
+
+    <div class="navrow">
+      <button class="big ghost" onclick="goPage(2)">Back</button>
+      <button class="big" onclick="goPage(4)">Parameters</button></div>
+  </div>
+
+  <!-- ===================== 4 PARAMETERS ===================== -->
+  <div id="pg4" class="hidden">
+    <p class="sub">Defaults. Usually left alone — they apply to every trial in the session.</p>
+
+    <fieldset>
+      <legend>Spiral geometry</legend>
       <div class="r4">
         <div><label for="pitch">Pitch (mm)</label><input id="pitch" type="number" value="12" step="0.5" min="6" max="25"></div>
         <div><label for="turns">Turns</label><input id="turns" type="number" value="5" step="1" min="2" max="8"></div>
         <div><label for="instr">Instruction</label>
-          <select id="instr"><option value="trace">Trace on the line</option>
-            <option value="between">Draw between the turns</option></select></div>
-        <div id="drawHandWrap"><label for="hand">Drawing hand</label>
-          <select id="hand"><option value="right">Right (clockwise)</option>
-            <option value="left">Left (counterclockwise)</option></select></div>
-      </div>
-      <div class="r4">
-        <div><label for="startdia">Start zone (mm)</label><input id="startdia" type="number" value="8" step="1" min="4" max="20"></div>
-        <div><label for="endang">End angle (deg)</label><input id="endang" type="number" value="90" step="15"></div>
-        <div><label for="split">Split (drawing share)</label><input id="split" type="number" value="0.70" step="0.05" min="0.4" max="1"></div>
-        <div><label for="implement">Drawing implement</label>
-          <select id="implement">
-            <option value="pen">Stylus (Apple Pencil)</option>
-            <option value="finger">Index finger</option>
-          </select></div>
-      </div>
-      <div class="r2">
+          <select id="instr"><option value="between" selected>Draw between the turns</option>
+            <option value="trace">Trace on the line</option></select></div>
         <div><label for="preset">Match printed template</label>
           <select id="preset"><option value="">— choose —</option>
             <option value="11,4">SP-R44-T4 · pitch 11, 4 turns</option>
@@ -246,71 +311,68 @@
             <option value="12,4">SP-R48-T4 · pitch 12, 4 turns</option>
             <option value="12,5">SP-R60-T5 · pitch 12, 5 turns</option>
             <option value="13,4">SP-R52-T4 · pitch 13, 4 turns</option>
-            <option value="13,5">SP-R65-T5 · pitch 13, 5 turns</option>
+            <option value="13,5">SP-R65-T5 · pitch 13, 5 turns</option></select></div>
+      </div>
+      <div class="r4">
+        <div><label for="startdia">Start zone (mm)</label><input id="startdia" type="number" value="8" step="1" min="4" max="20"></div>
+        <div><label for="endang">End angle (deg)</label><input id="endang" type="number" value="90" step="15"></div>
+        <div><label for="split">Split (drawing share)</label><input id="split" type="number" value="0.70" step="0.05" min="0.4" max="1"></div>
+        <div><label for="tmpl">Template line</label>
+          <select id="tmpl">
+            <option value="grey" selected>Grey, solid</option>
+            <option value="black">Black, solid</option>
+            <option value="dotted">Grey, dotted</option>
           </select></div>
-        <div><label>&nbsp;</label><div id="implnote" class="note" style="margin:0"></div></div>
+      </div>
+      <div class="r4">
+        <div><label for="idle">Idle auto-stop (s)</label><input id="idle" type="number" value="5" step="1" min="2" max="30"></div>
       </div>
       <div id="geonote" class="note"></div>
-      <div id="splitnote" class="note"></div>
     </fieldset>
 
-    <fieldset id="blkTap">
+    <fieldset>
       <legend>Tapping</legend>
-      <div class="r4">
-        <div><label for="tapdur">Trial length (s)</label>
-          <select id="tapdur"><option>5</option><option selected>10</option>
-            <option>15</option><option>20</option></select></div>
+      <div class="r3">
         <div><label for="tapdia">Zone size (mm)</label><input id="tapdia" type="number" value="45" step="5" min="20" max="90"></div>
-        <div id="tapHandWrap"><label for="taphand">Tapping hand</label>
-          <select id="taphand"><option value="right">Right</option><option value="left">Left</option></select></div>
-        <div id="zoneGapWrap"><label for="zonegap">Zone spacing (mm)</label>
-          <input id="zonegap" type="number" value="110" step="5" min="60" max="200"></div>
+        <div><label for="zonegap">Bimanual spacing (mm)</label><input id="zonegap" type="number" value="110" step="5" min="60" max="200"></div>
+        <div></div>
       </div>
-      <div id="tapnote" class="note"></div>
+      <div class="note">Lead-in is set per condition in the auditory table below, because a dual
+      task needs more of it than a tones-only task: the participant has to get drawing before the
+      first tone lands. It matters most where the first tone is already a response demand.</div>
     </fieldset>
 
-    <fieldset id="blkAudio">
+    <fieldset>
       <legend>Auditory stream</legend>
-      <div class="r4">
-        <div><label for="dur">Duration (s)</label><input id="dur" type="number" value="30" step="5" min="10" max="180"></div>
-        <div><label for="isi">Mean ISI (ms)</label><input id="isi" type="number" value="700" step="50" min="400" max="4000"></div>
-        <div><label for="jit">Jitter (±%)</label><input id="jit" type="number" value="25" step="1" min="0" max="40"></div>
-        <div><label for="ptg">Target probability</label><input id="ptg" type="number" value="0.25" step="0.01" min="0.1" max="0.4"></div>
-      </div>
-      <div class="r4">
+      <p class="note" style="margin-top:0">Per-condition defaults. Edit a row to change what
+      that condition uses for the rest of the session.</p>
+      <div style="overflow-x:auto"><table id="audioTable"></table></div>
+      <div class="r4" style="margin-top:12px">
         <div><label for="fstd">Standard (Hz)</label><input id="fstd" type="number" value="1000" step="50"></div>
         <div><label for="ftgt">Target (Hz)</label><input id="ftgt" type="number" value="2000" step="50"></div>
-        <div><label for="tone">Tone (ms)</label><input id="tone" type="number" value="100" step="10"></div>
-        <div><label for="lvl">Level (peak amplitude)</label><input id="lvl" type="number" value="0.5" step="0.05" min="0.05" max="1"></div>
+        <div><label for="lvl">Tone level (digital, 0–1)</label><input id="lvl" type="number" value="0.5" step="0.05" min="0.05" max="1"></div>
+        <div><label for="seedmode">Sequence</label>
+          <select id="seedmode"><option value="random" selected>New random each trial</option>
+            <option value="fixed">Fixed seed</option></select></div>
       </div>
-      <div class="r2">
-        <div><label for="seed">Seed</label><input id="seed" type="number" value="1" step="1"></div>
-        <div><label for="seqfile">Or load a sequence from the R generator (.json)</label>
-          <input id="seqfile" type="file" accept=".json"></div>
-      </div>
+      <div class="note"><b>Tone level is not the volume.</b> It is the digital amplitude of the
+      synthesised tone before the iPad's own volume control: 1.0 is the loudest undistorted
+      signal, 0.5 about −6 dBFS. Leave it at 0.5 and set loudness with the iPad volume.</div>
       <div class="btnrow">
         <button class="ghost sm" onclick="demo('std')">Play standard</button>
         <button class="ghost sm" onclick="demo('tgt')">Play target</button>
       </div>
-      <div class="note">Level is peak amplitude as a fraction of full scale: 1.0 is the
-      loudest undistorted output, 0.5 about −6 dBFS. Not loudness at the ear.</div>
-      <div id="seqnote" class="note"></div>
-      <div id="isiwarn"></div>
     </fieldset>
 
-    <div id="err"></div>
     <div class="navrow">
-      <button class="big ghost" onclick="goPage(2)">Back</button>
-      <button class="big" onclick="openTrial()">Start trial</button></div>
-    <div class="btnrow" style="justify-content:center">
-      <button class="ghost" onclick="openTrial(true)">Show instruction only</button>
-      <button class="ghost" onclick="goPage(4)">Results &amp; saved data</button></div>
+      <button class="big ghost" onclick="goPage(3)">Back to session</button>
+      <button class="big" onclick="goPage(3)">Done</button></div>
   </div>
 
-  <!-- ============================ PAGE 4: RESULTS ======================== -->
-  <div id="pg4" class="hidden">
+  <!-- ===================== 5 RESULTS ===================== -->
+  <div id="pg5" class="hidden">
     <div id="saveState"></div>
-    <h2>Trial result</h2>
+    <h2>Last trial</h2>
     <div id="rsum"></div>
     <div id="rwin"></div>
     <div id="rq"></div>
@@ -328,20 +390,15 @@
       </div>
       <textarea id="csvbox" class="hidden" rows="10" readonly
         style="margin-top:10px;font:12px/1.4 ui-monospace,Menlo,monospace"></textarea>
-      <div class="note">Trials are written here the moment they end, so a failed download
-      or a reload costs nothing. This is browser storage, not a database — clearing
-      Safari's website data erases it. Export at the end of every session.
-      <br><br><b>CSV</b> is one flat table: session details repeat on every row and
-      <code>row_type</code> marks each row as a pen sample, a tap, or a tone.
-      <b>JSON</b> is the complete nested record. <code>t_ms</code> counts from the
-      moment START was pressed; pen samples, taps and tone onsets share that origin.</div>
+      <div class="note">Trials are written when you press SAVE. This is browser storage, not a
+      database — clearing Safari's website data erases it. Export at the end of every session.
+      <br><br><code>parameters_json</code> carries the complete parameter set verbatim, so a
+      setting added later is still recorded in full for trials run today.</div>
     </fieldset>
 
     <div class="navrow">
-      <button class="big ghost" onclick="goPage(3)">Change parameters</button>
-      <button class="big" onclick="openTrial()">Run again</button></div>
-    <div class="btnrow" style="justify-content:center">
-      <button class="ghost" onclick="newSession()">New participant</button></div>
+      <button class="big ghost" onclick="goPage(3)">Back to session</button>
+      <button class="big" onclick="runCurrent()">Run next trial</button></div>
   </div>
 </div>
 
@@ -349,634 +406,980 @@
   <canvas id="canvas"></canvas>
   <div id="adminbar">
     <div id="ctrl" style="display:flex;gap:12px"></div>
+    <div id="hud"></div>
     <div class="spacer"></div>
-    <button id="quit" onclick="quitTrial()">Quit</button>
+    <div id="reminder"></div>
+    <button id="quit" onclick="abandonTrial()">Abandon trial</button>
   </div>
-  <div id="hud"></div>
   <div id="overlay"></div>
 </div>
 
 <script>
 "use strict";
+const BUILD = "v5.01 2026-08-16";
 
-const BUILD = "v3.02 2026-08-16";
+/* ============================================================================
+   CATALOGUE — the one place conditions are defined.
 
-const MM = { CARD_W: 85.60, CARD_H: 53.98 };
+   id        identifier used in data and trial IDs
+   label     shown to the administrator
+   order     administration position; renumber freely
+   spiral    needs the drawing area
+   tap       needs a tap zone
+   audio     needs an auditory stream
+   zones     0 none, 1 single zone, 2 bimanual
+   hands     "each"  alternating dominant / non-dominant, repeats per hand
+             "one"   a single hand, chosen in the plan
+             "both"  bimanual
+             "roles" alternating which hand draws, repeats per role
+   repeats   default; free integer, not a permitted-value list
+   lengthS   trial length in seconds; null means self-paced (ends on END)
+   implement default drawing implement where relevant
+   Audio settings live in AUDIO_DEFAULTS, keyed by the same id.
+   ============================================================================ */
+const CATALOGUE = [
+  { id:"SP",       label:"Spiral",                     order:10, spiral:1, tap:0, audio:0, zones:0, hands:"each",  repeats:3, lengthS:null, implement:"pen" },
+  { id:"SPF",      label:"Spiral, finger",             order:20, spiral:1, tap:0, audio:0, zones:0, hands:"one",   repeats:2, lengthS:null, implement:"finger" },
+  { id:"TAP",      label:"Unimanual tapping",          order:30, spiral:0, tap:1, audio:0, zones:1, hands:"each",  repeats:2, lengthS:10 },
+  { id:"BMIN",     label:"Bimanual tapping, in phase", order:40, spiral:0, tap:1, audio:0, zones:2, hands:"both",  repeats:2, lengthS:10 },
+  { id:"BMANT",    label:"Bimanual tapping, antiphase",order:50, spiral:0, tap:1, audio:0, zones:2, hands:"both",  repeats:2, lengthS:10 },
+  { id:"DET",      label:"Detection tapping",          order:60, spiral:0, tap:1, audio:1, zones:1, hands:"one",   repeats:2, lengthS:20 },
+  { id:"ODT",      label:"Oddball tapping",            order:70, spiral:0, tap:1, audio:1, zones:1, hands:"each",  repeats:2, lengthS:20 },
+  { id:"SP_TAP",   label:"Spiral + tapping",           order:80, spiral:1, tap:1, audio:0, zones:1, hands:"roles", repeats:2, lengthS:null, implement:"pen" },
+  { id:"SP_DET",   label:"Spiral + detection",         order:90, spiral:1, tap:1, audio:1, zones:1, hands:"roles", repeats:2, lengthS:45, implement:"pen" },
+  { id:"SP_ODT",   label:"Spiral + oddball",           order:100,spiral:1, tap:1, audio:1, zones:1, hands:"roles", repeats:2, lengthS:45, implement:"pen" },
+  { id:"SPF_ODT",  label:"Spiral (finger) + oddball",  order:110,spiral:1, tap:1, audio:1, zones:1, hands:"one",   repeats:2, lengthS:45, implement:"finger" },
+  // No tap zone: the response is a silent count reported at the end, so there is no
+  // timestamped response channel and no cognitive dual-task effect can be computed.
+  // Count error is a trial validity criterion, not a measure.
+  { id:"SPF_ODC",  label:"Spiral (finger) + silent count", order:120, spiral:1, tap:0, audio:1, zones:0, hands:"one", repeats:2, lengthS:45, implement:"finger", count:1 }
+];
+
+// Per-condition auditory defaults. Also editable; add a key and point a catalogue
+// entry at it to introduce a new stream type.
+// Keyed by condition, not by stream type: the lead-in that a dual task needs is not
+// the lead-in a tones-only task needs, and duration differs too.
+const AUDIO_DEFAULTS = {
+  DET:     { durS:20, isi:1000, jit:30, ptg:0,    tone:50, lead:500,
+             label:"Tones only — respond to every tone" },
+  ODT:     { durS:20, isi:700,  jit:30, ptg:0.25, tone:50, lead:500,
+             label:"Tones only — respond to high tones" },
+  SP_DET:  { durS:45, isi:1000, jit:30, ptg:0,    tone:50, lead:1000,
+             label:"Dual task — respond to every tone while drawing" },
+  SP_ODT:  { durS:45, isi:700,  jit:30, ptg:0.25, tone:50, lead:1000,
+             label:"Dual task — respond to high tones while drawing" },
+  SPF_ODT: { durS:45, isi:700,  jit:30, ptg:0.25, tone:50, lead:1000,
+             label:"Dual task, finger drawing — high tones only" },
+  SPF_ODC: { durS:45, isi:700,  jit:30, ptg:0.25, tone:50, lead:1000,
+             label:"Dual task, finger drawing — count high tones silently" }
+};
+
+// Posture and grip figure, shown on the instruction screen for drawing conditions.
+// Embedded so the app remains one file with nothing to fetch.
+const POSTURE_PNG = "data:image/png;base64,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";
+
+const OVERHEAD_S = 25;   // instruction, transition, hand swap per trial
+
+/* ------------------------------------------------------------------ utils */
 const $ = id => document.getElementById(id);
-const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
-const quantile = (arr,q) => { if(!arr.length) return NaN;
-  const s=[...arr].sort((a,b)=>a-b), p=(s.length-1)*q, b=Math.floor(p), r=p-b;
-  return s[b+1]!==undefined ? s[b]+r*(s[b+1]-s[b]) : s[b]; };
-
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const pad2=n=>String(n).padStart(2,"0");
+const quantile=(a,q)=>{ if(!a.length) return NaN; const s=[...a].sort((x,y)=>x-y),
+  p=(s.length-1)*q,b=Math.floor(p),r=p-b; return s[b+1]!==undefined? s[b]+r*(s[b+1]-s[b]) : s[b]; };
+const byId = id => CATALOGUE.find(c=>c.id===id);
 $("buildstamp").textContent = "Build " + BUILD;
 
-// which blocks each condition needs
-const NEEDS = {
-  SP:     { spiral:true,  tap:false, audio:false, zones:0 },
-  TAP:    { spiral:false, tap:true,  audio:false, zones:1 },
-  BMIN:   { spiral:false, tap:true,  audio:false, zones:2 },
-  BMANT:  { spiral:false, tap:true,  audio:false, zones:2 },
-  DET:    { spiral:false, tap:true,  audio:true,  zones:1 },
-  ODT:    { spiral:false, tap:true,  audio:true,  zones:1 },
-  SP_DET: { spiral:true,  tap:true,  audio:true,  zones:1 },
-  SP_ODT: { spiral:true,  tap:true,  audio:true,  zones:1 }
-};
-const needs = () => NEEDS[$("cond").value];
+// Declared up here, not beside the pen-check code: applyCal() runs during calibration
+// setup and calls penPadClear(), which assigns pcPts. A `let` further down the file is
+// still in its temporal dead zone at that point and throws.
+const PENCHECK={};                 // by hand: {samples, rate, pressure_varied, ...}
+let pcPts=null;
 
-// ---------------------------------------------------------------- pages
-
+/* ------------------------------------------------------------------ pages */
 function goPage(n){
-  [1,2,3,4].forEach(i => $("pg"+i).classList.toggle("hidden", i!==n));
-  [1,2,3,4].forEach(i => $("s"+i).classList.toggle("on", i===n));
-  if (n===3) syncBlocks();
-  if (n===4) {
-    renderSaved();
-    if (!LAST) {
-      $("saveState").innerHTML="";
-      $("rsum").innerHTML=`<p class="note" style="margin:0">No trial has been run in this
-        session yet. Saved trials from earlier sessions are listed below and can still be
-        exported.</p>`;
-      $("rwin").innerHTML=""; $("rq").innerHTML="";
-    }
-  }
+  [1,2,3,4,5].forEach(i=>$("pg"+i).classList.toggle("hidden", i!==n));
+  [1,2,3,4,5].forEach(i=>$("s"+i).classList.toggle("on", i===n));
+  if(n===3){ renderPlan(); renderQueue(); }
+  renderStatus();
+  if(n===4){ renderAudioTable(); updateGeo(); }
+  if(n===5){ renderSaved(); if(!LAST){ $("saveState").innerHTML="";
+    $("rsum").innerHTML=`<p class="note" style="margin:0">No trial run yet this session.</p>`;
+    $("rwin").innerHTML=""; $("rq").innerHTML=""; } }
   window.scrollTo(0,0);
 }
 
-// show only the parameter blocks this condition uses
-// In a dual task the two hands are complementary: the tapping hand is chosen and
-// the drawing hand is the other one, which fixes both the spiral direction and
-// which side of the screen each task occupies.
-function syncHands(){
-  const nd=needs();
-  if(nd.spiral && nd.tap){
-    $("hand").value = $("taphand").value==="right" ? "left" : "right";
-  }
-}
-function syncBlocks(){
-  const nd = needs(), c = $("cond").value;
-  const dual = nd.spiral && nd.tap;
-  $("blkSpiral").classList.toggle("hidden", !nd.spiral);
-  $("blkAudio").classList.toggle("hidden", !nd.audio);
-  $("blkTap").classList.toggle("hidden", !nd.tap);
-  $("tapHandWrap").classList.toggle("hidden", nd.zones!==1);
-  $("zoneGapWrap").classList.toggle("hidden", nd.zones!==2);
-  $("drawHandWrap").classList.toggle("hidden", dual);   // derived, not chosen
-  $("tapdur").parentElement.classList.toggle("hidden", nd.audio);
-  syncHands();
-  $("splitnote").innerHTML = dual
-    ? `Dual task: tapping with the <b>${$("taphand").value}</b> hand, so the spiral is drawn
-       with the <b>${$("hand").value}</b> hand — ${$("hand").value==="left"?"counterclockwise":"clockwise"},
-       on the ${$("hand").value} of the screen, with the tap zone opposite. Both are live at once.`
-    : nd.spiral ? `Spiral only — the whole drawing area is used and no tap zone is shown.` : ``;
-  $("tapnote").innerHTML = c==="BMANT"
-    ? `Antiphase: hands alternate, one finger down at a time.`
-    : c==="BMIN" ? `In phase: both fingers land together.`
-    : c==="TAP" ? `Tap as fast as you can for the whole trial.`
-    : nd.zones===1 ? `Tap only in response to a tone.` : ``;
-  $("condnote").innerHTML = `Needs: ` +
-    [nd.spiral?"spiral geometry":null, nd.tap?"tapping":null, nd.audio?"auditory stream":null]
-      .filter(Boolean).join(", ") + `.` +
-    (nd.spiral ? ` Ends when you press END, not on the clock.` : ``);
-  $("implnote").innerHTML = $("implement").value==="finger"
-    ? `Finger drawing: the stylus is ignored and no pressure is recorded. Not equivalent
-       to the stylus condition — error profiles differ, particularly in older adults.`
-    : `Stylus: finger and palm contact is ignored for drawing. Tapping still accepts a finger.`;
-  updateGeo(); updateISIWarn();
-}
-$("implement").addEventListener("change", syncBlocks);
-$("cond").addEventListener("change", syncBlocks);
-$("taphand").addEventListener("change", syncBlocks);
-
-// ---------------------------------------------------------------- calibration
-
-const DEVICES = [
-  { px:[2420,1668], ppi:264, label:"iPad Pro 11-inch (M4)" },
-  { px:[2752,2064], ppi:264, label:"iPad Pro 13-inch (M4)" },
-  { px:[2388,1668], ppi:264, label:"iPad Pro 11-inch (M1/M2)" },
-  { px:[2732,2048], ppi:264, label:"iPad Pro 12.9-inch" },
-  { px:[2360,1640], ppi:264, label:"iPad Air 11-inch / iPad 10th gen" },
-  { px:[2266,1488], ppi:326, label:"iPad mini" },
-  { px:[2160,1620], ppi:264, label:"iPad 9th gen" }
+/* ------------------------------------------------------- calibration */
+const DEVICES=[
+  {px:[2420,1668],ppi:264,label:"iPad Pro 11-inch (M4)"},
+  {px:[2752,2064],ppi:264,label:"iPad Pro 13-inch (M4)"},
+  {px:[2388,1668],ppi:264,label:"iPad Pro 11-inch (M1/M2)"},
+  {px:[2732,2048],ppi:264,label:"iPad Pro 12.9-inch"},
+  {px:[2360,1640],ppi:264,label:"iPad Air 11-inch / iPad 10th gen"},
+  {px:[2266,1488],ppi:326,label:"iPad mini"},
+  {px:[2160,1620],ppi:264,label:"iPad 9th gen"}
 ];
-const store = {
-  get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
-  set(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
-};
-
-// Where the current px/mm figure actually came from. Recorded per trial, because a
-// silent 96 ppi fallback and a matched device are not the same evidence.
-//   detected — matched an entry in DEVICES
-//   fallback — no match, nominal 96 px/inch
-//   saved    — restored from the motiq_ppmm key (device unknown, may not be this one)
-//   manual   — the operator typed or nudged the value; overrides any earlier value
-const CAL = { source:null, deviceLabel:null };
+const store={ get(k){try{return localStorage.getItem(k);}catch(e){return null;}},
+              set(k,v){try{localStorage.setItem(k,v);}catch(e){}} };
+const MM={CARD_W:85.60,CARD_H:53.98};
+const CAL={source:null,deviceLabel:null};
 
 function autoDetect(){
-  const dpr = window.devicePixelRatio || 1;
-  const w = Math.max(screen.width, screen.height) * dpr;
-  const h = Math.min(screen.width, screen.height) * dpr;
-  const hit = DEVICES.find(d => Math.abs(d.px[0]-w)<=2 && Math.abs(d.px[1]-h)<=2);
-  if (hit) {
-    const ppmm = hit.ppi / 25.4 / dpr;
-    CAL.source = "detected"; CAL.deviceLabel = hit.label;
-    $("ppmm").value = ppmm.toFixed(3);
-    $("detected").innerHTML = `Recognised <b>${hit.label}</b> — ${hit.ppi} ppi, pixel ratio
-      ${dpr}. Starting value <b>${ppmm.toFixed(3)}</b> px/mm (${(ppmm*25.4).toFixed(1)} px/inch,
-      not the nominal 96). Still confirm against a card.`;
-  } else {
-    CAL.source = "fallback"; CAL.deviceLabel = null;
-    $("detected").innerHTML = `Device not in the table (${Math.round(w)}×${Math.round(h)}
-      device px, ratio ${dpr}). Falling back to the nominal 96 px/inch, which is
-      <b>probably wrong</b> — calibrate against a card.`;
-    $("ppmm").value = (96/25.4).toFixed(3);
-  }
+  const dpr=window.devicePixelRatio||1;
+  const w=Math.max(screen.width,screen.height)*dpr, h=Math.min(screen.width,screen.height)*dpr;
+  const hit=DEVICES.find(d=>Math.abs(d.px[0]-w)<=2&&Math.abs(d.px[1]-h)<=2);
+  if(hit){ const ppmm=hit.ppi/25.4/dpr; $("ppmm").value=ppmm.toFixed(3);
+    CAL.source="detected"; CAL.deviceLabel=hit.label;
+    $("detected").innerHTML=`Recognised <b>${hit.label}</b> — ${hit.ppi} ppi, ratio ${dpr}.
+      Starting value <b>${ppmm.toFixed(3)}</b> px/mm (${(ppmm*25.4).toFixed(1)} px/inch, not the
+      nominal 96). Still confirm against a card.`;
+  } else { CAL.source="fallback"; CAL.deviceLabel=null;
+    $("detected").innerHTML=`Device not in the table (${Math.round(w)}×${Math.round(h)} device px,
+      ratio ${dpr}). Falling back to the nominal 96 px/inch, which is <b>probably wrong</b>.`;
+    $("ppmm").value=(96/25.4).toFixed(3); }
   applyCal();
 }
-function setManual(){ CAL.source = "manual"; CAL.deviceLabel = null; }
-function nudge(d){ setManual();
-  $("ppmm").value=(parseFloat($("ppmm").value)+d).toFixed(3); applyCal(); }
-
-// The card confirmation belongs to one px/mm value and no other, so any change to
-// that value drops it. It is never restored from storage: a saved figure may have
-// come from a different device, and an unchecked box is the honest default.
+function setManual(){ CAL.source="manual"; CAL.deviceLabel=null; }
+function nudge(d){ setManual(); $("ppmm").value=(parseFloat($("ppmm").value)+d).toFixed(3); applyCal(); }
 function renderCalWarn(){
-  $("calwarn").innerHTML = (CAL.source === "fallback" && !$("cardok").checked)
-    ? `<div class="bad">No known device matched, so this is the nominal 96 px/inch guess.
-       Every millimetre value — pitch, turns, tap zones — is <b>probably wrong</b> until you
-       check the outline against a real card and tick the box.</div>` : "";
+  $("calwarn").innerHTML=(CAL.source==="fallback"&&!$("cardok").checked)
+    ? `<div class="bad">No known device matched, so this is the nominal 96 px/inch guess. Every
+       millimetre value is <b>probably wrong</b> until you check against a card and tick the box.</div>`:"";
 }
-$("cardok").addEventListener("change", renderCalWarn);
-
+$("cardok").addEventListener("change",renderCalWarn);
 function applyCal(){
-  const p = parseFloat($("ppmm").value) || 3.78;
-  $("cardOutline").style.width  = (MM.CARD_W*p)+"px";
-  $("cardOutline").style.height = (MM.CARD_H*p)+"px";
-  store.set("motiq_ppmm", String(p));
-  $("cardok").checked = false;          // a confirmation cannot outlive its value
+  const p=parseFloat($("ppmm").value)||3.78;
+  $("cardOutline").style.width=(MM.CARD_W*p)+"px";
+  $("cardOutline").style.height=(MM.CARD_H*p)+"px";
+  store.set("motiq_ppmm",String(p));
+  $("cardok").checked=false;               // a confirmation cannot outlive its value
   renderCalWarn();
-  $("calnote").innerHTML = `<div class="good">1 mm = ${p.toFixed(3)} CSS px
+  $("calnote").innerHTML=`<div class="good">1 mm = ${p.toFixed(3)} CSS px
     (${(p*25.4).toFixed(1)} px/inch). A 12 mm pitch renders ${(12*p).toFixed(1)} px wide.</div>`;
-  updateGeo();
+  updateGeo(); penPadClear();
 }
-$("ppmm").addEventListener("input", () => { setManual(); applyCal(); });
-const savedCal = store.get("motiq_ppmm");
-if (savedCal) { CAL.source = "saved"; CAL.deviceLabel = null;
-  $("ppmm").value = savedCal; applyCal();
-  $("detected").textContent = "Using a saved calibration from this device. Re-check it against a card if this is a different iPad."; }
+$("ppmm").addEventListener("input",()=>{ setManual(); applyCal(); });
+const savedCal=store.get("motiq_ppmm");
+if(savedCal){ CAL.source="saved"; $("ppmm").value=savedCal; applyCal();
+  $("detected").textContent="Using a saved calibration from this device. Re-check against a card if this is a different iPad."; }
 else autoDetect();
 
-function safeAreaMM(){
-  const p = parseFloat($("ppmm").value) || 3.78;
-  const probe = document.createElement("div");
-  probe.style.cssText = "position:fixed;top:0;left:0;padding:env(safe-area-inset-top) " +
-    "env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);visibility:hidden";
-  document.body.appendChild(probe);
-  const cs = getComputedStyle(probe);
-  const o = { top:parseFloat(cs.paddingTop)/p, right:parseFloat(cs.paddingRight)/p,
-              bottom:parseFloat(cs.paddingBottom)/p, left:parseFloat(cs.paddingLeft)/p };
-  probe.remove(); return o;
+// Escalation follows BATTERY-001: fixed level, one predefined increase, then wired
+// headphones. Bluetooth is prohibited outright -- reported output latency both
+// misstates actual latency and drifts, which is incompatible with reaction time.
+function renderAudioCheck(){
+  const ok=$("soundok").checked, route=$("audioroute").value, step=$("volstep").value;
+  let msg="";
+  if(ok) msg=`<div class="good">Audible via ${route==="wired"?"wired headphones":"the device speaker"}.
+    Do not change the volume for the rest of the session — it is recorded with every trial.</div>`;
+  else if(step==="0") msg=`<div class="warn">Not yet confirmed. Raise the volume one step and
+    play the tones again.</div>`;
+  else if(step==="1") msg=`<div class="warn">Still not confirmed. Raise to maximum and retry.</div>`;
+  else if(route!=="wired") msg=`<div class="warn">At maximum on the speaker and still not audible.
+    Offer <b>wired</b> headphones and set Delivery to match. Bluetooth must not be used —
+    its reported latency is wrong and drifts across a session.</div>`;
+  else msg=`<div class="bad">Maximum volume with wired headphones and still not audible.
+    Headphones raise the level but do not correct impaired frequency discrimination. Run the
+    conditions that need no sound and omit the rest, recording the reason.</div>`;
+  $("soundnote").innerHTML=msg;
 }
 
-// ---------------------------------------------------------------- geometry
+function safeAreaMM(){
+  const p=parseFloat($("ppmm").value)||3.78;
+  const d=document.createElement("div");
+  d.style.cssText="position:fixed;top:0;left:0;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);visibility:hidden";
+  document.body.appendChild(d); const cs=getComputedStyle(d);
+  const o={top:parseFloat(cs.paddingTop)/p,right:parseFloat(cs.paddingRight)/p,
+           bottom:parseFloat(cs.paddingBottom)/p,left:parseFloat(cs.paddingLeft)/p};
+  d.remove(); return o;
+}
 
-function spiralPath(radius, turns, direction, endAngleDeg, nPts=3000){
-  const s = direction==="cw" ? -1 : 1, phi = endAngleDeg*Math.PI/180;
-  const b = radius/(turns*2*Math.PI), pts=[], thMax = turns*2*Math.PI;
-  for(let i=0;i<nPts;i++){
-    const th = thMax*i/(nPts-1), r = b*th, a = s*th+phi;
-    pts.push({ x:r*Math.cos(a), y:r*Math.sin(a), r, a });
+/* ------------------------------------------------------- pen check */
+function penPadSetup(){
+  const cv=$("penpad"), dpr=window.devicePixelRatio||1;
+  const w=cv.clientWidth||600;
+  cv.width=w*dpr; cv.height=150*dpr; cv.style.height="150px";
+  const g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0);
+  g.clearRect(0,0,w,150); g.fillStyle="#fff"; g.fillRect(0,0,w,150);
+  const ax=48, bx=w-48, y=75;
+  [["A",ax],["B",bx]].forEach(([lab,x])=>{
+    g.fillStyle="#D9EFD6"; g.strokeStyle="#4C8C4A"; g.lineWidth=1;
+    g.beginPath(); g.arc(x,y,15,0,7); g.fill(); g.stroke();
+    g.fillStyle="#2F6B2D"; g.font="15px system-ui"; g.textAlign="center"; g.fillText(lab,x,y+5);
+  });
+  g.strokeStyle="#e3e7ec"; g.setLineDash([4,5]); g.lineWidth=1;
+  g.beginPath(); g.moveTo(ax+18,y); g.lineTo(bx-18,y); g.stroke(); g.setLineDash([]);
+  return {g,w,ax,bx,y};
+}
+function penPadClear(){ pcPts=null; penPadSetup(); $("pcresult").innerHTML=""; }
+(function initPenPad(){
+  const cv=$("penpad");
+  let drawing=false, view=null;
+  const rel=e=>{ const r=cv.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; };
+  cv.addEventListener("pointerdown",e=>{
+    const want=$("pcimpl").value;
+    if(want==="pen" && !(e.pointerType==="pen"||e.pointerType==="mouse")) return;
+    if(want==="finger" && !(e.pointerType==="touch"||e.pointerType==="mouse")) return;
+    e.preventDefault(); drawing=true; view=penPadSetup(); pcPts=[];
+    const p=rel(e); pcPts.push({t:performance.now(),...p,pr:e.pressure??0,k:e.pointerType});
+  });
+  cv.addEventListener("pointermove",e=>{
+    if(!drawing) return; e.preventDefault();
+    const evs=e.getCoalescedEvents?e.getCoalescedEvents():[e];
+    const g=view.g; g.strokeStyle="#1d5fa8"; g.lineWidth=2.4; g.lineCap="round";
+    for(const ev of evs){ const p=rel(ev);
+      const last=pcPts[pcPts.length-1];
+      g.beginPath(); g.moveTo(last.x,last.y); g.lineTo(p.x,p.y); g.stroke();
+      pcPts.push({t:performance.now(),...p,pr:ev.pressure??0,k:ev.pointerType}); }
+  });
+  const finish=()=>{
+    if(!drawing) return; drawing=false;
+    if(!pcPts||pcPts.length<5){ $("pcresult").innerHTML=`<div class="bad">Too few samples —
+      the line was very short, or this implement is not registering.</div>`; return; }
+    const dur=(pcPts[pcPts.length-1].t-pcPts[0].t)/1000;
+    const rate=dur>0?(pcPts.length-1)/dur:0;
+    const prs=pcPts.map(p=>p.pr), pmin=Math.min(...prs), pmax=Math.max(...prs);
+    const varied=(pmax-pmin)>0.02;
+    const kinds=[...new Set(pcPts.map(p=>p.k))].join(", ");
+    const hand=$("pchand").value;
+    PENCHECK[hand]={ samples:pcPts.length, rate:+rate.toFixed(1), pressure_min:+pmin.toFixed(3),
+                     pressure_max:+pmax.toFixed(3), pressure_varied:varied, pointer_types:kinds,
+                     implement:$("pcimpl").value, checked_iso:new Date().toISOString() };
+    $("pcresult").innerHTML=`<div class="${rate<55?"warn":"good"}">
+      <b>${hand} hand</b> — ${pcPts.length} samples over ${dur.toFixed(2)} s,
+      about <b>${rate.toFixed(0)} Hz</b>. Pointer: ${kinds}.
+      Pressure ${varied?`varied ${pmin.toFixed(2)}–${pmax.toFixed(2)}`:`did not vary (${pmax.toFixed(2)})`}.
+      ${rate<55?" Under 60 Hz means one sample per frame — browser kinematics will be coarse.":""}
+      ${!varied&&$("pcimpl").value==="pen"?" No pressure variation from a stylus suggests it is being seen as a plain touch.":""}
+    </div>`;
+  };
+  cv.addEventListener("pointerup",finish);
+  cv.addEventListener("pointercancel",finish);
+  cv.addEventListener("pointerleave",finish);
+  penPadClear();
+})();
+window.addEventListener("resize",()=>{ if(!$("pg1").classList.contains("hidden")) penPadClear(); });
+
+/* ------------------------------------------------------- participant */
+function birthInfo(){
+  const y=$("byear").value?+$("byear").value:null, m=$("bmonth").value?+$("bmonth").value:null;
+  let age=null;
+  if(y){ const n=new Date(); age=n.getFullYear()-y-(m&&(n.getMonth()+1)<m?1:0); }
+  return {birth_year:y,birth_month:m,age_years:age};
+}
+function updateAgeNote(){
+  const b=birthInfo();
+  $("agenote").innerHTML=b.birth_year
+    ? `Age today: <b>${b.age_years}</b>${b.birth_month?"":" (approximate — no month)"}.`
+    : `Age is derived from birth year rather than typed.`;
+}
+["byear","bmonth"].forEach(id=>$(id).addEventListener("input",updateAgeNote));
+updateAgeNote();
+$("pid").addEventListener("input",()=>{ deriveNumbers(); });
+
+/* ------------------------------------------------------- session + plan */
+function nextSessionNumber(){
+  let n=0; try{ n=parseInt(localStorage.getItem("motiq_session_counter")||"0",10)||0; }catch(e){}
+  n+=1; try{ localStorage.setItem("motiq_session_counter",String(n)); }catch(e){}
+  return "s"+n;
+}
+let SESSION_ID=nextSessionNumber();
+let SERIES=0; const REPEATS={};
+
+// Nesting: participant -> visit -> session -> trial. A visit is one attendance; a second
+// session inside a visit is a same-day repeat of the battery. Numbers are per participant
+// and editable; SESSION_KEY stays globally unique so joins cannot collide.
+let SESSION_KEY = SESSION_ID;
+const pid_    = () => $("pid").value.trim();
+const visitNo = () => Math.max(1, +$("visitno").value || 1);
+const sessNo  = () => Math.max(1, +$("sessnum").value || 1);
+
+function storedFor(pid){
+  const out=[];
+  listTrials().forEach(t=>{ const r=getTrial(t.key); if(!r) return;
+    if((r.participant&&r.participant.id)===pid) out.push(r); });
+  return out;
+}
+// Defaults derive from what is already saved, so a returning participant does not depend
+// on anyone remembering which visit this is.
+function deriveNumbers(){
+  const pid=pid_(); if(!pid){ renderStatus(); return; }
+  const visits=new Set(storedFor(pid).map(r=>r.visit_number).filter(Boolean));
+  $("visitno").value = visits.size ? Math.max(...visits)+1 : 1;
+  onVisitChange();
+}
+function onVisitChange(){
+  const pid=pid_(); if(!pid){ renderStatus(); return; }
+  const v=visitNo();
+  const ses=new Set(storedFor(pid).filter(r=>r.visit_number===v)
+              .map(r=>r.session_number).filter(Boolean));
+  $("sessnum").value = ses.size ? Math.max(...ses)+1 : 1;
+  renderStatus();
+}
+function renderStatus(){
+  const pid=pid_();
+  if($("sessno")) $("sessno").value = pid ? `${pid}-v${visitNo()}-s${sessNo()}` : "";
+  const qtxt = (typeof QUEUE!=="undefined" && QUEUE.length)
+    ? (QPOS<QUEUE.length ? ` · trial <b>${QPOS+1}</b> of ${QUEUE.length}` : ` · list complete`)
+    : ` · no trial list built`;
+  if(!$("statusbar")) return;
+  $("statusbar").innerHTML = pid
+    ? `Participant <b>${pid}</b> · visit <b>${visitNo()}</b> · session <b>${sessNo()}</b>` +
+      ` <span style="color:var(--muted)">(key ${SESSION_KEY})</span>${qtxt}`
+    : `<span style="color:var(--warm)">No participant ID yet</span>${qtxt}`;
+  if($("nestnote")) $("nestnote").innerHTML =
+    `Trial numbers run within a session. Both numbers default from what is already saved on
+     this device — override them if that is wrong.`;
+}
+let PLAN=null, QUEUE=[], QPOS=0;
+
+function defaultPlan(){
+  const p={};
+  CATALOGUE.forEach(c=>{ const allowed=handsAllowed(c);
+    p[c.id]={ include:["SP","TAP","BMIN","BMANT","DET","ODT","SP_ODT"].includes(c.id),
+      repeats:c.repeats, hands:allowed.includes(c.hands)?c.hands:allowed[0],
+      lengthS:c.lengthS, oneHand:"dominant" }; });
+  return p;
+}
+function resetPlan(){ PLAN=defaultPlan(); QUEUE=[]; QPOS=0; renderPlan(); renderQueue(); }
+PLAN=defaultPlan();
+
+// A dual task always uses two hands, so "both (bimanual)" is meaningless there; a
+// bimanual tapping task has no single-hand form. Offer only what applies.
+function handsAllowed(c){
+  if(c.zones===2) return ["both"];
+  if(c.spiral && c.tap) return ["roles","one"];
+  return ["each","one"];
+}
+const HAND_LABEL={ each:"Each hand, alternating", one:"One hand",
+                   both:"Both (bimanual)", roles:"Alternate which hand draws" };
+
+function renderPlan(){
+  renderStatus();
+  let h=`<tr><th></th><th>Condition</th><th>Repeats</th><th>Hands</th><th>Length (s)</th><th>Uses</th></tr>`;
+  CATALOGUE.slice().sort((a,b)=>a.order-b.order).forEach(c=>{
+    const s=PLAN[c.id];
+    h+=`<tr>
+      <td><input type="checkbox" ${s.include?"checked":""} onchange="planSet('${c.id}','include',this.checked)"></td>
+      <td><b>${c.id}</b><br><span class="note" style="margin:0">${c.label}</span></td>
+      <td><input type="number" min="1" max="20" value="${s.repeats}" onchange="planSet('${c.id}','repeats',+this.value)"></td>
+      <td><select onchange="planSet('${c.id}','hands',this.value)">
+            ${handsAllowed(c).map(h=>`<option value="${h}" ${s.hands===h?"selected":""}>${HAND_LABEL[h]}</option>`).join("")}
+          </select>
+          ${s.hands==="one"?`<select style="margin-top:4px" onchange="planSet('${c.id}','oneHand',this.value)">
+            <option value="dominant" ${s.oneHand==="dominant"?"selected":""}>${c.spiral&&c.tap?"Dominant draws":"Dominant"}</option>
+            <option value="nondominant" ${s.oneHand==="nondominant"?"selected":""}>${c.spiral&&c.tap?"Non-dominant draws":"Non-dominant"}</option></select>`:""}</td>
+      <td>${c.lengthS===null?`<span class="note" style="margin:0">self-paced</span>`
+            :`<input type="number" min="5" max="180" step="5" value="${s.lengthS}" onchange="planSet('${c.id}','lengthS',+this.value)">`}</td>
+      <td class="note" style="padding-top:10px">${[c.spiral?"drawing":null,c.tap?"tapping":null,
+          c.audio?"<b>tones</b>":null].filter(Boolean).join(" · ")}</td>
+    </tr>`;
+  });
+  $("planTable").innerHTML=h;
+  planSummary();
+}
+function planSet(id,key,val){ PLAN[id][key]=val; renderPlan(); }
+
+// Consequences, not constraints: what this plan implies.
+function planSummary(){
+  let trials=0, secs=0, targetsByHand={dominant:0,nondominant:0};
+  CATALOGUE.forEach(c=>{
+    const s=PLAN[c.id]; if(!s.include) return;
+    const n = (s.hands==="each"||s.hands==="roles") ? s.repeats*2 : s.repeats;
+    trials+=n;
+    const len = c.lengthS===null ? 20 : s.lengthS;      // self-paced assumed ~20 s
+    secs += n*(len+OVERHEAD_S);
+    const a=AUDIO_DEFAULTS[c.id];
+    if(c.audio && a && a.ptg>0){
+      const tones=Math.floor((s.lengthS||a.durS)*1000/a.isi), t=Math.round(tones*a.ptg);
+      if(s.hands==="each"||s.hands==="roles"){ targetsByHand.dominant+=t*s.repeats; targetsByHand.nondominant+=t*s.repeats; }
+      else targetsByHand[s.oneHand==="nondominant"?"nondominant":"dominant"]+=t*s.repeats;
+    }
+  });
+  const mins=Math.round(secs/60);
+  const needsAudio=CATALOGUE.some(c=>PLAN[c.id].include && c.audio);
+  const soundOK=$("soundok") && $("soundok").checked;
+  const low=Math.min(targetsByHand.dominant,targetsByHand.nondominant);
+  $("planSummary").innerHTML=
+    `<div class="note"><b>${trials}</b> trials, roughly <b>${mins} min</b> including instruction
+     and transitions (${OVERHEAD_S} s allowed per trial; self-paced drawing assumed ~20 s).</div>` +
+    (low>0 ? `<div class="${low<12?"warn":"good"}">Oddball target events per hand:
+       <b>${targetsByHand.dominant}</b> dominant, <b>${targetsByHand.nondominant}</b> non-dominant.
+       ${low<12?`Below about 12 per hand, hit rate and d-prime are too coarse to estimate per hand —
+         raise repeats or trial length if those measures matter.`
+              :`At this count per-hand accuracy is estimable.`}</div>`:"") +
+    (needsAudio&&!soundOK?`<div class="warn">This plan includes conditions with tones, but the
+       sound check on the Participant page has not been confirmed for this participant.</div>`:"") +
+    (mins>60?`<div class="warn">Over an hour before consent, screening and cognitive testing.
+       BATTERY-001 allows omitting conditions for session length — plan which, rather than
+       discovering it mid-session.</div>`:"");
+}
+
+// Build the ordered trial list. Hands alternate dominant-first within a condition,
+// which keeps hand from confounding with practice and fatigue.
+function buildQueue(){
+  if(!$("pid").value.trim()){
+    alert("Enter a participant ID before building the trial list.\n\nWithout one, trials save as \"unnamed\" and cannot be told apart later.");
+    goPage(2); return;
   }
-  let len=0; for(let i=1;i<pts.length;i++) len+=Math.hypot(pts[i].x-pts[i-1].x, pts[i].y-pts[i-1].y);
-  return { pts, b, s, phi, pathMM:len };
+  QUEUE=[]; QPOS=0;
+  CATALOGUE.slice().sort((a,b)=>a.order-b.order).forEach(c=>{
+    const s=PLAN[c.id]; if(!s.include) return;
+    const push=(hand,role)=>QUEUE.push({ cond:c.id, hand, role, lengthS:s.lengthS,
+      status:"pending", skipReason:null });
+    if(s.hands==="each"){ for(let r=0;r<s.repeats;r++){ push("dominant"); push("nondominant"); } }
+    else if(s.hands==="roles"){ for(let r=0;r<s.repeats;r++){ push("dominant","A"); push("nondominant","B"); } }
+    else if(s.hands==="both"){ for(let r=0;r<s.repeats;r++) push("both"); }
+    else { for(let r=0;r<s.repeats;r++) push(s.oneHand); }
+  });
+  $("queueBox").classList.remove("hidden");
+  renderQueue();
+}
+function renderQueue(){
+  if(!QUEUE.length){ $("queueBox").classList.add("hidden"); $("nextUp").classList.add("hidden"); return; }
+  if(QPOS<QUEUE.length){
+    const q=QUEUE[QPOS];
+    $("nextUp").classList.remove("hidden");
+    $("nextUpBody").innerHTML=`<div style="font-size:19px"><b>${q.cond}</b> —
+      ${handWord(q.hand)}${q.role?" ("+q.role+")":""} · trial <b>${QPOS+1}</b> of ${QUEUE.length}
+      · ${q.lengthS===null?"self-paced":q.lengthS+" s"}</div>`;
+  } else {
+    $("nextUp").classList.remove("hidden");
+    $("nextUpBody").innerHTML=`<div class="good">All ${QUEUE.length} planned trials are done or
+      skipped. Build a new session, or change the plan and build again.</div>`;
+  }
+  $("queueBox").classList.remove("hidden");
+  let h=`<tr><th>#</th><th>Condition</th><th>Hand</th><th>Length</th><th>Status</th></tr>`;
+  QUEUE.forEach((q,i)=>{
+    const cls=i===QPOS?"now":(q.status!=="pending"?"done":"");
+    h+=`<tr><td class="${cls}">${i+1}</td><td class="${cls}">${q.cond}</td>
+        <td class="${cls}">${handWord(q.hand)}${q.role?" ("+q.role+")":""}</td>
+        <td class="${cls}">${q.lengthS===null?"self-paced":q.lengthS+" s"}</td>
+        <td class="${cls}">${q.status}${q.skipReason?" — "+q.skipReason:""}</td></tr>`;
+  });
+  $("queueTable").innerHTML=h;
+  renderStatus();
+}
+const handWord=h=> h==="both"?"both":h==="dominant"?"dominant":"non-dominant";
+// dominant/non-dominant resolve to a physical side only at run time
+function physHand(h){
+  const dom=$("domhand").value==="left"?"left":"right";
+  if(h==="both") return "both";
+  return h==="dominant"?dom:(dom==="right"?"left":"right");
+}
+function skipCurrent(){
+  if(QPOS>=QUEUE.length) return;
+  const why=prompt("Skip this trial. Reason (recorded on the session):","");
+  if(why===null) return;
+  QUEUE[QPOS].status="skipped"; QUEUE[QPOS].skipReason=why||"no reason given";
+  QPOS++; renderQueue();
+}
+// Another run of the battery inside the same attendance: visit unchanged, session +1.
+function newSession(){
+  const pid=pid_();
+  if(!pid){ alert("Enter a participant ID first."); goPage(2); return; }
+  if(!confirm(`Another session for ${pid} inside visit ${visitNo()}?\n\nTrial numbering restarts. Details and visit number stay.`)) return;
+  SESSION_KEY=nextSessionNumber(); SERIES=0;
+  Object.keys(REPEATS).forEach(k=>delete REPEATS[k]);
+  QUEUE=[]; QPOS=0; LAST=null;
+  $("sessnum").value=sessNo()+1;
+  renderStatus(); renderPlan(); renderQueue();
+}
+
+// A separate attendance: visit +1, session back to 1.
+function newVisit(){
+  const pid=pid_();
+  if(!pid){ alert("Enter a participant ID first."); goPage(2); return; }
+  if(!confirm(`New visit for ${pid}?\n\nVisit becomes ${visitNo()+1}, session restarts at 1. Details are kept.`)) return;
+  SESSION_KEY=nextSessionNumber(); SERIES=0;
+  Object.keys(REPEATS).forEach(k=>delete REPEATS[k]);
+  QUEUE=[]; QPOS=0; LAST=null;
+  $("visitno").value=visitNo()+1; $("sessnum").value=1;
+  renderStatus(); renderPlan(); renderQueue();
+}
+
+// A different person entirely.
+function newParticipant(){
+  if(!confirm("Start a new participant?\n\nThe fields on this page are cleared and a new session begins. Trials already saved on this device are kept.")) return;
+  ["pid","grp","byear","notes","sessnote"].forEach(id=>{ if($(id)) $(id).value=""; });
+  ["sex","bmonth"].forEach(id=>{ if($(id)) $(id).value=""; });
+  if($("domhand")) $("domhand").value="right";
+  // the pen and sound checks belong to the person, not the device
+  Object.keys(PENCHECK).forEach(k=>delete PENCHECK[k]);
+  if($("soundok")) $("soundok").checked=false;
+  if($("volstep")) $("volstep").value="0";
+  if($("audioroute")) $("audioroute").value="speaker";
+  penPadClear(); renderAudioCheck();
+  SERIES=0;
+  Object.keys(REPEATS).forEach(k=>delete REPEATS[k]);
+  QUEUE=[]; QPOS=0; LAST=null;
+  SESSION_KEY=nextSessionNumber();
+  $("visitno").value=1; $("sessnum").value=1;
+  updateAgeNote(); renderStatus(); renderPlan(); renderQueue();
+  goPage(2);
+  setTimeout(()=>{ const el=$("pid"); if(el) el.focus(); },60);
+}
+function nextIds(pid,cond,H){
+  const k=`${pid}|${cond}|${H}`; REPEATS[k]=(REPEATS[k]||0)+1; SERIES+=1;
+  return {repeat:REPEATS[k],series:SERIES};
+}
+
+/* ------------------------------------------------------- audio defaults table */
+function renderAudioTable(){
+  let h=`<tr><th>Condition</th><th>Mean ISI (ms)</th><th>Jitter (%)</th>
+         <th>Target prob.</th><th>Tone (ms)</th><th>Lead-in (ms)</th>
+         <th>Usable window</th></tr>`;
+  Object.entries(AUDIO_DEFAULTS).forEach(([k,a])=>{
+    const minISI=a.isi*(1-a.jit/100);
+    const limit=a.ptg>0 ? 2*minISI : minISI;
+    h+=`<tr><td><b>${k}</b><br><span class="note" style="margin:0">${a.label}</span></td>
+      <td><input type="number" value="${a.isi}" min="300" max="4000" step="50" onchange="audioSet('${k}','isi',+this.value)"></td>
+      <td><input type="number" value="${a.jit}" min="0" max="45" step="1" onchange="audioSet('${k}','jit',+this.value)"></td>
+      <td><input type="number" value="${a.ptg}" min="0" max="0.4" step="0.01" onchange="audioSet('${k}','ptg',+this.value)"></td>
+      <td><input type="number" value="${a.tone}" min="30" max="200" step="10" onchange="audioSet('${k}','tone',+this.value)"></td>
+      <td><input type="number" value="${a.lead}" min="0" max="3000" step="100" onchange="audioSet('${k}','lead',+this.value)"></td>
+      <td class="num">${Math.round(limit)} ms</td></tr>`;
+  });
+  $("audioTable").innerHTML=h;
+
+  let notes=`<div class="note">Trial length is set once, per condition, in the session plan —
+    not here — because it belongs to the trial rather than the stream.</div>
+    <div class="note"><b>Usable window</b> is the longest response time that can still
+    be attributed to the right event. A tap slower than this arrives after the next event the
+    participant could be responding to, so it cannot be told apart from a response to that one.
+    It is not a setting — it follows from the ISI and jitter above.</div>`;
+  Object.entries(AUDIO_DEFAULTS).forEach(([k,a])=>{
+    const minISI=a.isi*(1-a.jit/100), odd=a.ptg>0, limit=odd?2*minISI:minISI;
+    notes+=`<div class="${limit<950?"warn":"good"}"><b>${k}</b>: shortest interval
+      ${Math.round(minISI)} ms. ${odd
+        ? `Only targets need a response and no two are adjacent, so the binding gap is
+           target-to-target — at worst ${Math.round(limit)} ms.`
+        : `Every tone needs a response, so the binding gap is the interval itself,
+           ${Math.round(limit)} ms.`}
+      ${limit<950?`Reported reaction time in Lewy body dementia sits near 900 ms before
+        dual-task load, so this works as a loader but loses slow responses as a measure.`:``}</div>`;
+  });
+  const box=$("audioTable").parentElement;
+  let sib=box.nextElementSibling;
+  if(sib && sib.dataset && sib.dataset.audionotes) sib.remove();
+  const div=document.createElement("div"); div.dataset.audionotes="1"; div.innerHTML=notes;
+  box.insertAdjacentElement("afterend",div);
+}
+function audioSet(k,f,v){ AUDIO_DEFAULTS[k][f]=v; renderAudioTable(); planSummary(); }
+
+/* ------------------------------------------------------- geometry */
+function spiralPath(radius,turns,direction,endAngleDeg,nPts=3000){
+  const s=direction==="cw"?-1:1, phi=endAngleDeg*Math.PI/180;
+  const b=radius/(turns*2*Math.PI), pts=[], thMax=turns*2*Math.PI;
+  for(let i=0;i<nPts;i++){ const th=thMax*i/(nPts-1), r=b*th, a=s*th+phi;
+    pts.push({x:r*Math.cos(a),y:r*Math.sin(a),r,a}); }
+  let len=0; for(let i=1;i<pts.length;i++) len+=Math.hypot(pts[i].x-pts[i-1].x,pts[i].y-pts[i-1].y);
+  return {pts,b,s,phi,pathMM:len};
 }
 function updateGeo(){
-  if (!$("pitch")) return;
-  const pitch=+$("pitch").value, turns=+$("turns").value;
-  const radius=pitch*turns, p=parseFloat($("ppmm").value)||3.78;
-  const sp = spiralPath(radius, turns, "cw", +$("endang").value, 600);
-  $("geonote").innerHTML = `Outer radius <b>${radius} mm</b> (diameter ${2*radius} mm),
-    path about <b>${Math.round(sp.pathMM)} mm</b>. Needs ${((2*radius+14)*p).toFixed(0)} px
-    of drawing region.`;
+  if(!$("pitch")) return;
+  const pitch=+$("pitch").value, turns=+$("turns").value, radius=pitch*turns;
+  const p=parseFloat($("ppmm").value)||3.78;
+  const sp=spiralPath(radius,turns,"cw",+$("endang").value,600);
+  $("geonote").innerHTML=`Outer radius <b>${radius} mm</b> (diameter ${2*radius} mm), path about
+    <b>${Math.round(sp.pathMM)} mm</b>, needing ${((2*radius+14)*p).toFixed(0)} px of drawing region.`;
 }
-["pitch","turns","endang"].forEach(id => $(id).addEventListener("input", updateGeo));
-$("preset").addEventListener("change", e => {
-  if(!e.target.value) return;
-  const [p,t] = e.target.value.split(",");
-  $("pitch").value=p; $("turns").value=t; updateGeo();
-});
+["pitch","turns","endang"].forEach(id=>$(id).addEventListener("input",updateGeo));
+$("preset").addEventListener("change",e=>{ if(!e.target.value) return;
+  const [p,t]=e.target.value.split(","); $("pitch").value=p; $("turns").value=t; updateGeo(); });
 updateGeo();
 
-// ---------------------------------------------------------------- sequence
-
+/* ------------------------------------------------------- sequence */
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
   t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
-
-function makeSequence(durationS, meanISI, jitter, pTarget, seed, det){
+let LAST_SEED=null;
+function drawSeed(){
+  LAST_SEED = $("seedmode").value==="fixed" ? 1
+            : (Math.floor(Math.random()*2147483647)+1);
+  return LAST_SEED;
+}
+function makeSequence(durationS,meanISI,jitter,pTarget,seed){
+  const det = pTarget<=0;
   const rng=mulberry32(seed>>>0), durMs=durationS*1000;
   const n=Math.floor(durMs/meanISI), t=det?0:Math.round(n*pTarget);
   const lo=meanISI*(1-jitter), hi=meanISI*(1+jitter);
   if(n<4) throw new Error(`Only ${n} tones at this ISI — lengthen the stream.`);
-  if(!det && t<1) throw new Error("Target probability yields no targets.");
-  if(!det && t>Math.ceil((n-2)/2)) throw new Error(`Cannot place ${t} non-adjacent targets.`);
+  if(!det&&t<1) throw new Error("Target probability yields no targets.");
+  if(!det&&t>Math.ceil((n-2)/2)) throw new Error(`Cannot place ${t} non-adjacent targets.`);
   let iv=null;
   for(let k=0;k<5000;k++){
     const c=Array.from({length:n},()=>lo+rng()*(hi-lo));
-    const scale=durMs/c.reduce((a,b)=>a+b,0), s=c.map(v=>v*scale);
-    if(Math.abs(scale-1)<=0.05){ iv=s; break; }
+    const sc=durMs/c.reduce((a,b)=>a+b,0), s=c.map(v=>v*sc);
+    if(Math.abs(sc-1)<=0.05){ iv=s; break; }
   }
   if(!iv) throw new Error("Could not generate intervals — loosen the parameters.");
   let pos=[];
-  if(!det){
-    const m=n-2, pool=[]; for(let i=0;i<m-t+1;i++) pool.push(i);
+  if(!det){ const m=n-2,pool=[]; for(let i=0;i<m-t+1;i++) pool.push(i);
     for(let i=pool.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
-    pos=pool.slice(0,t).sort((a,b)=>a-b).map((b,i)=>b+i+2);
-  }
+    pos=pool.slice(0,t).sort((a,b)=>a-b).map((b,i)=>b+i+2); }
   const onsets=[0]; for(let i=0;i<n-1;i++) onsets.push(onsets[i]+iv[i]);
   const isTarget=Array(n).fill(false); pos.forEach(p=>isTarget[p]=true);
-  return { n, t, onsets, intervals:iv, isTarget, positions:pos, det:!!det,
-           minISI:Math.min(...iv), maxISI:Math.max(...iv), durationMs:durMs, source:"browser" };
+  return {n,t,onsets,intervals:iv,isTarget,positions:pos,det,
+          minISI:Math.min(...iv),maxISI:Math.max(...iv),durationMs:durMs,seed};
 }
 
-let LOADED_SEQ=null;
-$("seqfile").addEventListener("change", ev => {
-  const f=ev.target.files[0]; if(!f) return;
-  const rd=new FileReader();
-  rd.onload=()=>{ try{
-    const d=JSON.parse(rd.result);
-    if(!d.onsets_ms||!d.tone_type) throw new Error("not a sequence definition");
-    LOADED_SEQ={ n:d.n_tones, t:d.n_targets, onsets:d.onsets_ms, intervals:d.intervals_ms,
-      isTarget:d.tone_type.map(x=>x==="target"), positions:d.target_positions||[],
-      det:(d.mode==="DET"), minISI:d.min_isi_ms, maxISI:d.max_isi_ms,
-      durationMs:d.stream_duration_ms, source:"R:"+(d.sequence_id||"unknown"), wav_md5:d.wav_md5||null };
-    $("seqnote").innerHTML=`<div class="good">Loaded <b>${d.sequence_id}</b> — ${d.n_tones} tones,
-      ${d.n_targets} targets, min ISI ${Math.round(d.min_isi_ms)} ms. Overrides the stream settings.</div>`;
-  }catch(e){ $("seqnote").innerHTML=`<div class="bad">Could not read that file: ${e.message}</div>`; } };
-  rd.readAsText(f);
-});
-
-function updateISIWarn(){
-  if(!$("isi")) return;
-  const mean=+$("isi").value, jit=+$("jit").value/100, minISI=mean*(1-jit);
-  const n=Math.floor((+$("dur").value)*1000/mean), t=Math.round(n*(+$("ptg").value));
-  let msg=`<div class="note">${n} tones, ${t} targets. Shortest interval <b>${Math.round(minISI)} ms</b>.</div>`;
-  if(minISI<700) msg+=`<div class="warn">Attribution is capped at ${Math.round(minISI)} ms:
-    a tap slower than that lands after the next tone and is assigned to the wrong one.
-    Fine if the tones are only a loader; unreliable if you want reaction time or hit rate —
-    reported RT in Lewy body dementia sits near 900 ms before any dual-task load.</div>`;
-  $("isiwarn").innerHTML=msg;
-}
-["isi","jit","dur","ptg"].forEach(id => $(id).addEventListener("input", updateISIWarn));
-updateISIWarn();
-
-// ---------------------------------------------------------------- audio
-
-let ctx=null, MASTER=null, OSCS=[];
+/* ------------------------------------------------------- audio */
+let ctx=null,MASTER=null,OSCS=[];
 function audio(){ if(!ctx) ctx=new (window.AudioContext||window.webkitAudioContext)();
   if(ctx.state==="suspended") ctx.resume(); return ctx; }
 function newMaster(){ const c=audio(); stopAudio();
   MASTER=c.createGain(); MASTER.gain.value=1; MASTER.connect(c.destination); OSCS=[]; return MASTER; }
 function stopAudio(){
-  try{ if(MASTER) MASTER.gain.setValueAtTime(0, audio().currentTime); }catch(e){}
-  OSCS.forEach(o=>{ try{o.stop();}catch(e){} }); OSCS=[];
+  try{ if(MASTER) MASTER.gain.setValueAtTime(0,audio().currentTime); }catch(e){}
+  OSCS.forEach(o=>{try{o.stop();}catch(e){}}); OSCS=[];
   if(MASTER){ try{MASTER.disconnect();}catch(e){} MASTER=null; }
 }
 function tone(at,freq,durMs,level){
-  const c=audio(), o=c.createOscillator(), g=c.createGain();
+  const c=audio(),o=c.createOscillator(),g=c.createGain();
   const d=durMs/1000, ramp=Math.min(.01,d/3);
   o.type="sine"; o.frequency.value=freq;
-  g.gain.setValueAtTime(0,at);
-  g.gain.linearRampToValueAtTime(level,at+ramp);
-  g.gain.setValueAtTime(level,at+d-ramp);
-  g.gain.linearRampToValueAtTime(0,at+d);
-  o.connect(g); g.connect(MASTER||c.destination); o.start(at); o.stop(at+d+.02);
-  OSCS.push(o);
+  g.gain.setValueAtTime(0,at); g.gain.linearRampToValueAtTime(level,at+ramp);
+  g.gain.setValueAtTime(level,at+d-ramp); g.gain.linearRampToValueAtTime(0,at+d);
+  o.connect(g); g.connect(MASTER||c.destination); o.start(at); o.stop(at+d+.02); OSCS.push(o);
 }
-function demo(w){ const c=audio(), t0=c.currentTime+.08;
-  tone(t0, w==="tgt"? +$("ftgt").value : +$("fstd").value, +$("tone").value, +$("lvl").value); }
+function demo(w){ const c=audio(), t0=c.currentTime+.08, lv=+$("lvl").value;
+  const fs=+$("fstd").value, ft=+$("ftgt").value;
+  if(w==="alt"){ for(let i=0;i<6;i++) tone(t0+i*0.55, i%2?ft:fs, 100, lv); }
+  else tone(t0, w==="tgt"?ft:fs, 100, lv); }
 
-// ---------------------------------------------------------------- layout
+/* ------------------------------------------------------- layout + draw */
+let L=null,SPIRAL=null,STROKES=[],TAPS=[],TAPFLASH=null;
+const FLASH_MS=220;
+let TRIAL=null;                   // the queue item being run
 
-let L=null;
 function layout(){
   const p=parseFloat($("ppmm").value)||3.78;
   const cv=$("canvas"), dpr=window.devicePixelRatio||1;
-  const W=window.innerWidth, H=window.innerHeight;
+  const W=window.innerWidth,H=window.innerHeight;
   cv.width=W*dpr; cv.height=H*dpr; cv.style.width=W+"px"; cv.style.height=H+"px";
   const g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0);
-
   const sa=safeAreaMM();
   const ux0=Math.max(sa.left,2)*p, uy0=Math.max(sa.top,2)*p;
   const uw=W-ux0-Math.max(sa.right,2)*p, uh=H-uy0-Math.max(sa.bottom,2)*p;
+  const topPad=100, cy=uy0+topPad+(uh-topPad)/2;
 
-  const nd=needs(), cond=$("cond").value;
-  const topPad = 100;                          // clear of the administrator bar
-  const cy = uy0 + topPad + (uh-topPad)/2;
+  const c=byId(TRIAL.cond);
+  let dx0=ux0,dw=uw,tapCx=null,zones=null,splitX=null;
+  const drawSide = TRIAL.drawHand==="left" ? "left" : "right";
 
-  let dx0=ux0, dw=uw, tapCx=null, zones=null, splitX=null;
+  if(c.spiral && c.tap){
+    const split=clamp(+$("split").value,.4,1); dw=uw*split;
+    if(drawSide==="left"){ dx0=ux0; tapCx=ux0+dw+(uw-dw)/2; splitX=ux0+dw; }
+    else { dx0=ux0+(uw-dw); tapCx=ux0+(uw-dw)/2; splitX=ux0+(uw-dw); }
+  } else if(c.spiral){ dx0=ux0; dw=uw; }
+  else if(c.zones===2){ const gap=(+$("zonegap").value)*p, mid=ux0+uw/2;
+    zones=[{id:"left",cx:mid-gap/2},{id:"right",cx:mid+gap/2}]; }
+  else if(c.zones===1){ tapCx = c.audio ? ux0+uw/2
+    : (TRIAL.tapHand==="left" ? ux0+uw*0.28 : ux0+uw*0.72); }
 
-  if (nd.spiral && nd.tap) {                   // dual task: split screen
-    const split = clamp(+$("split").value,.4,1);
-    const drawLeft = $("hand").value==="left";
-    dw = uw*split;
-    if (drawLeft) { dx0=ux0;           tapCx=ux0+dw+(uw-dw)/2; splitX=ux0+dw; }
-    else          { dx0=ux0+(uw-dw);   tapCx=ux0+(uw-dw)/2;    splitX=ux0+(uw-dw); }
-  } else if (nd.spiral) {                      // spiral only: full width, no tap zone
-    dx0=ux0; dw=uw;
-  } else if (nd.zones===2) {                   // bimanual: two zones
-    const gap=(+$("zonegap").value)*p, mid=ux0+uw/2;
-    zones=[{id:"left",cx:mid-gap/2},{id:"right",cx:mid+gap/2}];
-  } else if (nd.zones===1) {                   // one zone
-    if (cond==="TAP") {                        // on the tapping hand's side
-      tapCx = $("taphand").value==="left" ? ux0+uw*0.28 : ux0+uw*0.72;
-    } else tapCx = ux0+uw/2;                   // audio only: centred
-  }
-
-  L={ p,W,H,g,ux0,uy0,uw,uh,dw,dx0,tapCx,zones,splitX,
-      spiralOn:nd.spiral, cx:dx0+dw/2, cy, safeAreaMM:sa };
-
-  // The clock belongs to the tapping task, not the drawing, which is untimed.
-  const hudX = zones ? (zones[0].cx+zones[1].cx)/2 : (tapCx!==null ? tapCx : dx0+dw/2);
-  $("hud").style.left = hudX+"px";
-  $("hud").style.top = Math.max(topPad+6, cy - (+$("tapdia").value/2)*p - 54)+"px";
-  $("hud").style.display = (nd.tap ? "block" : "none");   // no clock for spiral only
+  L={p,W,H,g,ux0,uy0,uw,uh,dw,dx0,tapCx,zones,splitX,spiralOn:!!c.spiral,
+     cx:dx0+dw/2,cy,safeAreaMM:sa,topPad};
+  $("hud").style.display = (c.tap||c.audio) ? "block" : "none";
   return L;
 }
-const mm2px = v => v*L.p;
-const toCanvas = (xmm,ymm) => ({ x:L.cx+xmm*L.p, y:L.cy-ymm*L.p });
-const toMM = (px,py) => ({ x:(px-L.cx)/L.p, y:(L.cy-py)/L.p });
-
-let SPIRAL=null, STROKES=[], TAPS=[], TAPFLASH=null;
+const mm2px=v=>v*L.p;
+const toCanvas=(x,y)=>({x:L.cx+x*L.p,y:L.cy-y*L.p});
+const toMM=(x,y)=>({x:(x-L.cx)/L.p,y:(L.cy-y)/L.p});
 
 function drawScene(){
-  const g=L.g;
+  const g=L.g, c=byId(TRIAL.cond);
   g.clearRect(0,0,L.W,L.H); g.fillStyle="#fff"; g.fillRect(0,0,L.W,L.H);
   g.textAlign="center";
+  if(L.splitX!==null){ g.strokeStyle="#c9ced6"; g.lineWidth=1; g.setLineDash([5,5]);
+    g.beginPath(); g.moveTo(L.splitX,L.uy0+L.topPad); g.lineTo(L.splitX,L.uy0+L.uh); g.stroke();
+    g.setLineDash([]); }
 
-  if (L.splitX!==null){
-    g.strokeStyle="#c9ced6"; g.lineWidth=1; g.setLineDash([5,5]);
-    g.beginPath(); g.moveTo(L.splitX,L.uy0); g.lineTo(L.splitX,L.uy0+L.uh); g.stroke();
-    g.setLineDash([]);
-  }
-
-  if (L.spiralOn){
-    const pitch=+$("pitch").value, turns=+$("turns").value, radius=pitch*turns;
-    const dir=$("hand").value==="left" ? "ccw" : "cw";
+  if(L.spiralOn){
+    const pitch=+$("pitch").value,turns=+$("turns").value,radius=pitch*turns;
+    const dir=TRIAL.drawHand==="left"?"ccw":"cw";
     const sp=spiralPath(radius,turns,dir,+$("endang").value);
-    SPIRAL={ radius,turns,pitch,direction:dir,pathMM:sp.pathMM,instruction:$("instr").value };
-
-    const sd=+$("startdia").value, c0=toCanvas(0,0);
+    SPIRAL={radius,turns,pitch,direction:dir,pathMM:sp.pathMM,instruction:$("instr").value,
+            implement:TRIAL.implement,template_style:$("tmpl").value};
+    const sd=+$("startdia").value,c0=toCanvas(0,0);
     g.fillStyle="#D9EFD6"; g.strokeStyle="#4C8C4A"; g.lineWidth=1;
     g.beginPath(); g.arc(c0.x,c0.y,mm2px(sd/2),0,7); g.fill(); g.stroke();
 
-    g.strokeStyle="#16191d"; g.lineWidth=1.6;
-    g.beginPath(); sp.pts.forEach((q,i)=>{ const c=toCanvas(q.x,q.y);
-      i? g.lineTo(c.x,c.y):g.moveTo(c.x,c.y); }); g.stroke();
+    // Template line. Grey by default: continuous, so the guide is unbroken and the
+    // participant's own ink still stands out against it. Dashes are offered for
+    // comparison but are not uniform across the spiral -- at fixed dash length the
+    // apparent density differs between the tight inner turns and the outer ones.
+    const style=$("tmpl").value;
+    g.strokeStyle = style==="black" ? "#16191d" : "#737a85";
+    g.lineWidth   = style==="black" ? 1.6 : 1.8;
+    if(style==="dotted"){ g.setLineDash([0.1, mm2px(1.1)]); g.lineCap="round"; g.lineWidth=mm2px(0.6); }
+    else g.lineCap="butt";
+    g.beginPath(); sp.pts.forEach((q,i)=>{const t=toCanvas(q.x,q.y); i?g.lineTo(t.x,t.y):g.moveTo(t.x,t.y);});
+    g.stroke();
+    g.setLineDash([]); g.lineCap="butt";
 
-    const last=sp.pts[sp.pts.length-1], ux=Math.cos(last.a), uy=Math.sin(last.a);
-    const e1=toCanvas(last.x-ux*3,last.y-uy*3), e2=toCanvas(last.x+ux*7,last.y+uy*7);
-    g.lineWidth=1.8; g.beginPath(); g.moveTo(e1.x,e1.y); g.lineTo(e2.x,e2.y); g.stroke();
-    const et=toCanvas(last.x+ux*13,last.y+uy*13);
-    g.fillStyle="#5d6570"; g.font="13px system-ui"; g.fillText("End",et.x,et.y);
-    g.fillStyle="#2F6B2D"; g.fillText("start",c0.x,c0.y+mm2px(sd/2)+15);
+    // Stop marker: an open ring on the path itself. The old radial tick was a straight
+    // line running off the spiral, and participants traced it.
+    const last=sp.pts[sp.pts.length-1];
+    const ec=toCanvas(last.x,last.y);
+    g.strokeStyle="#b4531f"; g.lineWidth=2; g.fillStyle="#fff";
+    g.beginPath(); g.arc(ec.x,ec.y,mm2px(3),0,7); g.fill(); g.stroke();
+    const ux=Math.cos(last.a),uy=Math.sin(last.a);
+    const et=toCanvas(last.x+ux*11,last.y+uy*11);
+    g.fillStyle="#b4531f"; g.font="600 14px system-ui"; g.fillText("End",et.x,et.y+4);
+    g.fillStyle="#2F6B2D"; g.font="13px system-ui"; g.fillText("start",c0.x,c0.y+mm2px(sd/2)+15);
   } else SPIRAL=null;
 
   const td=+$("tapdia").value;
   const circle=(cx,label,id)=>{
-    const lit = TAPFLASH===id;
+    const lit=TAPFLASH&&TAPFLASH.zone===id&&performance.now()<TAPFLASH.until;
     g.strokeStyle=lit?"#1d5fa8":"#8a929c"; g.fillStyle=lit?"#1d5fa8":"#f2f5f8"; g.lineWidth=2;
     g.beginPath(); g.arc(cx,L.cy,mm2px(td/2),0,7); g.fill(); g.stroke();
     g.fillStyle=lit?"#fff":"#5d6570"; g.font="16px system-ui"; g.fillText(label,cx,L.cy+6);
   };
-  if (L.zones) L.zones.forEach(z=>circle(z.cx, z.id==="left"?"left hand":"right hand", z.id));
-  else if (L.tapCx!==null) circle(L.tapCx,"tap","tap");
+  if(L.zones) L.zones.forEach(z=>circle(z.cx,z.id==="left"?"left hand":"right hand",z.id));
+  else if(L.tapCx!==null) circle(L.tapCx,"tap","tap");
 
   g.strokeStyle="#1d5fa8"; g.lineWidth=2.2; g.lineCap="round"; g.lineJoin="round";
-  for(const st of STROKES){
-    if(st.length<2) continue;
-    g.beginPath(); st.forEach((q,i)=>{ const c=toCanvas(q.x,q.y);
-      i? g.lineTo(c.x,c.y):g.moveTo(c.x,c.y); }); g.stroke();
-  }
+  for(const st of STROKES){ if(st.length<2) continue;
+    g.beginPath(); st.forEach((q,i)=>{const t=toCanvas(q.x,q.y); i?g.lineTo(t.x,t.y):g.moveTo(t.x,t.y);});
+    g.stroke(); }
 }
 
-// ---------------------------------------------------------------- trial
+/* ------------------------------------------------------- trial engine */
+let RUN=null,RAF=null,LAST=null;
 
-let RUN=null, RAF=null, LAST=null;
+function runCurrent(){
+  if(QPOS>=QUEUE.length){ alert("The trial list is finished. Build a new session, or add trials on the Session page."); goPage(3); return; }
+  const q=QUEUE[QPOS], c=byId(q.cond);
+  TRIAL={ ...q, index:QPOS,
+    drawHand: c.spiral ? physHand(q.hand) : null,
+    tapHand:  c.zones===2 ? "both"
+             : c.spiral&&c.tap ? (physHand(q.hand)==="right"?"left":"right")
+             : physHand(q.hand),
+    implement: c.implement || "pen" };
+  openTrial(false);
+}
 
-function trialLengthS(){
-  const nd=needs();
-  return nd.audio ? +$("dur").value : +$("tapdur").value;
+function audioCfgFor(cond){
+  const c=byId(cond); if(!c.audio) return null;
+  const a=AUDIO_DEFAULTS[cond]; if(!a) return null;
+  return { ...a, key:cond, durS: TRIAL.lengthS ?? a.durS };
 }
 
 function openTrial(instructionOnly){
-  $("err").innerHTML="";
-  const cond=$("cond").value, nd=needs();
+  const c=byId(TRIAL.cond);
   let seq=null;
-  if(nd.audio && !instructionOnly){
-    try{ seq = LOADED_SEQ || makeSequence(+$("dur").value, +$("isi").value,
-           +$("jit").value/100, +$("ptg").value, +$("seed").value,
-           cond==="DET"||cond==="SP_DET"); }
-    catch(e){ $("err").innerHTML=`<div class="bad">${e.message}</div>`; return; }
+  const cfg=audioCfgFor(TRIAL.cond);
+  if(cfg && !instructionOnly){
+    try{ seq=makeSequence(cfg.durS,cfg.isi,cfg.jit/100,cfg.ptg,drawSeed()); }
+    catch(e){ alert("Cannot build the stream for this trial:\n\n"+e.message); return; }
     audio();
   }
-
   STROKES=[]; TAPS=[]; TAPFLASH=null;
   $("stage").classList.add("on");
   layout(); drawScene();
-  $("hud").textContent=""; $("ctrl").innerHTML="";
 
   const ov=$("overlay"); ov.style.display="flex";
-  ov.innerHTML = `<h3>${cond}</h3>` +
-    (nd.spiral?`<p>Start at the green dot and draw outwards until you reach <b>End</b>, ` +
-      ($("instr").value==="between" ? `keeping your line in the space between the turns.`
-                                    : `following the line as closely as you can.`) + `</p>`:"") +
-    (cond==="ODT"||cond==="SP_ODT"?`<p>Tap the circle every time you hear a <b>high</b> beep. Ignore the low ones.</p>`:"") +
-    (cond==="DET"||cond==="SP_DET"?`<p>Tap the circle every time you hear <b>any</b> beep.</p>`:"") +
-    (cond==="TAP"?`<p>Tap the circle as fast as you can with your ${$("taphand").value} index finger.</p>`:"") +
-    (cond==="BMIN"?`<p>Tap both circles with your index fingers <b>at the same time</b>, as fast as you can.</p>`:"") +
-    (cond==="BMANT"?`<p>Tap the circles <b>one after the other</b>, left then right, as fast as you can. Only one finger touches at a time.</p>`:"") +
-    (cond==="SP"?`<p style="font-size:17px;color:#5d6570">Take your time. Press End when you have finished.</p>`
-               : `<p style="font-size:17px;color:#5d6570">The trial lasts ${trialLengthS()} seconds.</p>`);
-
-  const cont=document.createElement("div");
-  cont.className="btnrow"; cont.style.justifyContent="center"; cont.style.marginTop="26px";
-  const b=document.createElement("button");
-  b.className="big"; b.textContent = instructionOnly ? "Close" : "Next";
-  b.style.fontSize="26px"; b.style.padding="22px 56px";
-  b.onclick = () => {
-    ov.style.display="none";
-    if(instructionOnly){ $("stage").classList.remove("on"); return; }
-    readyTrial(seq, cond, nd);
-  };
-  cont.appendChild(b); ov.appendChild(cont);
-}
-
-// Trial screen with the stimulus visible and an explicit START. Nothing is
-// recorded and no tone is scheduled until START is pressed.
-function readyTrial(seq, cond, nd){
-  $("hud").textContent = cond==="SP" ? "" : trialLengthS()+" s";
-  $("ctrl").innerHTML="";
-  const b=document.createElement("button");
-  b.textContent="START";
-  b.onclick=()=>{ $("ctrl").innerHTML=""; runTrial(seq,cond,nd); };
-  $("ctrl").appendChild(b);
-  RUN={ ready:true };
-  const loop=()=>{ drawScene(); RAF=requestAnimationFrame(loop); };
-  cancelAnimationFrame(RAF); loop();
-}
-
-function runTrial(seq, cond, nd){
-  const a = seq ? audio() : null;
-  const lead = 0.4;                              // brief settle after START
-  const perf0 = performance.now() + lead*1000;
-  const outLat = seq ? (a.outputLatency||0)*1000 : 0;
-  const baseLat = seq ? (a.baseLatency||0)*1000 : 0;
-  if(seq){
-    newMaster();
-    const t0=a.currentTime+lead;
-    seq.onsets.forEach((on,i)=>
-      tone(t0+on/1000, seq.isTarget[i]? +$("ftgt").value : +$("fstd").value,
-           +$("tone").value, +$("lvl").value));
+  const lines=[];
+  if(c.spiral){
+    const impl = TRIAL.implement==="finger" ? "finger" : "pen";
+    lines.push(`<p>Start at the green dot and draw outwards to <b>End</b>, ` +
+      ($("instr").value==="between"?`keeping your line in the space between the turns.`
+                                   :`following the line as closely as you can.`) + `</p>`);
+    lines.push(`<p style="font-size:18px;text-align:left;max-width:640px;margin:6px auto 0">
+      <b>One continuous line</b> — do not lift the ${impl} until you reach End.<br>
+      <b>Keep your hand and forearm off the table</b> — move from the shoulder, not the wrist.<br>
+      ${impl==="pen"?`<b>Hold the pen normally</b>, not in a fist.`:``}</p>`);
+    lines.push(`<div style="display:flex;gap:20px;align-items:center;justify-content:center;
+      margin-top:14px;flex-wrap:wrap">
+      <img src="${POSTURE_PNG}" alt="posture and grip" style="width:min(48vw,400px);height:auto">
+      <div style="width:min(26vw,175px)">${spiralFigureSVG($("instr").value)}</div>
+    </div>`);
   }
-  // Drawing is never on the clock. Any condition with a spiral stays open until
-  // END is pressed, even after the tones and the tapping window have finished.
-  const untimed = nd.spiral;
-  const durMs = seq ? seq.durationMs : trialLengthS()*1000;
+  if(c.audio && cfg.ptg>0) lines.push(`<p>Tap the circle every time you hear a <b>high</b> beep. Ignore the low ones.</p>`);
+  if(c.audio && cfg.ptg<=0) lines.push(`<p>Tap the circle every time you hear <b>any</b> beep.</p>`);
+  if(c.count) lines.push(`<p><b>Count the high beeps silently</b> as you draw. Do not tap.
+    Tell me the number when the trial ends.</p>`);
+  if(!c.audio && c.zones===1) lines.push(`<p>Tap the circle as fast as you can.</p>`);
+  if(c.zones===2) lines.push(`<p>Tap both circles ` +
+    (TRIAL.cond==="BMANT"?`<b>one after the other</b>, left then right`:`<b>at the same time</b>`) +
+    `, as fast as you can.</p>`);
+  ov.innerHTML=`<h3>${TRIAL.cond} — trial ${TRIAL.index+1} of ${QUEUE.length}</h3>`+lines.join("")+
+    `<p style="font-size:16px;color:#5d6570">${c.lengthS===null?"Take your time; the trial ends when the administrator presses End."
+      :"The tone task lasts "+(TRIAL.lengthS??cfg?.durS)+" seconds."}</p>`;
+  const wrap=document.createElement("div"); wrap.className="btnrow";
+  wrap.style.justifyContent="center"; wrap.style.marginTop="24px";
+  const b=document.createElement("button"); b.className="big";
+  b.textContent=instructionOnly?"Close":"Next";
+  b.style.fontSize="26px"; b.style.padding="22px 56px";
+  b.onclick=()=>{ ov.style.display="none";
+    if(instructionOnly){ $("stage").classList.remove("on"); return; }
+    readyTrial(seq,c); };
+  wrap.appendChild(b); ov.appendChild(wrap);
+}
 
-  RUN={ seq, cond, perf0, outLat, baseLat, durMs, spiralOn:nd.spiral, nd,
-        bimanual:nd.zones===2, selfPaced:untimed, startedISO:new Date().toISOString(),
-        firstContactMs:null, toneClockDone:false };
+// The uploaded figure shows drawing BETWEEN the turns. Tracing needs its own picture,
+// so the spiral panel is generated from the same geometry the trial uses and switches
+// with the instruction.
+function spiralFigureSVG(mode){
+  const R=58, turns=4, pitch=R/turns;
+  const sp=spiralPath(R,turns,"cw",90,700);
+  const d=pts=>pts.map((q,i)=>(i?"L":"M")+(75+q.x).toFixed(1)+","+(75-q.y).toFixed(1)).join(" ");
+  const cut=Math.round(sp.pts.length*0.70);            // drawn part-way, as in the figure
+  const drawnPts = mode==="between"
+    ? sp.pts.slice(0,cut).map(q=>{ const r=q.r+pitch/2;
+        return {x:r*Math.cos(q.a), y:r*Math.sin(q.a)}; })
+    : sp.pts.slice(0,cut);
+  const tip=drawnPts[drawnPts.length-1];
+  return `<svg viewBox="0 0 150 158" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg">
+    <path d="${d(sp.pts)}" fill="none" stroke="#9aa2ac"
+      stroke-width="${mode==="between"?1.1:2.4}" ${mode==="between"?'stroke-dasharray="3.2 3.2"':''}/>
+    <path d="${d(drawnPts)}" fill="none" stroke="#d0342c" stroke-width="1.7" stroke-linecap="round"/>
+    <circle cx="${(75+tip.x).toFixed(1)}" cy="${(75-tip.y).toFixed(1)}" r="2.4" fill="#d0342c"/>
+    <text x="75" y="154" text-anchor="middle" font-family="system-ui" font-size="9" fill="#5d6570">
+      ${mode==="between"?"keep your line in the gap":"follow the line itself"}</text>
+  </svg>`;
+}
+
+function reminderText(){
+  const c=byId(TRIAL.cond), bits=[];
+  if(c.spiral){ bits.push($("instr").value==="between"?"between the turns":"trace the line");
+    bits.push(TRIAL.implement==="finger"?"index finger":"pen");
+    bits.push(TRIAL.drawHand+" hand draws"); }
+  if(c.zones===2) bits.push("both index fingers");
+  else if(c.tap) bits.push(TRIAL.tapHand+" index finger taps");
+  const cfg=audioCfgFor(TRIAL.cond);
+  if(byId(TRIAL.cond).count) bits.push("silent count, no tapping");
+  else if(cfg) bits.push(cfg.ptg>0?"high tones only":"every tone");
+  return `<b>${TRIAL.cond}</b> ${TRIAL.index+1}/${QUEUE.length} · ${bits.join(" · ")}`;
+}
+
+function readyTrial(seq,c){
+  $("hud").textContent = c.lengthS===null && !c.audio ? "" : (TRIAL.lengthS??"")+" s";
+  $("reminder").innerHTML=reminderText();
+  $("ctrl").innerHTML="";
+  const b=document.createElement("button"); b.textContent="START";
+  b.onclick=()=>{ $("ctrl").innerHTML=""; runTrial(seq,c); };
+  $("ctrl").appendChild(b);
+  RUN={ready:true};
+  cancelAnimationFrame(RAF);
+  const loop=()=>{ drawScene(); RAF=requestAnimationFrame(loop); }; loop();
+}
+
+function runTrial(seq,c){
+  const a=seq?audio():null;
+  const cfgL = audioCfgFor(TRIAL.cond);
+  const leadMs = seq ? (cfgL?.lead ?? 1000) : 200;
+  const perf0=performance.now()+leadMs;
+  const outLat=seq?(a.outputLatency||0)*1000:0, baseLat=seq?(a.baseLatency||0)*1000:0;
+  if(seq){ newMaster(); const t0=a.currentTime+leadMs/1000;
+    seq.onsets.forEach((on,i)=>tone(t0+on/1000,
+      seq.isTarget[i]?+$("ftgt").value:+$("fstd").value,
+      audioCfgFor(TRIAL.cond).tone, +$("lvl").value)); }
+
+  // Drawing is never on the clock. Any condition with a spiral stays open until END,
+  // even after the tones have finished, because the drawing may not be.
+  const untimed = c.lengthS===null || !!c.spiral;
+  const durMs = seq ? seq.durationMs : (TRIAL.lengthS||10)*1000;
+
+  RUN={ seq,cond:TRIAL.cond,perf0,outLat,baseLat,durMs,leadMs,untimed,
+        startedISO:new Date().toISOString(),firstContactMs:null,toneClockDone:false,
+        lastContact:null,saved:false,c };
 
   const cv=$("canvas");
-  const implement = $("implement").value;      // pen or finger, chosen per condition
-  const drawOK = pt => implement==="pen" ? (pt==="pen"||pt==="mouse")
-                                         : (pt==="touch"||pt==="mouse");
-  const tapR = () => mm2px(+$("tapdia").value/2);
-  const hitZone = (x,y) => {
+  const drawOK = pt => TRIAL.implement==="pen" ? (pt==="pen"||pt==="mouse") : (pt==="touch"||pt==="mouse");
+  const tapR=()=>mm2px(+$("tapdia").value/2);
+  const hitZone=(x,y)=>{
     if(L.zones){ const z=L.zones.find(z=>Math.hypot(x-z.cx,y-L.cy)<=tapR()); return z?z.id:null; }
-    if(L.tapCx!==null && Math.hypot(x-L.tapCx,y-L.cy)<=tapR()) return "tap";
+    if(L.tapCx!==null&&Math.hypot(x-L.tapCx,y-L.cy)<=tapR()) return "tap";
     return null;
   };
-
-  // ---- MULTITOUCH: one stroke per pointerId, so a tapping finger cannot end
-  // the pen's stroke and a moving finger cannot append to it.
-  const strokeFor = new Map();                   // pointerId -> point array
-
-  const addPoint=(st,e,t,coalesced)=>{
-    const m=toMM(e.clientX,e.clientY);
-    st.push({ t:+t.toFixed(2), x:+m.x.toFixed(3), y:+m.y.toFixed(3),
-              p:+(e.pressure??0).toFixed(4), tx:e.tiltX??null, ty:e.tiltY??null,
-              k:e.pointerType, c:coalesced?1:0 });
-  };
-  const down = e => {
-    const t = performance.now()-perf0;
-    RUN.lastContact = performance.now();
-    const z = hitZone(e.clientX,e.clientY);
-    if(z){                                       // a tap, never a stroke
-      TAPS.push({ t:+t.toFixed(2), zone:z, pointerType:e.pointerType });
-      TAPFLASH=z; setTimeout(()=>{ if(TAPFLASH===z) TAPFLASH=null; },90);
-      if(RUN.firstContactMs===null) RUN.firstContactMs=+t.toFixed(2);
-      return;
-    }
-    if(!nd.spiral) return;
-    if(!drawOK(e.pointerType)) return;            // wrong implement, and palm rejection
-    if(e.clientX < L.dx0-4) return;              // outside the drawing region
-    if(e.clientY < L.uy0+90) return;             // under the administrator bar
-    const st=[]; STROKES.push(st); strokeFor.set(e.pointerId, st);
-    addPoint(st,e,t);
+  const strokeFor=new Map();       // one stroke per pointerId: a tapping finger must
+                                   // never end the pen's stroke
+  const addPoint=(st,e,t,co)=>{ const m=toMM(e.clientX,e.clientY);
+    st.push({t:+t.toFixed(2),x:+m.x.toFixed(3),y:+m.y.toFixed(3),
+             p:+(e.pressure??0).toFixed(4),tx:e.tiltX??null,ty:e.tiltY??null,
+             k:e.pointerType,c:co?1:0}); };
+  const down=e=>{
+    const t=performance.now()-perf0; RUN.lastContact=performance.now();
+    const z=hitZone(e.clientX,e.clientY);
+    if(z){ TAPS.push({t:+t.toFixed(2),zone:z,pointerType:e.pointerType});
+      TAPFLASH={zone:z,until:performance.now()+FLASH_MS}; drawScene();
+      if(RUN.firstContactMs===null) RUN.firstContactMs=+t.toFixed(2); return; }
+    if(!c.spiral) return;
+    if(!drawOK(e.pointerType)) return;
+    if(e.clientX<L.dx0-4) return;
+    if(e.clientY<L.uy0+L.topPad) return;
+    const st=[]; STROKES.push(st); strokeFor.set(e.pointerId,st); addPoint(st,e,t);
     if(RUN.firstContactMs===null) RUN.firstContactMs=+t.toFixed(2);
   };
-  const move = e => {
-    const st = strokeFor.get(e.pointerId);       // only this pointer's own stroke
-    if(!st) return;
-    RUN.lastContact = performance.now();
-    const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
-    for(const ev of evs) addPoint(st, ev, performance.now()-perf0, evs.length>1);
-  };
-  const up = e => { strokeFor.delete(e.pointerId); RUN.lastContact = performance.now(); };
-
-  cv.addEventListener("pointerdown",down);
-  cv.addEventListener("pointermove",move);
-  cv.addEventListener("pointerup",up);
-  cv.addEventListener("pointercancel",up);
+  const move=e=>{ const st=strokeFor.get(e.pointerId); if(!st) return;
+    RUN.lastContact=performance.now();
+    const evs=e.getCoalescedEvents?e.getCoalescedEvents():[e];
+    for(const ev of evs) addPoint(st,ev,performance.now()-perf0,evs.length>1); };
+  const up=e=>{ strokeFor.delete(e.pointerId); RUN.lastContact=performance.now(); };
+  cv.addEventListener("pointerdown",down); cv.addEventListener("pointermove",move);
+  cv.addEventListener("pointerup",up); cv.addEventListener("pointercancel",up);
   RUN.teardown=()=>{ cv.removeEventListener("pointerdown",down);
     cv.removeEventListener("pointermove",move); cv.removeEventListener("pointerup",up);
     cv.removeEventListener("pointercancel",up); };
 
   $("ctrl").innerHTML="";
-  const eb=document.createElement("button");
-  eb.textContent="END"; eb.onclick=()=>stopTrial(false);
-  $("ctrl").appendChild(eb);
-  const rb=document.createElement("button");
-  rb.textContent="Reset"; rb.className="ghost";
-  rb.style.marginLeft="14px"; rb.style.fontSize="20px"; rb.style.padding="20px 34px";
-  rb.style.minWidth="150px";
-  rb.onclick=()=>resetTrial();
-  $("ctrl").appendChild(rb);
+  const eb=document.createElement("button"); eb.textContent="END";
+  eb.onclick=()=>stopTrial(false); $("ctrl").appendChild(eb);
+  const rb=document.createElement("button"); rb.textContent="Reset"; rb.className="ghost";
+  rb.onclick=()=>resetTrial(); $("ctrl").appendChild(rb);
 
   cancelAnimationFrame(RAF);
-  const IDLE_MS = 5000;
+  const idleMs=(+$("idle").value||5)*1000;
   const loop=()=>{ drawScene();
     const left=(perf0+durMs-performance.now())/1000;
-    if(left<=0 && !RUN.toneClockDone){
-      RUN.toneClockDone=true;
-      if(untimed) stopAudio();                   // tones over, drawing continues
-    }
-    if(nd.tap){
-      $("hud").textContent = untimed
-        ? (left>0 ? left.toFixed(1)+" s" : "tones done")
-        : Math.max(0,left).toFixed(1)+" s";
-    }
-    // Untimed trials close themselves once nothing has touched the screen for a
-    // while, so the administrator does not have to catch the end of every drawing.
-    if(untimed && RUN.firstContactMs!==null && (!RUN.seq || RUN.toneClockDone)
-       && RUN.lastContact && performance.now()-RUN.lastContact > IDLE_MS){
-      RUN.idleEnded = true; stopTrial(true); return;
-    }
+    if(left<=0&&!RUN.toneClockDone){ RUN.toneClockDone=true; if(untimed) stopAudio(); }
+    if(c.tap||c.audio) $("hud").textContent = untimed
+      ? (left>0?left.toFixed(1)+" s":"tones done")
+      : Math.max(0,left).toFixed(1)+" s";
+    if(untimed && RUN.firstContactMs!==null && (!RUN.seq||RUN.toneClockDone)
+       && RUN.lastContact && performance.now()-RUN.lastContact>idleMs){
+      RUN.idleEnded=true; stopTrial(true); return; }
     RAF=requestAnimationFrame(loop); };
   loop();
-
-  if(!untimed) RUN.timer=setTimeout(()=>stopTrial(true), lead*1000+durMs+600);
+  if(!untimed) RUN.timer=setTimeout(()=>stopTrial(true), leadMs+durMs+600);
 }
 
-// Discard an invalid trial and return to START with the same settings.
 function resetTrial(){
   if(!RUN) return;
+  if(!confirm("Reset this trial?\n\nThe drawing and taps recorded so far are discarded and NOT saved. The trial restarts with the same settings.")) return;
   clearTimeout(RUN.timer); cancelAnimationFrame(RAF); stopAudio();
   if(RUN.teardown) RUN.teardown();
-  const cond=RUN.cond, nd=RUN.nd;
-  STROKES=[]; TAPS=[]; TAPFLASH=null;
-  let seq=null;
-  if(nd.audio){
-    try{ seq = LOADED_SEQ || makeSequence(+$("dur").value, +$("isi").value,
-           +$("jit").value/100, +$("ptg").value, +$("seed").value,
-           cond==="DET"||cond==="SP_DET"); }catch(e){ seq=null; }
-  }
-  layout(); drawScene();
-  readyTrial(seq, cond, nd);
+  const c=byId(TRIAL.cond); STROKES=[]; TAPS=[]; TAPFLASH=null;
+  if(RUN) RUN.reportedCount=undefined;
+  let seq=null; const cfg=audioCfgFor(TRIAL.cond);
+  if(cfg){ try{ seq=makeSequence(cfg.durS,cfg.isi,cfg.jit/100,cfg.ptg,drawSeed()); }catch(e){ seq=null; } }
+  layout(); drawScene(); readyTrial(seq,c);
 }
-
 function stopTrial(auto){
   if(!RUN) { $("stage").classList.remove("on"); return; }
   if(RUN.ready){ cancelAnimationFrame(RAF); $("stage").classList.remove("on"); RUN=null; return; }
   clearTimeout(RUN.timer); cancelAnimationFrame(RAF); stopAudio();
   if(RUN.teardown) RUN.teardown();
-  RUN.stoppedEarly = !auto;
-  finish();
+  RUN.stoppedEarly=!auto; finish();
 }
-function quitTrial(){
-  if(RUN && !RUN.ready && !confirm("Discard this trial?")) return;
+// Abandons the trial on screen only. Participant details, the plan and every saved
+// trial are untouched -- clearing those is "Start a new session" on the Session page.
+function abandonTrial(){
+  const unsaved = RUN && !RUN.ready && !RUN.saved;
+  if(!confirm("Abandon this trial and return to the session page?\n\n"+
+     (unsaved?"It has NOT been saved and will be lost. ":"")+
+     "The participant, the plan and all saved trials are kept.")) return;
   if(RUN){ clearTimeout(RUN.timer); if(RUN.teardown) RUN.teardown(); }
   cancelAnimationFrame(RAF); stopAudio();
-  $("stage").classList.remove("on"); RUN=null;
+  $("stage").classList.remove("on"); RUN=null; goPage(3);
 }
 
-// ---------------------------------------------------------------- results
-
-function attribute(seq, taps, outLat){
-  const firstLag=new Array(seq.n).fill(null), rows=[];
+/* ------------------------------------------------------- results */
+function attribute(seq,taps,outLat){
+  const firstLag=new Array(seq.n).fill(null),rows=[];
   taps.forEach((tapMs,ti)=>{
-    let idx=-1;
-    for(let i=0;i<seq.n;i++){ if(seq.onsets[i]<=tapMs) idx=i; else break; }
+    let idx=-1; for(let i=0;i<seq.n;i++){ if(seq.onsets[i]<=tapMs) idx=i; else break; }
     if(idx<0){ rows.push({ti,tapMs,tone:null,type:null,lag:null}); return; }
     const lag=tapMs-seq.onsets[idx];
     if(firstLag[idx]===null) firstLag[idx]=lag;
@@ -984,345 +1387,340 @@ function attribute(seq, taps, outLat){
   });
   const targetLags=[];
   for(let i=0;i<seq.n;i++) if(seq.isTarget[i]&&firstLag[i]!==null) targetLags.push(firstLag[i]-outLat);
-  return { rows, firstLag, targetLags };
+  return {rows,firstLag,targetLags};
 }
 
 function finish(){
-  const seq=RUN.seq, pts=STROKES.flat();
-  const dur = pts.length>1 ? (pts[pts.length-1].t-pts[0].t) : 0;
-  const rate = dur>0 ? (pts.length-1)/(dur/1000) : 0;
-  const coalesced = pts.filter(q=>q.c).length;
-
-  let att=null; if(seq) att=attribute(seq, TAPS.map(t=>t.t), RUN.outLat);
-
-  let bim=null;
-  if(RUN.bimanual || RUN.cond==="TAP"){
+  const seq=RUN.seq, c=RUN.c, pts=STROKES.flat();
+  const dur=pts.length>1?(pts[pts.length-1].t-pts[0].t):0;
+  const rate=dur>0?(pts.length-1)/(dur/1000):0;
+  let att=null; if(seq) att=attribute(seq,TAPS.map(t=>t.t),RUN.outLat);
+  let tp=null;
+  if(c.tap){
     const mean=v=>v.length?v.reduce((a,b)=>a+b,0)/v.length:NaN;
     const sd=v=>{ if(v.length<2) return NaN; const m=mean(v);
       return Math.sqrt(v.reduce((a,b)=>a+(b-m)*(b-m),0)/(v.length-1)); };
     const iti=v=>v.length>1?v.slice(1).map((x,i)=>x-v[i]):[];
     const lt=TAPS.filter(t=>t.zone==="left").map(t=>t.t).sort((a,b)=>a-b);
     const rt=TAPS.filter(t=>t.zone==="right").map(t=>t.t).sort((a,b)=>a-b);
-    const single=TAPS.filter(t=>t.zone==="tap").map(t=>t.t).sort((a,b)=>a-b);
-    const seqZ=TAPS.slice().sort((a,b)=>a.t-b.t).map(t=>t.zone);
-    let alt=0; for(let i=1;i<seqZ.length;i++) if(seqZ[i]!==seqZ[i-1]) alt++;
-    bim={ nL:lt.length, nR:rt.length, nS:single.length,
-          itiL:mean(iti(lt)), itiR:mean(iti(rt)), itiS:mean(iti(single)),
-          sdL:sd(iti(lt)), sdR:sd(iti(rt)), sdS:sd(iti(single)),
-          altPct: RUN.bimanual && seqZ.length>1 ? 100*alt/(seqZ.length-1) : NaN,
-          rateL: lt.length>1?1000/mean(iti(lt)):NaN, rateR: rt.length>1?1000/mean(iti(rt)):NaN,
-          rateS: single.length>1?1000/mean(iti(single)):NaN };
+    const sg=TAPS.filter(t=>t.zone==="tap").map(t=>t.t).sort((a,b)=>a-b);
+    const zs=TAPS.slice().sort((a,b)=>a.t-b.t).map(t=>t.zone);
+    let alt=0; for(let i=1;i<zs.length;i++) if(zs[i]!==zs[i-1]) alt++;
+    tp={ nL:lt.length,nR:rt.length,nS:sg.length,
+         itiL:mean(iti(lt)),itiR:mean(iti(rt)),itiS:mean(iti(sg)),
+         sdL:sd(iti(lt)),sdR:sd(iti(rt)),sdS:sd(iti(sg)),
+         altPct: c.zones===2&&zs.length>1 ? 100*alt/(zs.length-1) : null };
   }
+  LAST={RUN,STROKES,TAPS,att,SPIRAL,tp,layoutSafe:L.safeAreaMM,ppmm:L.p,trial:{...TRIAL}};
+  RUN.saved=false;
 
-  LAST={ RUN, STROKES, TAPS, att, SPIRAL, bim, layoutSafe:L.safeAreaMM, ppmm:L.p };
-
-  // Numbers are allocated here, when a trial is actually kept, so a Reset leaves
-  // no gap in the series.
-  RUN.handLetter = handLetter();
-  const ids = nextIds($("pid").value||"unnamed", RUN.cond, RUN.handLetter);
-  RUN.repeatN = ids.repeat; RUN.seriesN = ids.series;
-
-  const rec = buildRecord();
-  LAST.rec = rec;
-  const savedRes = putTrial(rec);
-  renderSaved();
-
-  // The stage stays up with the drawing on screen. The administrator decides when
-  // to move on rather than the screen vanishing under the participant's hand.
-  cancelAnimationFrame(RAF);
-  drawScene();
-  $("hud").textContent = RUN.idleEnded ? "finished" : "";
+  cancelAnimationFrame(RAF); drawScene();
+  $("hud").textContent = RUN.idleEnded?"finished":"";
+  $("reminder").innerHTML=`<span style="color:var(--warm)">not saved yet</span>`;
   $("ctrl").innerHTML="";
-  const nb=document.createElement("button");
-  nb.textContent="NEXT";
-  nb.onclick=()=>{ $("stage").classList.remove("on"); RUN=null; goPage(3); };
-  $("ctrl").appendChild(nb);
-  const ag=document.createElement("button");
-  ag.textContent="Repeat"; ag.className="ghost";
-  ag.onclick=()=>{ RUN=null; openTrial(); };
-  $("ctrl").appendChild(ag);
 
-  $("saveState").innerHTML = savedRes.ok
-    ? `<div class="good">Trial saved on this device (${(savedRes.bytes/1024).toFixed(0)} KB)
-       as <b>${rec.trial_id}</b>. It survives a refresh.</div>`
-    : `<div class="bad">Could not write to browser storage (${savedRes.error}). This trial is
-       in memory only and will be lost on reload — export it now.</div>`;
+  // Counting conditions have no timestamped response, so the number is collected here.
+  if(c.count && RUN.reportedCount===undefined){ askCount(seq); return; }
+  showEndControls(seq,c,pts,rate,att,tp);
+}
 
+function askCount(seq){
+  const ov=$("overlay"); ov.style.display="flex";
+  ov.innerHTML=`<h3>How many high beeps?</h3>
+    <p>Ask the participant for their count before showing anything else.</p>
+    <input id="countInput" type="number" min="0" max="200"
+      style="max-width:200px;font-size:26px;text-align:center;margin-top:6px">
+    <p style="font-size:15px;color:#5d6570;margin-top:14px">Leave blank if they did not give a number.</p>`;
+  const row=document.createElement("div"); row.className="btnrow";
+  row.style.justifyContent="center"; row.style.marginTop="18px";
+  const b=document.createElement("button"); b.className="big"; b.textContent="Record";
+  b.style.fontSize="24px"; b.style.padding="20px 48px";
+  b.onclick=()=>{
+    const v=$("countInput").value;
+    RUN.reportedCount = v===""?null:+v;
+    ov.style.display="none";
+    finish();                       // re-enter now that the count exists
+  };
+  row.appendChild(b); ov.appendChild(row);
+  setTimeout(()=>{ const el=$("countInput"); if(el) el.focus(); },50);
+}
+
+function showEndControls(seq,c,pts,rate,att,tp){
+  const sb=document.createElement("button"); sb.textContent="SAVE";
+  sb.onclick=()=>saveTrial(sb); $("ctrl").appendChild(sb);
+  const rp=document.createElement("button"); rp.textContent="REPEAT"; rp.className="ghost";
+  rp.onclick=()=>{ if(!okUnsaved()) return; RUN=null; openTrial(false); }; $("ctrl").appendChild(rp);
+  const nx=document.createElement("button"); nx.textContent="NEXT"; nx.className="ghost";
+  nx.onclick=()=>{ if(!okUnsaved()) return;
+    $("stage").classList.remove("on"); RUN=null; goPage(3); }; $("ctrl").appendChild(nx);
+
+  $("saveState").innerHTML=`<div class="warn">The last trial has not been saved.</div>`;
+  renderResult(seq,c,pts,rate,att,tp);
+}
+function okUnsaved(){ if(!RUN||RUN.saved) return true;
+  return confirm("This trial has not been saved.\n\nContinue and discard it?"); }
+
+function renderResult(seq,c,pts,rate,att,tp){
   $("rsum").innerHTML=`<table>
     <tr><th>Condition</th><td>${RUN.cond}${RUN.stoppedEarly?" (ended early)":""}</td>
-        <th>Participant</th><td>${$("pid").value||"unnamed"}</td></tr>
-    ${RUN.spiralOn?`<tr><th>Pen samples</th><td class="num">${pts.length}</td>
+        <th>Trial</th><td>${TRIAL.index+1} of ${QUEUE.length}</td></tr>
+    ${c.spiral?`<tr><th>Pen samples</th><td class="num">${pts.length}</td>
         <th>Achieved rate</th><td class="num">${rate.toFixed(0)} Hz</td></tr>
-    <tr><th>Strokes (pen lifts)</th><td class="num">${STROKES.length}</td>
-        <th>Drawing time</th><td class="num">${(dur/1000).toFixed(1)} s</td></tr>
-    <tr><th>From coalesced events</th><td class="num">${coalesced}</td>
-        <th>Spiral</th><td>pitch ${SPIRAL?.pitch} mm, ${SPIRAL?.turns} turns</td></tr>`:""}
-    <tr><th>Taps</th><td class="num">${TAPS.length}</td>
-        <th>First contact</th><td class="num">${RUN.firstContactMs??"–"} ms</td></tr>
+    <tr><th>Strokes</th><td class="num">${STROKES.length}</td>
+        <th>Drawing time</th><td class="num">${(pts.length>1?(pts[pts.length-1].t-pts[0].t)/1000:0).toFixed(1)} s</td></tr>`:""}
+    ${c.count?`<tr><th>Counted</th><td class="num">${RUN.reportedCount??"–"}</td>
+        <th>Actually presented</th><td class="num">${seq?seq.t:"–"}</td></tr>`
+      :`<tr><th>Taps</th><td class="num">${TAPS.length}</td>
+        <th>First contact</th><td class="num">${RUN.firstContactMs??"–"} ms</td></tr>`}
     ${seq?`<tr><th>Tones / targets</th><td class="num">${seq.n} / ${seq.t}</td>
-        <th>Audio output latency</th><td class="num">${RUN.outLat.toFixed(1)} ms</td></tr>`:""}
-    <tr><th>1 mm =</th><td class="num">${L.p.toFixed(3)} px</td>
-        <th>Safe area (mm)</th><td>t ${L.safeAreaMM.top.toFixed(1)} · r ${L.safeAreaMM.right.toFixed(1)}
-        · b ${L.safeAreaMM.bottom.toFixed(1)} · l ${L.safeAreaMM.left.toFixed(1)}</td></tr>
+        <th>Seed</th><td class="num">${seq.seed}</td></tr>
+    <tr><th>Output latency</th><td class="num">${RUN.outLat.toFixed(1)} ms</td>
+        <th>Lead-in</th><td class="num">${RUN.leadMs} ms</td></tr>`:""}
   </table>
-  ${RUN.spiralOn && rate<55 ? `<div class="warn">Pen sample rate under 60 Hz suggests the browser
-    is delivering one point per frame. Expected in Safari without coalesced events, and a reason
-    not to read too much into browser kinematics.</div>`:""}
-  ${seq && RUN.outLat===0 ? `<div class="warn">Output latency reported as zero, which is almost
-    certainly wrong. Compare conditions rather than trusting absolute reaction times.</div>`:""}`;
+  ${c.spiral&&rate<55?`<div class="warn">Pen rate under 60 Hz — one point per frame. Browser
+    kinematics will be coarse.</div>`:""}
+  ${c.count&&seq?(RUN.reportedCount==null
+    ? `<div class="warn">No count reported, so this trial has no validity check.</div>`
+    : (()=>{ const err=RUN.reportedCount-seq.t;
+        return `<div class="${Math.abs(err)<=2?"good":"warn"}">Count error <b>${err>0?"+":""}${err}</b>
+          (${RUN.reportedCount} reported, ${seq.t} presented). This is a validity criterion for the
+          trial, not a measure — a large error means attention was not on the tones.</div>`; })())
+    :""}`;
 
-  if(bim){
-    const f=(v,u)=>isNaN(v)?"–":v.toFixed(u===0?0:2)+(u===0?" ms":" Hz");
-    $("rwin").innerHTML = RUN.bimanual ? `<h2>Bimanual tapping</h2><table>
-      <tr><th></th><th class="num">Taps</th><th class="num">Mean ITI</th><th class="num">ITI SD</th><th class="num">Rate</th></tr>
-      <tr><th>Left</th><td class="num">${bim.nL}</td><td class="num">${f(bim.itiL,0)}</td>
-          <td class="num">${f(bim.sdL,0)}</td><td class="num">${f(bim.rateL,1)}</td></tr>
-      <tr><th>Right</th><td class="num">${bim.nR}</td><td class="num">${f(bim.itiR,0)}</td>
-          <td class="num">${f(bim.sdR,0)}</td><td class="num">${f(bim.rateR,1)}</td></tr></table>
-      <p class="note">Hand alternation <b>${isNaN(bim.altPct)?"–":bim.altPct.toFixed(0)+"%"}</b> of
-      consecutive taps. Near 100% is antiphase; near 0% means the hands land together — expected
-      for BMIN, a coordination breakdown for BMANT.</p>`
-    : `<h2>Tapping</h2><table>
-      <tr><th class="num">Taps</th><th class="num">Mean ITI</th><th class="num">ITI SD</th><th class="num">Rate</th></tr>
-      <tr><td class="num">${bim.nS}</td><td class="num">${f(bim.itiS,0)}</td>
-          <td class="num">${f(bim.sdS,0)}</td><td class="num">${f(bim.rateS,1)}</td></tr></table>`;
+  if(tp && c.zones===2){
+    const f=(v,u)=>(v==null||isNaN(v))?"–":(u?v.toFixed(2)+" Hz":v.toFixed(0)+" ms");
+    $("rwin").innerHTML=`<h2>Bimanual tapping</h2><table>
+      <tr><th></th><th class="num">Taps</th><th class="num">Mean ITI</th><th class="num">ITI SD</th></tr>
+      <tr><th>Left</th><td class="num">${tp.nL}</td><td class="num">${f(tp.itiL)}</td><td class="num">${f(tp.sdL)}</td></tr>
+      <tr><th>Right</th><td class="num">${tp.nR}</td><td class="num">${f(tp.itiR)}</td><td class="num">${f(tp.sdR)}</td></tr>
+      </table><p class="note">Hand alternation
+      <b>${tp.altPct==null||isNaN(tp.altPct)?"–":tp.altPct.toFixed(0)+"%"}</b> of consecutive taps.
+      Near 100% is antiphase; near 0% means the hands land together.</p>`;
     $("rq").innerHTML="";
-  } else if(att && seq.t>0){
-    const cands=[500,600,700,800,900,1000,1200,1500,2000].filter(w=>w<=seq.minISI);
-    let h=`<h2>What each candidate window would capture</h2><table>
-      <tr><th class="num">Window (ms)</th><th class="num">Targets caught</th><th class="num">%</th><th class="num">False alarms</th></tr>`;
+  } else if(att && seq && seq.t>0){
+    const limit=2*seq.minISI;
+    const cands=[500,600,700,800,900,1000,1200,1500,2000].filter(w=>w<=limit);
+    let h=`<h2>Response window</h2><table><tr><th class="num">Window (ms)</th>
+           <th class="num">Targets caught</th><th class="num">%</th><th class="num">False alarms</th></tr>`;
     cands.forEach(w=>{ let hit=0,fa=0;
       for(let i=0;i<seq.n;i++){ const lg=att.firstLag[i]; if(lg===null) continue;
         const Lc=lg-RUN.outLat; if(Lc>=150&&Lc<=w){ seq.isTarget[i]?hit++:fa++; } }
       h+=`<tr><td class="num">${w}</td><td class="num">${hit} of ${seq.t}</td>
           <td class="num">${(100*hit/seq.t).toFixed(0)}%</td><td class="num">${fa}</td></tr>`; });
-    $("rwin").innerHTML=h+"</table>";
+    $("rwin").innerHTML=h+`</table><p class="note">Attribution stays unambiguous up to
+      ${Math.round(limit)} ms, the shortest possible target-to-target gap.</p>`;
     const Lg=att.targetLags;
-    $("rq").innerHTML = Lg.length ? `<h2>Response times to targets</h2><table>
+    $("rq").innerHTML=Lg.length?`<h2>Response times to targets</h2><table>
       <tr><th class="num">n</th><th class="num">min</th><th class="num">25th</th><th class="num">median</th>
       <th class="num">75th</th><th class="num">90th</th><th class="num">max</th></tr>
       <tr><td class="num">${Lg.length}</td><td class="num">${Math.round(Math.min(...Lg))}</td>
       <td class="num">${Math.round(quantile(Lg,.25))}</td><td class="num">${Math.round(quantile(Lg,.5))}</td>
       <td class="num">${Math.round(quantile(Lg,.75))}</td><td class="num">${Math.round(quantile(Lg,.9))}</td>
-      <td class="num">${Math.round(Math.max(...Lg))}</td></tr></table>
-      <p class="note">Latency-corrected ms from tone onset to first tap.</p>`:"";
+      <td class="num">${Math.round(Math.max(...Lg))}</td></tr></table>`:"";
+  } else if(tp){
+    const f=v=>(v==null||isNaN(v))?"–":v.toFixed(0);
+    $("rwin").innerHTML=`<h2>Tapping</h2><table><tr><th class="num">Taps</th>
+      <th class="num">Mean ITI</th><th class="num">ITI SD</th></tr>
+      <tr><td class="num">${tp.nS}</td><td class="num">${f(tp.itiS)} ms</td>
+      <td class="num">${f(tp.sdS)} ms</td></tr></table>`;
+    $("rq").innerHTML="";
   } else { $("rwin").innerHTML=""; $("rq").innerHTML=""; }
 }
 
-// ---------------------------------------------------------------- record, storage, export
+/* ------------------------------------------------------- record + storage */
+function hash36(s){ let h=5381; for(let i=0;i<s.length;i++) h=((h<<5)+h+s.charCodeAt(i))>>>0;
+  return h.toString(36).padStart(7,"0").slice(-7); }
 
-// Short stable hash, used to tell whether two trials ran the same parameter set.
-function hash36(s){
-  let h=5381; for(let i=0;i<s.length;i++) h=((h<<5)+h+s.charCodeAt(i))>>>0;
-  return h.toString(36).padStart(7,"0").slice(-7);
-}
-let SESSION_ID = "S"+Date.now().toString(36).toUpperCase();
-let SERIES = 0;                 // running number across the whole session
-const REPEATS = {};             // per participant + condition + hand
-function newSession(){
-  SESSION_ID="S"+Date.now().toString(36).toUpperCase();
-  SERIES=0; Object.keys(REPEATS).forEach(k=>delete REPEATS[k]);
-  goPage(2);
-}
-
-// R, L, or B for bimanual. Spiral conditions are labelled by the drawing hand,
-// tapping-only conditions by the tapping hand.
-function handLetter(){
-  const nd=needs();
-  if(nd.zones===2) return "B";
-  if(nd.spiral) return $("hand").value==="left" ? "L" : "R";
-  return $("taphand").value==="left" ? "L" : "R";
-}
-const pad2 = n => String(n).padStart(2,"0");
-
-// Counters live in memory, not derived from stored records, so numbering cannot
-// fail because a storage read failed.
-function nextIds(pid, cond, H){
-  const key = `${pid}|${cond}|${H}`;
-  REPEATS[key] = (REPEATS[key]||0) + 1;
-  SERIES += 1;
-  return { repeat: REPEATS[key], series: SERIES };
-}
-
-function birthInfo(){
-  const y = $("byear").value ? +$("byear").value : null;
-  const m = $("bmonth").value ? +$("bmonth").value : null;
-  let age = null;
-  if(y){
-    const now=new Date(), cy=now.getFullYear(), cm=now.getMonth()+1;
-    age = cy - y - (m && cm < m ? 1 : 0);
-  }
-  return { birth_year:y, birth_month:m, age_years:age };
-}
-function updateAgeNote(){
-  const b=birthInfo();
-  $("agenote").innerHTML = b.birth_year
-    ? `Age at today's date: <b>${b.age_years}</b>${b.birth_month?"":" (approximate — no month given)"}.`
-    : `Birth year is optional, but age is recorded from it rather than typed.`;
-}
-["byear","bmonth"].forEach(id=>$(id).addEventListener("input", updateAgeNote));
-updateAgeNote();
-
+// Everything administered, verbatim. Also written to CSV as parameters_json so a
+// setting added later is still recorded in full for trials run today.
 function paramSet(){
-  const nd=needs(), c=$("cond").value;
-  const p={ condition:c };
-  if(nd.spiral) Object.assign(p,{
-    pitch_mm:+$("pitch").value, turns:+$("turns").value, end_angle_deg:+$("endang").value,
-    instruction:$("instr").value, implement:$("implement").value,
-    drawing_hand:$("hand").value, start_zone_mm:+$("startdia").value,
-    split:+$("split").value });
-  if(nd.tap) Object.assign(p,{
-    tap_zone_mm:+$("tapdia").value, zones:nd.zones,
-    tapping_hand:nd.zones===1?$("taphand").value:"both",
-    zone_spacing_mm:nd.zones===2?+$("zonegap").value:null,
-    trial_length_s: nd.audio ? +$("dur").value : +$("tapdur").value });
-  if(nd.audio) Object.assign(p,{
-    mean_isi_ms:+$("isi").value, jitter:+$("jit").value/100, p_target:+$("ptg").value,
-    f_standard_hz:+$("fstd").value, f_target_hz:+$("ftgt").value,
-    tone_ms:+$("tone").value, level:+$("lvl").value, seed:+$("seed").value,
-    sequence_source: LOADED_SEQ ? LOADED_SEQ.source : "browser" });
+  const c=byId(TRIAL.cond), cfg=audioCfgFor(TRIAL.cond);
+  const p={ condition:TRIAL.cond, catalogue:{...c},
+            hand_role:TRIAL.hand, draw_hand:TRIAL.drawHand, tap_hand:TRIAL.tapHand,
+            implement:TRIAL.implement, length_s:TRIAL.lengthS };
+  if(c.spiral) p.spiral={ pitch_mm:+$("pitch").value, turns:+$("turns").value,
+    end_angle_deg:+$("endang").value, instruction:$("instr").value,
+    start_zone_mm:+$("startdia").value, split:+$("split").value,
+    template_style:$("tmpl").value, idle_stop_s:+$("idle").value };
+  if(c.tap) p.tap={ zone_mm:+$("tapdia").value, zones:c.zones, spacing_mm:+$("zonegap").value };
+  if(cfg) p.audio={ ...cfg, f_standard:+$("fstd").value, f_target:+$("ftgt").value,
+    level:+$("lvl").value, lead_in_ms:cfg.lead,
+    seed:LAST_SEED, seed_mode:$("seedmode").value };
   return p;
 }
 
 function buildRecord(){
-  const R=LAST.RUN;
-  const params=paramSet();
-  const sig=hash36(JSON.stringify(params));
+  const R=LAST.RUN, params=paramSet(), sig=hash36(JSON.stringify(params));
   const pid=$("pid").value||"unnamed";
-  const H=R.handLetter, n=R.repeatN, series=R.seriesN;
-  const tid=`${pid}_${R.cond}_${H}${pad2(n)}_${series}`;
+  const H = TRIAL.hand==="both" ? "B" : (TRIAL.drawHand||TRIAL.tapHand)==="left" ? "L" : "R";
+  const tid=`${pid}_v${visitNo()}s${sessNo()}_${R.cond}_${H}${pad2(R.repeatN)}_${String(R.seriesN).padStart(3,"0")}`;
   const b=birthInfo();
   return {
-    schema:"motiq_prototype/4",
-    build: BUILD,
+    schema:"motiq_prototype/5", build:BUILD,
     note:"PROTOTYPE. Browser mm and browser timing are approximations.",
-    trial_id: tid,
-    trial_uid: R.startedISO.replace(/[:.]/g,"-")+"_"+tid,
-    session_id: SESSION_ID,
-    series_number: series,
-    repeat_number: n,
-    hand_label: H,
-    param_signature: sig,
-    parameters: params,
+    trial_id:tid, trial_uid:R.startedISO.replace(/[:.]/g,"-")+"_"+tid,
+    session_key:SESSION_KEY,
+    session_id:`${pid}-v${visitNo()}-s${sessNo()}`,
+    visit_number:visitNo(), session_number:sessNo(), trial_number:R.seriesN,
+    session_note:$("sessnote").value||null,
+    series_number:R.seriesN, repeat_number:R.repeatN, hand_label:H,
+    plan:{ position:TRIAL.index+1, planned_total:QUEUE.length,
+           queue:QUEUE.map(q=>({cond:q.cond,hand:q.hand,status:q.status,skip:q.skipReason})) },
+    param_signature:sig, parameters:params,
     participant:{ id:$("pid").value, group:$("grp").value, sex:$("sex").value||null,
-                  birth_year:b.birth_year, birth_month:b.birth_month, age_years:b.age_years,
-                  dominant_hand:$("domhand").value,
-                  drawing_hand:$("hand").value, tapping_hand:$("taphand").value },
-    notes: $("notes").value || null,
-    condition:R.cond, started_iso:R.startedISO,
-    trial:{ start_mode:"START button", stopped_early:!!R.stoppedEarly,
-            self_paced:!!R.selfPaced, length_s:R.durMs/1000,
-            first_contact_ms:R.firstContactMs,
-            t_zero:"START pressed; pen, tap and tone times share this origin" },
-    tapping: LAST.bim || null,
+      birth_year:b.birth_year, birth_month:b.birth_month, age_years:b.age_years,
+      dominant_hand:$("domhand").value },
+    notes:$("notes").value||null,
     calibration:{ css_px_per_mm:LAST.ppmm, device_pixel_ratio:window.devicePixelRatio,
-                  screen:[screen.width,screen.height], safe_area_mm:LAST.layoutSafe,
-                  source:CAL.source, device_label:CAL.deviceLabel,
-                  card_confirmed:$("cardok").checked },
-    spiral: LAST.SPIRAL ? { ...LAST.SPIRAL, start_zone_mm:+$("startdia").value,
-             split:+$("split").value, end_angle_deg:+$("endang").value,
-             parameterisation:"r = (radius/(turns*2pi))*theta, pitch = radius/turns" } : null,
-    tap_zone:{ diameter_mm:+$("tapdia").value, spacing_mm:+$("zonegap").value },
-    audio: R.seq ? { source:R.seq.source, wav_md5:R.seq.wav_md5||null,
-             f_standard:+$("fstd").value, f_target:+$("ftgt").value, tone_ms:+$("tone").value,
-             level:+$("lvl").value, output_latency_ms:R.outLat, base_latency_ms:R.baseLat,
-             sample_rate:ctx?ctx.sampleRate:null } : null,
-    sequence: R.seq ? { n_tones:R.seq.n, n_targets:R.seq.t, onsets_ms:R.seq.onsets,
-             tone_type:R.seq.isTarget.map(b=>b?"target":"standard"),
-             intervals_ms:R.seq.intervals, min_isi_ms:R.seq.minISI } : null,
-    strokes: LAST.STROKES,
+      screen:[screen.width,screen.height], safe_area_mm:LAST.layoutSafe,
+      source:CAL.source, device_label:CAL.deviceLabel, card_confirmed:$("cardok").checked },
+    pen_check:PENCHECK,
+    sound_check:{ confirmed:$("soundok").checked, route:$("audioroute").value,
+                  volume_steps:$("volstep").value },
+    trial:{ started_iso:R.startedISO, stopped_early:!!R.stoppedEarly, idle_ended:!!R.idleEnded,
+      untimed:!!R.untimed, length_s:R.durMs/1000, lead_in_ms:R.leadMs,
+      first_contact_ms:R.firstContactMs,
+      t_zero:"START pressed; pen, tap and tone times share this origin" },
+    audio_runtime: R.seq ? { output_latency_ms:R.outLat, base_latency_ms:R.baseLat,
+      sample_rate:ctx?ctx.sampleRate:null } : null,
+    sequence: R.seq ? { n_tones:R.seq.n, n_targets:R.seq.t, seed:R.seq.seed,
+      onsets_ms:R.seq.onsets, tone_type:R.seq.isTarget.map(x=>x?"target":"standard"),
+      intervals_ms:R.seq.intervals, min_isi_ms:R.seq.minISI } : null,
+    tapping:LAST.tp||null,
+    counting: RUN.c.count ? { reported:RUN.reportedCount??null,
+      presented: R.seq?R.seq.t:null,
+      error: (RUN.reportedCount!=null && R.seq) ? RUN.reportedCount-R.seq.t : null,
+      note:"count error is a trial validity criterion, not a measure" } : null,
+    spiral_rendered:LAST.SPIRAL||null,
+    strokes:LAST.STROKES,
     strokes_units:"x,y mm from spiral centre, y up; t ms from START; p pressure 0-1",
-    taps: LAST.TAPS,
+    taps:LAST.TAPS,
     attribution: LAST.att ? { rule:"nearest preceding onset, no upper bound",
-             rows:LAST.att.rows, target_lags_corrected_ms:LAST.att.targetLags } : null,
+      rows:LAST.att.rows, target_lags_corrected_ms:LAST.att.targetLags } : null,
     device:{ user_agent:navigator.userAgent }
   };
 }
 
+function saveTrial(btn){
+  if(!RUN||RUN.saved||!LAST) return;
+  const pid=$("pid").value||"unnamed";
+  const H = TRIAL.hand==="both" ? "B" : (TRIAL.drawHand||TRIAL.tapHand)==="left" ? "L" : "R";
+  const ids=nextIds(pid,TRIAL.cond,H);
+  RUN.repeatN=ids.repeat; RUN.seriesN=ids.series;
+  const rec=buildRecord(); LAST.rec=rec;
+  const res=putTrial(rec); renderSaved();
+  if(res.ok){
+    RUN.saved=true;
+    if(btn){ btn.textContent="SAVED"; btn.disabled=true; }
+    QUEUE[TRIAL.index].status="done";
+    if(QPOS===TRIAL.index) QPOS++;
+    renderQueue();
+    $("reminder").innerHTML=`<span style="color:var(--ok)">saved as ${rec.trial_id}</span>`;
+    $("saveState").innerHTML=`<div class="good">Trial <b>${rec.trial_id}</b> saved
+      (${(res.bytes/1024).toFixed(0)} KB).</div>`;
+    alert("Saved.\n\nTrial ID: "+rec.trial_id+"\nSession: "+rec.session_id+
+          "\n\nNext in the list: "+(QPOS<QUEUE.length?`${QUEUE[QPOS].cond} (${handWord(QUEUE[QPOS].hand)})`:"none — list complete"));
+  } else {
+    const k=`${pid}|${TRIAL.cond}|${H}`;
+    REPEATS[k]=Math.max(0,(REPEATS[k]||1)-1); SERIES=Math.max(0,SERIES-1);
+    $("saveState").innerHTML=`<div class="bad">Could not write to storage (${res.error}).
+      Export before doing anything else.</div>`;
+    alert("Could not save to this device ("+res.error+").\n\nExport from Results and data now.");
+  }
+}
+
+/* ------------------------------------------------------- CSV */
 const CSV_HEAD=[
-  "trial_id","trial_uid","build","session_id","series_number","repeat_number","hand_label",
-  "param_signature",
-  "participant_id","group","sex","birth_year","birth_month","age_years",
-  "dominant_hand","drawing_hand",
-  "tapping_hand","implement","condition","instruction","notes","started_iso","stopped_early",
-  "trial_length_s","first_contact_ms","css_px_per_mm",
-  "device_label","calibration_source","card_confirmed","pitch_mm","turns","radius_mm",
-  "direction","template_path_mm","tap_zone_mm","n_pen_samples","achieved_rate_hz","n_strokes",
-  "n_tones","n_targets","min_isi_ms","output_latency_ms","sequence_source",
+  "trial_id","trial_uid","build","schema","session_key","session_id","visit_number",
+  "session_number","trial_number","session_note","series_number",
+  "repeat_number","hand_label","plan_position","plan_total",
+  "participant_id","group","sex","birth_year","birth_month","age_years","dominant_hand",
+  "condition","hand_role","draw_hand","tap_hand","implement","instruction",
+  "notes","started_iso","stopped_early","idle_ended","untimed","trial_length_s","lead_in_ms",
+  "first_contact_ms","css_px_per_mm","device_label","calibration_source","card_confirmed",
+  "pen_check_rate_right_hz","pen_check_rate_left_hz",
+  "sound_confirmed","audio_route","volume_steps",
+  "pitch_mm","turns","radius_mm","direction","template_path_mm","template_style","tap_zone_mm","zones",
+  "audio_key","stream_duration_s","mean_isi_ms","jitter_pct","p_target","tone_ms",
+  "f_standard_hz","f_target_hz","tone_level","seed","seed_mode",
+  "n_tones","n_targets","min_isi_ms","output_latency_ms",
+  "n_pen_samples","achieved_rate_hz","n_strokes",
   "n_taps_left","n_taps_right","n_taps_single","alternation_pct",
+  "count_reported","count_presented","count_error",
+  "param_signature","parameters_json",
   "row_type","stroke","t_ms","x_mm","y_mm","pressure","tilt_x","tilt_y",
   "pointer_type","coalesced","zone","tone_index","tone_type","lag_ms","lag_corrected_ms"
 ];
-
-// The columns that vary by row type, and the count of leading columns that do not.
-// Rows used to be hand-counted positional arrays; a single miscounted empty string
-// silently shifted tone_index into zone on every tone row. Rows are now keyed by
-// column name and the padding is derived, so that class of error cannot recur.
-const TAIL_HEAD = CSV_HEAD.slice(CSV_HEAD.indexOf("row_type"));
-const META_LEN  = CSV_HEAD.length - TAIL_HEAD.length;
-
-function mkRow(meta, o){
-  if (meta.length !== META_LEN)
-    throw new Error(`meta length ${meta.length}, expected ${META_LEN}`);
-  const unknown = Object.keys(o).filter(k => !TAIL_HEAD.includes(k));
-  if (unknown.length) throw new Error("unknown column: " + unknown.join());
-  return [...meta, ...TAIL_HEAD.map(k => o[k] ?? "")];
+// Rows are keyed by column name and the leading padding is derived, so a miscounted
+// empty string cannot silently shift a value into the wrong column.
+const TAIL_HEAD=CSV_HEAD.slice(CSV_HEAD.indexOf("row_type"));
+const META_LEN=CSV_HEAD.length-TAIL_HEAD.length;
+function mkRow(meta,o){
+  if(meta.length!==META_LEN) throw new Error(`meta length ${meta.length}, expected ${META_LEN}`);
+  const unknown=Object.keys(o).filter(k=>!TAIL_HEAD.includes(k));
+  if(unknown.length) throw new Error("unknown column: "+unknown.join());
+  return [...meta,...TAIL_HEAD.map(k=>o[k]??"")];
 }
-
 function csvRows(rec){
-  const S=rec.spiral, seq=rec.sequence, tp=rec.tapping, P=rec.participant;
+  const P=rec.participant, pm=rec.parameters||{}, sp=pm.spiral||{}, tapp=pm.tap||{}, au=pm.audio||{};
+  const S=rec.spiral_rendered||{}, seq=rec.sequence, tp=rec.tapping||{};
   const pts=(rec.strokes||[]).flat();
   const dur=pts.length>1?(pts[pts.length-1].t-pts[0].t):0;
   const rate=dur>0?((pts.length-1)/(dur/1000)).toFixed(1):"";
+  const pc=rec.pen_check||{};
+  const num=v=>Number.isFinite(v)?v:"";
   const meta=[
-    rec.trial_id, rec.trial_uid, rec.build??"", rec.session_id, rec.series_number, rec.repeat_number,
-    rec.hand_label, rec.param_signature,
-    P.id||"unnamed", P.group, P.sex??"", P.birth_year??"", P.birth_month??"", P.age_years??"",
-    P.dominant_hand,
-    P.drawing_hand, P.tapping_hand??"", rec.parameters?.implement??"",
-    rec.condition, S?S.instruction:"",
-    rec.notes??"", rec.started_iso,
-    rec.trial.stopped_early?1:0, rec.trial.length_s, rec.trial.first_contact_ms??"",
-    rec.calibration.css_px_per_mm,
+    rec.trial_id, rec.trial_uid, rec.build, rec.schema, rec.session_key??"", rec.session_id,
+    rec.visit_number??"", rec.session_number??"", rec.trial_number??"", rec.session_note??"",
+    rec.series_number, rec.repeat_number, rec.hand_label,
+    rec.plan?.position??"", rec.plan?.planned_total??"",
+    P.id||"unnamed", P.group??"", P.sex??"", P.birth_year??"", P.birth_month??"",
+    P.age_years??"", P.dominant_hand??"",
+    rec.parameters?.condition??"", pm.hand_role??"", pm.draw_hand??"", pm.tap_hand??"",
+    pm.implement??"", sp.instruction??"",
+    rec.notes??"", rec.trial.started_iso, rec.trial.stopped_early?1:0, rec.trial.idle_ended?1:0,
+    rec.trial.untimed?1:0, rec.trial.length_s, rec.trial.lead_in_ms,
+    rec.trial.first_contact_ms??"", rec.calibration.css_px_per_mm,
     rec.calibration.device_label??"", rec.calibration.source??"",
-    rec.calibration.card_confirmed==null ? "" : (rec.calibration.card_confirmed?1:0),
-    S?S.pitch:"", S?S.turns:"", S?S.radius:"", S?S.direction:"", S?Math.round(S.pathMM):"",
-    rec.tap_zone?rec.tap_zone.diameter_mm:"",
-    pts.length, rate, (rec.strokes||[]).length,
+    rec.calibration.card_confirmed==null?"":(rec.calibration.card_confirmed?1:0),
+    pc.right?pc.right.rate:"", pc.left?pc.left.rate:"",
+    rec.sound_check?(rec.sound_check.confirmed?1:0):"", rec.sound_check?rec.sound_check.route:"",
+    rec.sound_check?rec.sound_check.volume_steps:"",
+    sp.pitch_mm??"", sp.turns??"", S.radius??"", S.direction??"", S.pathMM?Math.round(S.pathMM):"",
+    sp.template_style??"", tapp.zone_mm??"", tapp.zones??"",
+    au.key??"", au.durS??"", au.isi??"", au.jit??"", au.ptg??"", au.tone??"",
+    au.f_standard??"", au.f_target??"", au.level??"", au.seed??"", au.seed_mode??"",
     seq?seq.n_tones:"", seq?seq.n_targets:"", seq?Math.round(seq.min_isi_ms):"",
-    rec.audio?rec.audio.output_latency_ms.toFixed(2):"", rec.audio?rec.audio.source:"",
-    // Number.isFinite, not isNaN: NaN becomes null through JSON.stringify on the way
-    // into localStorage, and isNaN(null) is false, so a reloaded TAP trial (altPct is
-    // NaN for single-hand tapping) threw on null.toFixed and killed the whole export.
-    // Bare isFinite would not do either -- it coerces null to 0 and returns true.
-    tp?tp.nL:"", tp?tp.nR:"", tp?tp.nS:"", tp&&Number.isFinite(tp.altPct)?tp.altPct.toFixed(1):""
+    rec.audio_runtime?rec.audio_runtime.output_latency_ms.toFixed(2):"",
+    pts.length, rate, (rec.strokes||[]).length,
+    num(tp.nL), num(tp.nR), num(tp.nS),
+    Number.isFinite(tp.altPct)?tp.altPct.toFixed(1):"",
+    rec.counting?(rec.counting.reported??""):"", rec.counting?(rec.counting.presented??""):"",
+    rec.counting?(rec.counting.error??""):"",
+    rec.param_signature, JSON.stringify(rec.parameters)
   ];
   const out=[];
-  (rec.strokes||[]).forEach((st,si)=> st.forEach(p =>
-    out.push(mkRow(meta, { row_type:"pen", stroke:si+1, t_ms:p.t, x_mm:p.x, y_mm:p.y,
-                           pressure:p.p, tilt_x:p.tx??"", tilt_y:p.ty??"",
-                           pointer_type:p.k, coalesced:p.c }))));
+  (rec.strokes||[]).forEach((st,si)=>st.forEach(p=>out.push(mkRow(meta,
+    {row_type:"pen",stroke:si+1,t_ms:p.t,x_mm:p.x,y_mm:p.y,pressure:p.p,
+     tilt_x:p.tx,tilt_y:p.ty,pointer_type:p.k,coalesced:p.c}))));
   const ar=rec.attribution?rec.attribution.rows:[];
   (rec.taps||[]).forEach((t,i)=>{ const a=ar[i]||{};
-    out.push(mkRow(meta, { row_type:"tap", t_ms:t.t, pointer_type:t.pointerType, zone:t.zone,
-                           tone_index:a.tone??"", tone_type:a.type??"",
-                           lag_ms: a.lag!=null?(+a.lag).toFixed(2):"",
-                           lag_corrected_ms: a.lagCorrected!=null?(+a.lagCorrected).toFixed(2):"" })); });
-  if(seq) seq.onsets_ms.forEach((on,i)=>
-    out.push(mkRow(meta, { row_type:"tone", t_ms:(+on).toFixed(2),
-                           tone_index:i+1, tone_type:seq.tone_type[i] })));
+    out.push(mkRow(meta,{row_type:"tap",t_ms:t.t,pointer_type:t.pointerType,zone:t.zone,
+      tone_index:a.tone,tone_type:a.type,
+      lag_ms:a.lag!=null?(+a.lag).toFixed(2):"",
+      lag_corrected_ms:a.lagCorrected!=null?(+a.lagCorrected).toFixed(2):""})); });
+  if(seq) seq.onsets_ms.forEach((on,i)=>out.push(mkRow(meta,
+    {row_type:"tone",t_ms:(+on).toFixed(2),tone_index:i+1,tone_type:seq.tone_type[i]})));
   return out;
 }
-const qcsv = v => { const s=v===null||v===undefined?"":String(v);
+const qcsv=v=>{ const s=v===null||v===undefined?"":String(v);
   return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
-function csvText(recs){
-  const lines=[CSV_HEAD.join(",")];
+function csvText(recs){ const lines=[CSV_HEAD.join(",")];
   recs.forEach(r=>csvRows(r).forEach(row=>lines.push(row.map(qcsv).join(","))));
-  return lines.join("\n");
-}
+  return lines.join("\n"); }
 
-const STORE_PREFIX="motiq_trial:";
-const MEM={}; let STORAGE_OK=true;
+/* ------------------------------------------------------- storage + export */
+const STORE_PREFIX="motiq_trial:"; const MEM={}; let STORAGE_OK=true;
 try{ localStorage.setItem("__probe","1"); localStorage.removeItem("__probe"); }catch(e){ STORAGE_OK=false; }
 function putTrial(rec){
   const key=STORE_PREFIX+rec.trial_uid, s=JSON.stringify(rec);
@@ -1337,54 +1735,62 @@ function listTrials(){
   Object.keys(MEM).forEach(k=>out.push({key:k,size:MEM[k].length,mem:true}));
   return out.sort((a,b)=>a.key<b.key?1:-1);
 }
-function getTrial(key){ try{ const v=localStorage.getItem(key); if(v) return JSON.parse(v); }catch(e){}
-  return MEM[key]?JSON.parse(MEM[key]):null; }
-function delTrial(key){ try{ localStorage.removeItem(key); }catch(e){} delete MEM[key]; renderSaved(); }
+function getTrial(k){ try{ const v=localStorage.getItem(k); if(v) return JSON.parse(v); }catch(e){}
+  return MEM[k]?JSON.parse(MEM[k]):null; }
+function delTrial(k){ try{ localStorage.removeItem(k); }catch(e){} delete MEM[k]; renderSaved(); }
 function delAllTrials(){
   if(!confirm("Delete every saved trial on this device? Export first if you have not.")) return;
   listTrials().forEach(t=>{ try{ localStorage.removeItem(t.key); }catch(e){} delete MEM[t.key]; });
   renderSaved();
+}
+// started_iso is UTC. Slicing it showed UTC time-of-day, which is not the clock on the
+// wall next to the participant.
+function localClock(iso){
+  if(!iso) return "";
+  const d=new Date(iso); if(isNaN(d)) return "";
+  const z=n=>String(n).padStart(2,"0");
+  return `${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())}`;
 }
 function renderSaved(){
   const ts=listTrials(), total=ts.reduce((a,b)=>a+b.size,0);
   const pct=Math.min(100,100*total/(5*1024*1024));
   if(!ts.length) $("savedBody").innerHTML=`<p class="note" style="margin:0">No trials saved yet.</p>`;
   else{
-    let h=`<table><tr><th>Started</th><th>Trial ID</th><th>Condition</th><th class="num">Pen</th>
+    let h=`<table><tr><th>Started (local)</th><th>Trial ID</th><th>Condition</th><th class="num">Pen</th>
            <th class="num">Taps</th><th class="num">KB</th><th></th></tr>`;
     ts.forEach(t=>{ const r=getTrial(t.key); if(!r) return;
       const pen=(r.strokes||[]).reduce((a,s)=>a+s.length,0);
-      h+=`<tr><td>${r.started_iso.slice(11,19)}</td><td><code>${r.trial_id||r.trial_ref||"—"}</code></td>
-          <td>${r.condition}</td><td class="num">${pen}</td><td class="num">${(r.taps||[]).length}</td>
+      h+=`<tr><td>${localClock(r.trial?.started_iso)}</td>
+          <td><code>${r.trial_id||"—"}</code></td><td>${r.parameters?.condition||""}</td>
+          <td class="num">${pen}</td><td class="num">${(r.taps||[]).length}</td>
           <td class="num">${(t.size/1024).toFixed(0)}</td>
           <td><button class="ghost sm" onclick="delTrial('${t.key}')">delete</button></td></tr>`; });
     $("savedBody").innerHTML=h+`</table>`;
   }
   $("savedMeter").innerHTML=
     `<div class="${pct>80?"bad":"note"}" style="margin-top:8px">${ts.length} trial${ts.length===1?"":"s"},
-     ${(total/1024).toFixed(0)} KB — about ${pct.toFixed(0)}% of the roughly 5 MB a browser allows.
+     ${(total/1024).toFixed(0)} KB — about ${pct.toFixed(0)}% of the ~5 MB a browser allows.
      ${pct>80?"Export and clear soon.":""}</div>` +
     (STORAGE_OK?"":`<div class="bad">Browser storage unavailable — trials are in memory only and
-     will be lost on refresh. Export after every trial. This usually means the page was opened as a
-     local file instead of over http.</div>`);
+     will be lost on refresh. This usually means the page was opened as a local file rather than
+     served over http.</div>`);
 }
-
-function stamp(){ const d=new Date(),p=n=>String(n).padStart(2,"0");
-  return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; }
+function fileStem(){ const d=new Date(), z=n=>String(n).padStart(2,"0");
+  const pid=($("pid").value||"unnamed").toLowerCase();
+  return `motiq_${pid}_v${visitNo()}s${sessNo()}_${d.getFullYear()}_${z(d.getMonth()+1)}_${z(d.getDate())}`; }
 function save(name,text,mime){ const b=new Blob([text],{type:mime}),a=document.createElement("a");
   a.href=URL.createObjectURL(b); a.download=name; a.click();
   setTimeout(()=>URL.revokeObjectURL(a.href),2000); }
 function exportAllCSV(){ const r=listTrials().map(t=>getTrial(t.key)).filter(Boolean);
   if(!r.length){ alert("Nothing saved to export."); return; }
-  save(`motiq_all_${stamp()}.csv`, csvText(r), "text/csv"); }
+  save(`${fileStem()}.csv`,csvText(r),"text/csv"); }
 function exportAllJSON(){ const r=listTrials().map(t=>getTrial(t.key)).filter(Boolean);
   if(!r.length){ alert("Nothing saved to export."); return; }
-  save(`motiq_all_${stamp()}.json`, JSON.stringify(r,null,2), "application/json"); }
+  save(`${fileStem()}.json`,JSON.stringify(r,null,2),"application/json"); }
 function showCSVText(){ const r=listTrials().map(t=>getTrial(t.key)).filter(Boolean);
   if(!r.length){ alert("Nothing saved."); return; }
   const b=$("csvbox"); b.classList.remove("hidden"); b.value=csvText(r); b.focus(); b.select(); }
 
-window.addEventListener("resize", ()=>{ if($("stage").classList.contains("on")){ layout(); drawScene(); }});
-syncBlocks();
-renderSaved();
+window.addEventListener("resize",()=>{ if($("stage").classList.contains("on")){ layout(); drawScene(); }});
+renderPlan(); renderAudioTable(); renderSaved(); renderStatus();
 </script>
