@@ -82,14 +82,16 @@
   .hidden { display:none !important; }
   code { background:#eef1f5; padding:1px 5px; border-radius:4px; font-size:13px; }
   .steps { display:flex; gap:8px; margin:0 0 18px; font-size:13px; color:var(--muted); flex-wrap:wrap; }
-  .steps span { padding:5px 11px; border-radius:20px; background:#eef1f5; }
+  .steps span { padding:5px 11px; border-radius:20px; background:#eef1f5; cursor:pointer;
+                user-select:none; }
+  .steps span:hover { background:#dde3ea; }
   .steps span.on { background:var(--accent); color:#fff; font-weight:600; }
-  #cardOutline { border:3px solid var(--warm); border-radius:9px; background:#fff8f2;
-                 display:flex; align-items:center; justify-content:center;
-                 color:var(--warm); font-size:13px; text-align:center; margin:14px 0; }
   #cardokRow { display:flex; align-items:flex-start; gap:9px; margin:0;
                font-size:14px; color:var(--ink); cursor:pointer; }
   #cardok { width:auto; flex:0 0 auto; margin:3px 0 0; }
+  #cardOutline { border:3px solid var(--warm); border-radius:9px; background:#fff8f2;
+                 display:flex; align-items:center; justify-content:center;
+                 color:var(--warm); font-size:13px; text-align:center; margin:14px 0; }
 
   /* ---- run stage ---- */
   #stage { position:fixed; inset:0; background:#fff; z-index:60; display:none; }
@@ -97,15 +99,19 @@
   #canvas { position:absolute; inset:0; touch-action:none; display:block; }
   #overlay { position:absolute; inset:0; display:flex; align-items:center;
              justify-content:center; flex-direction:column; text-align:center;
-             padding:34px; background:rgba(255,255,255,.98); }
+             padding:34px; background:rgba(255,255,255,.98); z-index:3; }
   #overlay h3 { font-size:27px; margin:0 0 14px; }
   #overlay p { font-size:20px; max-width:660px; margin:0 0 12px; color:#2c3238; }
-  #hud { position:absolute; top:12px; left:50%; transform:translateX(-50%);
-         font-size:30px; font-weight:600; color:var(--muted);
-         font-variant-numeric:tabular-nums; pointer-events:none; }
-  #ctrl { position:absolute; bottom:26px; left:50%; transform:translateX(-50%); }
-  #ctrl button { font-size:26px; padding:22px 56px; border-radius:14px; min-width:230px; }
-  #quit { position:absolute; top:10px; right:14px; font-size:13px; padding:8px 13px;
+  /* administrator bar: the participant uses the canvas, the administrator uses this */
+  #adminbar { position:absolute; top:0; left:0; right:0; height:86px; z-index:2;
+              display:flex; align-items:center; gap:12px; padding:0 16px;
+              border-bottom:1px solid var(--line); background:#f7f9fb; }
+  #adminbar button { font-size:21px; padding:15px 34px; border-radius:10px; min-width:150px; }
+  #adminbar .spacer { flex:1; }
+  #hud { font-size:31px; font-weight:600; color:var(--muted);
+         font-variant-numeric:tabular-nums; pointer-events:none;
+         position:absolute; transform:translateX(-50%); }
+  #quit { font-size:14px !important; padding:9px 15px !important; min-width:0 !important;
           background:#fff; color:var(--muted); border:1px solid var(--line); }
 </style>
 
@@ -116,10 +122,10 @@
   <span id="buildstamp"></span></p>
 
   <div class="steps">
-    <span id="s1" class="on">1 · Calibration</span>
-    <span id="s2">2 · Session</span>
-    <span id="s3">3 · Parameters</span>
-    <span id="s4">4 · Run</span>
+    <span id="s1" class="on" onclick="goPage(1)">1 · Calibration</span>
+    <span id="s2" onclick="goPage(2)">2 · Session</span>
+    <span id="s3" onclick="goPage(3)">3 · Parameters</span>
+    <span id="s4" onclick="goPage(4)">4 · Results &amp; data</span>
   </div>
 
   <!-- ============================ PAGE 1: CALIBRATION ==================== -->
@@ -162,20 +168,27 @@
             <option value="undisclosed">Prefer not to say</option></select></div>
       </div>
       <div class="r3">
-        <div><label for="age">Age (optional)</label><input id="age" type="number" min="18" max="110"></div>
+        <div><label for="byear">Birth year</label>
+          <input id="byear" type="number" min="1900" max="2020" placeholder="1948"></div>
+        <div><label for="bmonth">Birth month</label>
+          <select id="bmonth"><option value="">—</option>
+            <option value="1">January</option><option value="2">February</option>
+            <option value="3">March</option><option value="4">April</option>
+            <option value="5">May</option><option value="6">June</option>
+            <option value="7">July</option><option value="8">August</option>
+            <option value="9">September</option><option value="10">October</option>
+            <option value="11">November</option><option value="12">December</option>
+          </select></div>
         <div><label for="domhand">Dominant hand</label>
           <select id="domhand"><option value="right">Right</option><option value="left">Left</option>
             <option value="ambidextrous">Ambidextrous</option></select></div>
-        <div><label for="penonly">Input</label>
-          <select id="penonly"><option value="any">Accept pen, touch or mouse</option>
-            <option value="pen">Pen only for drawing (rejects palm and finger)</option></select></div>
       </div>
+      <div id="agenote" class="note"></div>
       <div>
         <label for="notes">Notes</label>
         <textarea id="notes" rows="4" placeholder="Anything worth recording about this session — glasses, tremor, fatigue, interruptions, deviations from protocol."></textarea>
       </div>
-      <div class="note">Tapping is always accepted from a finger, even in pen-only mode.
-      Notes are saved with every trial in this session.</div>
+      <div class="note">Notes are saved with every trial in this session.</div>
     </fieldset>
     <div class="navrow">
       <button class="big ghost" onclick="goPage(1)">Back</button>
@@ -219,6 +232,13 @@
         <div><label for="startdia">Start zone (mm)</label><input id="startdia" type="number" value="8" step="1" min="4" max="20"></div>
         <div><label for="endang">End angle (deg)</label><input id="endang" type="number" value="90" step="15"></div>
         <div><label for="split">Split (drawing share)</label><input id="split" type="number" value="0.70" step="0.05" min="0.4" max="1"></div>
+        <div><label for="implement">Drawing implement</label>
+          <select id="implement">
+            <option value="pen">Stylus (Apple Pencil)</option>
+            <option value="finger">Index finger</option>
+          </select></div>
+      </div>
+      <div class="r2">
         <div><label for="preset">Match printed template</label>
           <select id="preset"><option value="">— choose —</option>
             <option value="11,4">SP-R44-T4 · pitch 11, 4 turns</option>
@@ -228,6 +248,7 @@
             <option value="13,4">SP-R52-T4 · pitch 13, 4 turns</option>
             <option value="13,5">SP-R65-T5 · pitch 13, 5 turns</option>
           </select></div>
+        <div><label>&nbsp;</label><div id="implnote" class="note" style="margin:0"></div></div>
       </div>
       <div id="geonote" class="note"></div>
       <div id="splitnote" class="note"></div>
@@ -282,7 +303,8 @@
       <button class="big ghost" onclick="goPage(2)">Back</button>
       <button class="big" onclick="openTrial()">Start trial</button></div>
     <div class="btnrow" style="justify-content:center">
-      <button class="ghost" onclick="openTrial(true)">Show instruction only</button></div>
+      <button class="ghost" onclick="openTrial(true)">Show instruction only</button>
+      <button class="ghost" onclick="goPage(4)">Results &amp; saved data</button></div>
   </div>
 
   <!-- ============================ PAGE 4: RESULTS ======================== -->
@@ -319,22 +341,25 @@
       <button class="big ghost" onclick="goPage(3)">Change parameters</button>
       <button class="big" onclick="openTrial()">Run again</button></div>
     <div class="btnrow" style="justify-content:center">
-      <button class="ghost" onclick="goPage(2)">New participant</button></div>
+      <button class="ghost" onclick="newSession()">New participant</button></div>
   </div>
 </div>
 
 <div id="stage">
   <canvas id="canvas"></canvas>
+  <div id="adminbar">
+    <div id="ctrl" style="display:flex;gap:12px"></div>
+    <div class="spacer"></div>
+    <button id="quit" onclick="quitTrial()">Quit</button>
+  </div>
   <div id="hud"></div>
-  <button id="quit" onclick="quitTrial()">Quit</button>
-  <div id="ctrl"></div>
   <div id="overlay"></div>
 </div>
 
 <script>
 "use strict";
 
-const BUILD = "v2.02 2026-08-16";
+const BUILD = "v3.02 2026-08-16";
 
 const MM = { CARD_W: 85.60, CARD_H: 53.98 };
 const $ = id => document.getElementById(id);
@@ -364,7 +389,16 @@ function goPage(n){
   [1,2,3,4].forEach(i => $("pg"+i).classList.toggle("hidden", i!==n));
   [1,2,3,4].forEach(i => $("s"+i).classList.toggle("on", i===n));
   if (n===3) syncBlocks();
-  if (n===4) renderSaved();
+  if (n===4) {
+    renderSaved();
+    if (!LAST) {
+      $("saveState").innerHTML="";
+      $("rsum").innerHTML=`<p class="note" style="margin:0">No trial has been run in this
+        session yet. Saved trials from earlier sessions are listed below and can still be
+        exported.</p>`;
+      $("rwin").innerHTML=""; $("rq").innerHTML="";
+    }
+  }
   window.scrollTo(0,0);
 }
 
@@ -403,8 +437,13 @@ function syncBlocks(){
     [nd.spiral?"spiral geometry":null, nd.tap?"tapping":null, nd.audio?"auditory stream":null]
       .filter(Boolean).join(", ") + `.` +
     (nd.spiral ? ` Ends when you press END, not on the clock.` : ``);
+  $("implnote").innerHTML = $("implement").value==="finger"
+    ? `Finger drawing: the stylus is ignored and no pressure is recorded. Not equivalent
+       to the stylus condition — error profiles differ, particularly in older adults.`
+    : `Stylus: finger and palm contact is ignored for drawing. Tapping still accepts a finger.`;
   updateGeo(); updateISIWarn();
 }
+$("implement").addEventListener("change", syncBlocks);
 $("cond").addEventListener("change", syncBlocks);
 $("taphand").addEventListener("change", syncBlocks);
 
@@ -429,7 +468,7 @@ const store = {
 //   detected — matched an entry in DEVICES
 //   fallback — no match, nominal 96 px/inch
 //   saved    — restored from the motiq_ppmm key (device unknown, may not be this one)
-//   manual   — the operator typed or nudged the value; overrides any earlier source
+//   manual   — the operator typed or nudged the value; overrides any earlier value
 const CAL = { source:null, deviceLabel:null };
 
 function autoDetect(){
@@ -630,8 +669,8 @@ function layout(){
   const uw=W-ux0-Math.max(sa.right,2)*p, uh=H-uy0-Math.max(sa.bottom,2)*p;
 
   const nd=needs(), cond=$("cond").value;
-  const bottomPad = 110;                       // keep clear of the START/END control
-  const cy = uy0 + (uh-bottomPad)/2;
+  const topPad = 100;                          // clear of the administrator bar
+  const cy = uy0 + topPad + (uh-topPad)/2;
 
   let dx0=ux0, dw=uw, tapCx=null, zones=null, splitX=null;
 
@@ -656,13 +695,12 @@ function layout(){
       spiralOn:nd.spiral, cx:dx0+dw/2, cy, safeAreaMM:sa };
 
   // The clock belongs to the tapping task, not the drawing, which is untimed.
-  // Put it over the tap zone so it is never read as a drawing deadline.
   const hudX = zones ? (zones[0].cx+zones[1].cx)/2 : (tapCx!==null ? tapCx : dx0+dw/2);
   $("hud").style.left = hudX+"px";
-  $("hud").style.top = Math.max(10, cy - mm2pxRaw(+$("tapdia").value/2, p) - 54)+"px";
+  $("hud").style.top = Math.max(topPad+6, cy - (+$("tapdia").value/2)*p - 54)+"px";
+  $("hud").style.display = (nd.tap ? "block" : "none");   // no clock for spiral only
   return L;
 }
-const mm2pxRaw = (v,p) => v*p;
 const mm2px = v => v*L.p;
 const toCanvas = (xmm,ymm) => ({ x:L.cx+xmm*L.p, y:L.cy-ymm*L.p });
 const toMM = (px,py) => ({ x:(px-L.cx)/L.p, y:(L.cy-py)/L.p });
@@ -809,7 +847,9 @@ function runTrial(seq, cond, nd){
         firstContactMs:null, toneClockDone:false };
 
   const cv=$("canvas");
-  const penOnly = $("penonly").value==="pen";
+  const implement = $("implement").value;      // pen or finger, chosen per condition
+  const drawOK = pt => implement==="pen" ? (pt==="pen"||pt==="mouse")
+                                         : (pt==="touch"||pt==="mouse");
   const tapR = () => mm2px(+$("tapdia").value/2);
   const hitZone = (x,y) => {
     if(L.zones){ const z=L.zones.find(z=>Math.hypot(x-z.cx,y-L.cy)<=tapR()); return z?z.id:null; }
@@ -829,6 +869,7 @@ function runTrial(seq, cond, nd){
   };
   const down = e => {
     const t = performance.now()-perf0;
+    RUN.lastContact = performance.now();
     const z = hitZone(e.clientX,e.clientY);
     if(z){                                       // a tap, never a stroke
       TAPS.push({ t:+t.toFixed(2), zone:z, pointerType:e.pointerType });
@@ -837,8 +878,9 @@ function runTrial(seq, cond, nd){
       return;
     }
     if(!nd.spiral) return;
-    if(penOnly && e.pointerType!=="pen") return; // palm rejection, drawing only
+    if(!drawOK(e.pointerType)) return;            // wrong implement, and palm rejection
     if(e.clientX < L.dx0-4) return;              // outside the drawing region
+    if(e.clientY < L.uy0+90) return;             // under the administrator bar
     const st=[]; STROKES.push(st); strokeFor.set(e.pointerId, st);
     addPoint(st,e,t);
     if(RUN.firstContactMs===null) RUN.firstContactMs=+t.toFixed(2);
@@ -846,10 +888,11 @@ function runTrial(seq, cond, nd){
   const move = e => {
     const st = strokeFor.get(e.pointerId);       // only this pointer's own stroke
     if(!st) return;
+    RUN.lastContact = performance.now();
     const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
     for(const ev of evs) addPoint(st, ev, performance.now()-perf0, evs.length>1);
   };
-  const up = e => { strokeFor.delete(e.pointerId); };   // only this pointer ends
+  const up = e => { strokeFor.delete(e.pointerId); RUN.lastContact = performance.now(); };
 
   cv.addEventListener("pointerdown",down);
   cv.addEventListener("pointermove",move);
@@ -871,17 +914,23 @@ function runTrial(seq, cond, nd){
   $("ctrl").appendChild(rb);
 
   cancelAnimationFrame(RAF);
+  const IDLE_MS = 5000;
   const loop=()=>{ drawScene();
     const left=(perf0+durMs-performance.now())/1000;
     if(left<=0 && !RUN.toneClockDone){
       RUN.toneClockDone=true;
       if(untimed) stopAudio();                   // tones over, drawing continues
     }
-    if(untimed){
-      $("hud").textContent = left>0 ? left.toFixed(1)+" s"
-        : (cond==="SP" ? ((performance.now()-perf0)/1000).toFixed(1)+" s" : "tones done");
-    } else {
-      $("hud").textContent = Math.max(0,left).toFixed(1)+" s";
+    if(nd.tap){
+      $("hud").textContent = untimed
+        ? (left>0 ? left.toFixed(1)+" s" : "tones done")
+        : Math.max(0,left).toFixed(1)+" s";
+    }
+    // Untimed trials close themselves once nothing has touched the screen for a
+    // while, so the administrator does not have to catch the end of every drawing.
+    if(untimed && RUN.firstContactMs!==null && (!RUN.seq || RUN.toneClockDone)
+       && RUN.lastContact && performance.now()-RUN.lastContact > IDLE_MS){
+      RUN.idleEnded = true; stopTrial(true); return;
     }
     RAF=requestAnimationFrame(loop); };
   loop();
@@ -939,7 +988,6 @@ function attribute(seq, taps, outLat){
 }
 
 function finish(){
-  $("stage").classList.remove("on");
   const seq=RUN.seq, pts=STROKES.flat();
   const dur = pts.length>1 ? (pts[pts.length-1].t-pts[0].t) : 0;
   const rate = dur>0 ? (pts.length-1)/(dur/1000) : 0;
@@ -967,13 +1015,36 @@ function finish(){
   }
 
   LAST={ RUN, STROKES, TAPS, att, SPIRAL, bim, layoutSafe:L.safeAreaMM, ppmm:L.p };
-  goPage(4);
 
-  const savedRes=putTrial(buildRecord());
+  // Numbers are allocated here, when a trial is actually kept, so a Reset leaves
+  // no gap in the series.
+  RUN.handLetter = handLetter();
+  const ids = nextIds($("pid").value||"unnamed", RUN.cond, RUN.handLetter);
+  RUN.repeatN = ids.repeat; RUN.seriesN = ids.series;
+
+  const rec = buildRecord();
+  LAST.rec = rec;
+  const savedRes = putTrial(rec);
   renderSaved();
+
+  // The stage stays up with the drawing on screen. The administrator decides when
+  // to move on rather than the screen vanishing under the participant's hand.
+  cancelAnimationFrame(RAF);
+  drawScene();
+  $("hud").textContent = RUN.idleEnded ? "finished" : "";
+  $("ctrl").innerHTML="";
+  const nb=document.createElement("button");
+  nb.textContent="NEXT";
+  nb.onclick=()=>{ $("stage").classList.remove("on"); RUN=null; goPage(3); };
+  $("ctrl").appendChild(nb);
+  const ag=document.createElement("button");
+  ag.textContent="Repeat"; ag.className="ghost";
+  ag.onclick=()=>{ RUN=null; openTrial(); };
+  $("ctrl").appendChild(ag);
+
   $("saveState").innerHTML = savedRes.ok
-    ? `<div class="good">Trial saved on this device (${(savedRes.bytes/1024).toFixed(0)} KB).
-       It survives a refresh.</div>`
+    ? `<div class="good">Trial saved on this device (${(savedRes.bytes/1024).toFixed(0)} KB)
+       as <b>${rec.trial_id}</b>. It survives a refresh.</div>`
     : `<div class="bad">Could not write to browser storage (${savedRes.error}). This trial is
        in memory only and will be lost on reload — export it now.</div>`;
 
@@ -1040,15 +1111,102 @@ function finish(){
 
 // ---------------------------------------------------------------- record, storage, export
 
+// Short stable hash, used to tell whether two trials ran the same parameter set.
+function hash36(s){
+  let h=5381; for(let i=0;i<s.length;i++) h=((h<<5)+h+s.charCodeAt(i))>>>0;
+  return h.toString(36).padStart(7,"0").slice(-7);
+}
+let SESSION_ID = "S"+Date.now().toString(36).toUpperCase();
+let SERIES = 0;                 // running number across the whole session
+const REPEATS = {};             // per participant + condition + hand
+function newSession(){
+  SESSION_ID="S"+Date.now().toString(36).toUpperCase();
+  SERIES=0; Object.keys(REPEATS).forEach(k=>delete REPEATS[k]);
+  goPage(2);
+}
+
+// R, L, or B for bimanual. Spiral conditions are labelled by the drawing hand,
+// tapping-only conditions by the tapping hand.
+function handLetter(){
+  const nd=needs();
+  if(nd.zones===2) return "B";
+  if(nd.spiral) return $("hand").value==="left" ? "L" : "R";
+  return $("taphand").value==="left" ? "L" : "R";
+}
+const pad2 = n => String(n).padStart(2,"0");
+
+// Counters live in memory, not derived from stored records, so numbering cannot
+// fail because a storage read failed.
+function nextIds(pid, cond, H){
+  const key = `${pid}|${cond}|${H}`;
+  REPEATS[key] = (REPEATS[key]||0) + 1;
+  SERIES += 1;
+  return { repeat: REPEATS[key], series: SERIES };
+}
+
+function birthInfo(){
+  const y = $("byear").value ? +$("byear").value : null;
+  const m = $("bmonth").value ? +$("bmonth").value : null;
+  let age = null;
+  if(y){
+    const now=new Date(), cy=now.getFullYear(), cm=now.getMonth()+1;
+    age = cy - y - (m && cm < m ? 1 : 0);
+  }
+  return { birth_year:y, birth_month:m, age_years:age };
+}
+function updateAgeNote(){
+  const b=birthInfo();
+  $("agenote").innerHTML = b.birth_year
+    ? `Age at today's date: <b>${b.age_years}</b>${b.birth_month?"":" (approximate — no month given)"}.`
+    : `Birth year is optional, but age is recorded from it rather than typed.`;
+}
+["byear","bmonth"].forEach(id=>$(id).addEventListener("input", updateAgeNote));
+updateAgeNote();
+
+function paramSet(){
+  const nd=needs(), c=$("cond").value;
+  const p={ condition:c };
+  if(nd.spiral) Object.assign(p,{
+    pitch_mm:+$("pitch").value, turns:+$("turns").value, end_angle_deg:+$("endang").value,
+    instruction:$("instr").value, implement:$("implement").value,
+    drawing_hand:$("hand").value, start_zone_mm:+$("startdia").value,
+    split:+$("split").value });
+  if(nd.tap) Object.assign(p,{
+    tap_zone_mm:+$("tapdia").value, zones:nd.zones,
+    tapping_hand:nd.zones===1?$("taphand").value:"both",
+    zone_spacing_mm:nd.zones===2?+$("zonegap").value:null,
+    trial_length_s: nd.audio ? +$("dur").value : +$("tapdur").value });
+  if(nd.audio) Object.assign(p,{
+    mean_isi_ms:+$("isi").value, jitter:+$("jit").value/100, p_target:+$("ptg").value,
+    f_standard_hz:+$("fstd").value, f_target_hz:+$("ftgt").value,
+    tone_ms:+$("tone").value, level:+$("lvl").value, seed:+$("seed").value,
+    sequence_source: LOADED_SEQ ? LOADED_SEQ.source : "browser" });
+  return p;
+}
+
 function buildRecord(){
   const R=LAST.RUN;
+  const params=paramSet();
+  const sig=hash36(JSON.stringify(params));
+  const pid=$("pid").value||"unnamed";
+  const H=R.handLetter, n=R.repeatN, series=R.seriesN;
+  const tid=`${pid}_${R.cond}_${H}${pad2(n)}_${series}`;
+  const b=birthInfo();
   return {
-    schema:"motiq_prototype/2",
+    schema:"motiq_prototype/4",
     build: BUILD,
     note:"PROTOTYPE. Browser mm and browser timing are approximations.",
-    trial_uid: R.startedISO.replace(/[:.]/g,"-")+"_"+($("pid").value||"unnamed")+"_"+R.cond,
+    trial_id: tid,
+    trial_uid: R.startedISO.replace(/[:.]/g,"-")+"_"+tid,
+    session_id: SESSION_ID,
+    series_number: series,
+    repeat_number: n,
+    hand_label: H,
+    param_signature: sig,
+    parameters: params,
     participant:{ id:$("pid").value, group:$("grp").value, sex:$("sex").value||null,
-                  age:$("age").value||null, dominant_hand:$("domhand").value,
+                  birth_year:b.birth_year, birth_month:b.birth_month, age_years:b.age_years,
+                  dominant_hand:$("domhand").value,
                   drawing_hand:$("hand").value, tapping_hand:$("taphand").value },
     notes: $("notes").value || null,
     condition:R.cond, started_iso:R.startedISO,
@@ -1082,8 +1240,11 @@ function buildRecord(){
 }
 
 const CSV_HEAD=[
-  "trial_uid","build","participant_id","group","sex","age","dominant_hand","drawing_hand",
-  "tapping_hand","condition","instruction","notes","started_iso","stopped_early",
+  "trial_id","trial_uid","build","session_id","series_number","repeat_number","hand_label",
+  "param_signature",
+  "participant_id","group","sex","birth_year","birth_month","age_years",
+  "dominant_hand","drawing_hand",
+  "tapping_hand","implement","condition","instruction","notes","started_iso","stopped_early",
   "trial_length_s","first_contact_ms","css_px_per_mm",
   "device_label","calibration_source","card_confirmed","pitch_mm","turns","radius_mm",
   "direction","template_path_mm","tap_zone_mm","n_pen_samples","achieved_rate_hz","n_strokes",
@@ -1114,8 +1275,12 @@ function csvRows(rec){
   const dur=pts.length>1?(pts[pts.length-1].t-pts[0].t):0;
   const rate=dur>0?((pts.length-1)/(dur/1000)).toFixed(1):"";
   const meta=[
-    rec.trial_uid, rec.build??"", P.id||"unnamed", P.group, P.sex??"", P.age??"", P.dominant_hand,
-    P.drawing_hand, P.tapping_hand??"", rec.condition, S?S.instruction:"",
+    rec.trial_id, rec.trial_uid, rec.build??"", rec.session_id, rec.series_number, rec.repeat_number,
+    rec.hand_label, rec.param_signature,
+    P.id||"unnamed", P.group, P.sex??"", P.birth_year??"", P.birth_month??"", P.age_years??"",
+    P.dominant_hand,
+    P.drawing_hand, P.tapping_hand??"", rec.parameters?.implement??"",
+    rec.condition, S?S.instruction:"",
     rec.notes??"", rec.started_iso,
     rec.trial.stopped_early?1:0, rec.trial.length_s, rec.trial.first_contact_ms??"",
     rec.calibration.css_px_per_mm,
@@ -1185,11 +1350,11 @@ function renderSaved(){
   const pct=Math.min(100,100*total/(5*1024*1024));
   if(!ts.length) $("savedBody").innerHTML=`<p class="note" style="margin:0">No trials saved yet.</p>`;
   else{
-    let h=`<table><tr><th>Started</th><th>ID</th><th>Condition</th><th class="num">Pen</th>
+    let h=`<table><tr><th>Started</th><th>Trial ID</th><th>Condition</th><th class="num">Pen</th>
            <th class="num">Taps</th><th class="num">KB</th><th></th></tr>`;
     ts.forEach(t=>{ const r=getTrial(t.key); if(!r) return;
       const pen=(r.strokes||[]).reduce((a,s)=>a+s.length,0);
-      h+=`<tr><td>${r.started_iso.slice(0,19).replace("T"," ")}</td><td>${r.participant.id||"unnamed"}</td>
+      h+=`<tr><td>${r.started_iso.slice(11,19)}</td><td><code>${r.trial_id||r.trial_ref||"—"}</code></td>
           <td>${r.condition}</td><td class="num">${pen}</td><td class="num">${(r.taps||[]).length}</td>
           <td class="num">${(t.size/1024).toFixed(0)}</td>
           <td><button class="ghost sm" onclick="delTrial('${t.key}')">delete</button></td></tr>`; });
