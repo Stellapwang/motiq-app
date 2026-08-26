@@ -89,12 +89,26 @@
   .queue td.now { background:#eaf2fb; font-weight:600; }
   .queue td.done { color:var(--muted); }
 
-  #stage { position:fixed; inset:0; background:#fff; z-index:60; display:none; }
+  /* Rapid tapping was rubber-banding the page. The stage takes all touch handling and
+     the document behind it is locked while a trial is up. */
+  #stage { position:fixed; inset:0; background:#fff; z-index:60; display:none;
+           touch-action:none; overscroll-behavior:none; user-select:none;
+           -webkit-user-select:none; -webkit-touch-callout:none; }
+  body.locked { position:fixed; width:100%; height:100%; overflow:hidden; touch-action:none; }
+  #adminbar button, #overlay button { user-select:none; -webkit-user-select:none; }
   #stage.on { display:block; }
   #canvas { position:absolute; inset:0; touch-action:none; display:block; }
-  #overlay { position:absolute; inset:0; display:flex; align-items:center;
-             justify-content:center; flex-direction:column; text-align:center;
-             padding:34px; background:rgba(255,255,255,.98); z-index:3; }
+  /* The instruction can be taller than the screen. Content scrolls; the action button
+     sits in a bar pinned to the bottom so it can never be pushed out of reach. */
+  #overlay { position:absolute; inset:0; display:flex; flex-direction:column;
+             background:rgba(255,255,255,.98); z-index:3; }
+  #ovBody { flex:1 1 auto; overflow-y:auto; -webkit-overflow-scrolling:touch;
+            display:flex; flex-direction:column; align-items:center; justify-content:center;
+            text-align:center; padding:26px 30px 10px; }
+  #ovFoot { flex:0 0 auto; display:flex; gap:12px; justify-content:center;
+            padding:12px 20px calc(12px + env(safe-area-inset-bottom));
+            border-top:1px solid var(--line); background:#f7f9fb; }
+  #ovFoot button { font-size:24px; padding:18px 48px; border-radius:12px; min-width:180px; }
   #overlay h3 { font-size:27px; margin:0 0 14px; }
   #overlay p { font-size:20px; max-width:680px; margin:0 0 12px; color:#2c3238; }
   #adminbar { position:absolute; top:0; left:0; right:0; height:86px; z-index:2;
@@ -121,7 +135,8 @@
     <span id="s2" onclick="goPage(2)">2 · Participant &amp; checks</span>
     <span id="s3" onclick="goPage(3)">3 · Session</span>
     <span id="s4" onclick="goPage(4)">4 · Parameters</span>
-    <span id="s5" onclick="goPage(5)">5 · Results &amp; data</span>
+    <span id="s5" onclick="goPage(5)">5 · Instructions</span>
+    <span id="s6" onclick="goPage(6)">6 · Results &amp; data</span>
   </div>
 
   <!-- ===================== 1 CALIBRATION ===================== -->
@@ -302,7 +317,7 @@
         <div><label for="pitch">Pitch (mm)</label><input id="pitch" type="number" value="12" step="0.5" min="6" max="25"></div>
         <div><label for="turns">Turns</label><input id="turns" type="number" value="5" step="1" min="2" max="8"></div>
         <div><label for="instr">Instruction</label>
-          <select id="instr"><option value="between" selected>Draw between the turns</option>
+          <select id="instr"><option value="between" selected>Draw between the lines</option>
             <option value="trace">Trace on the line</option></select></div>
         <div><label for="preset">Match printed template</label>
           <select id="preset"><option value="">— choose —</option>
@@ -369,8 +384,35 @@
       <button class="big" onclick="goPage(3)">Done</button></div>
   </div>
 
-  <!-- ===================== 5 RESULTS ===================== -->
+  <!-- ===================== 5 INSTRUCTIONS ===================== -->
   <div id="pg5" class="hidden">
+    <p class="sub">Exactly what the participant is shown. One page per condition. This is the
+    same text the run screen uses, so the two cannot drift apart.</p>
+    <fieldset>
+      <legend>Condition</legend>
+      <div class="r3">
+        <div><label for="insCond">Show</label><select id="insCond" onchange="renderInstrPage()"></select></div>
+        <div><label for="insMode">Spiral instruction</label>
+          <select id="insMode" onchange="renderInstrPage()">
+            <option value="between">Draw between the lines</option>
+            <option value="trace">Trace on the line</option></select></div>
+        <div><label>&nbsp;</label><div class="btnrow" style="margin:0">
+          <button class="ghost" onclick="stepInstr(-1)">← Previous</button>
+          <button class="ghost" onclick="stepInstr(1)">Next →</button></div></div>
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend id="insTitle">—</legend>
+      <div id="insBody"></div>
+      <div id="insMeta" class="note"></div>
+    </fieldset>
+    <div class="navrow">
+      <button class="big ghost" onclick="goPage(3)">Back to session</button>
+      <button class="big" onclick="goPage(6)">Results &amp; data</button></div>
+  </div>
+
+  <!-- ===================== 6 RESULTS ===================== -->
+  <div id="pg6" class="hidden">
     <div id="saveState"></div>
     <h2>Last trial</h2>
     <div id="rsum"></div>
@@ -408,15 +450,19 @@
     <div id="ctrl" style="display:flex;gap:12px"></div>
     <div id="hud"></div>
     <div class="spacer"></div>
+    <div id="tapcount" style="font-size:14px;color:var(--muted);min-width:70px"></div>
     <div id="reminder"></div>
     <button id="quit" onclick="abandonTrial()">Abandon trial</button>
   </div>
-  <div id="overlay"></div>
+  <div id="overlay">
+    <div id="ovBody"></div>
+    <div id="ovFoot"></div>
+  </div>
 </div>
 
 <script>
 "use strict";
-const BUILD = "v5.01 2026-08-16";
+const BUILD = "v7.02 2026-08-17";
 
 /* ============================================================================
    CATALOGUE — the one place conditions are defined.
@@ -447,12 +493,12 @@ const CATALOGUE = [
   { id:"ODT",      label:"Oddball tapping",            order:70, spiral:0, tap:1, audio:1, zones:1, hands:"each",  repeats:2, lengthS:20 },
   { id:"SP_TAP",   label:"Spiral + tapping",           order:80, spiral:1, tap:1, audio:0, zones:1, hands:"roles", repeats:2, lengthS:null, implement:"pen" },
   { id:"SP_DET",   label:"Spiral + detection",         order:90, spiral:1, tap:1, audio:1, zones:1, hands:"roles", repeats:2, lengthS:45, implement:"pen" },
-  { id:"SP_ODT",   label:"Spiral + oddball",           order:100,spiral:1, tap:1, audio:1, zones:1, hands:"roles", repeats:2, lengthS:45, implement:"pen" },
-  { id:"SPF_ODT",  label:"Spiral (finger) + oddball",  order:110,spiral:1, tap:1, audio:1, zones:1, hands:"one",   repeats:2, lengthS:45, implement:"finger" },
+  { id:"SP_ODT",   label:"Spiral + oddball",           order:100,spiral:1, tap:1, audio:1, zones:1, hands:"roles", repeats:1, lengthS:45, implement:"pen" },
+  { id:"SPF_ODT",  label:"Spiral (finger) + oddball",  order:110,spiral:1, tap:1, audio:1, zones:1, hands:"one",   repeats:1, lengthS:45, implement:"finger" },
   // No tap zone: the response is a silent count reported at the end, so there is no
   // timestamped response channel and no cognitive dual-task effect can be computed.
   // Count error is a trial validity criterion, not a measure.
-  { id:"SPF_ODC",  label:"Spiral (finger) + silent count", order:120, spiral:1, tap:0, audio:1, zones:0, hands:"one", repeats:2, lengthS:45, implement:"finger", count:1 }
+  { id:"SPF_ODC",  label:"Spiral (finger) + silent count", order:120, spiral:1, tap:0, audio:1, zones:0, hands:"one", repeats:1, lengthS:45, implement:"finger", count:1 }
 ];
 
 // Per-condition auditory defaults. Also editable; add a key and point a catalogue
@@ -478,7 +524,105 @@ const AUDIO_DEFAULTS = {
 // Embedded so the app remains one file with nothing to fetch.
 const POSTURE_PNG = "data:image/png;base64,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";
 
-const OVERHEAD_S = 25;   // instruction, transition, hand swap per trial
+const OVERHEAD_S = 25;
+
+// ---------------------------------------------------------------------------
+// Instruction text. One source: the Instructions tab and the run stage both read
+// this, so what you rehearse is what the participant hears.
+// Short lines, plain words, written to be read aloud.
+// ---------------------------------------------------------------------------
+function instructionFor(condId, opts){
+  const c=byId(condId); if(!c) return null;
+  const mode = (opts&&opts.mode) || ($("instr")?$("instr").value:"between");
+  const impl = (opts&&opts.implement) || c.implement || "pen";
+  const tool = impl==="finger" ? "finger" : "pen";
+  const lines=[];
+
+  const dualTask = c.spiral && (c.tap || c.audio);
+  if(c.spiral && !dualTask){
+    lines.push("Sit comfortably.");
+    lines.push("Start in the middle.");
+    lines.push(mode==="between"
+      ? "Follow the white path from the centre all the way out."
+      : "Trace the spiral line from the centre all the way out, as accurately as you can.");
+    lines.push(`Keep your ${tool} on the screen the whole time. Do not lift it.`);
+    lines.push("Do not rest your hand or arm on the table.");
+  } else if(dualTask){
+    // The drawing rules were taught in SP. Repeating them buries the part that is new.
+    lines.push(`Draw the spiral exactly as before, with your ${tool}.`);
+  }
+
+  const also = dualTask ? "At the same time, " : "";
+
+  if(c.zones===2){
+    lines.push("Put one index finger on each circle.");
+    lines.push(condId==="BMANT"
+      ? "Tap left, then right, then left, then right."
+      : "Tap both circles at the same time.");
+    if(condId==="BMANT") lines.push("Only one finger touches at a time.");
+    lines.push("Tap as fast as you can.");
+  } else if(c.tap && !c.audio){
+    lines.push(`${also}tap the circle with your index finger, as fast as you can.`);
+  }
+
+  const a = AUDIO_DEFAULTS[condId];
+  if(c.audio && !c.count){
+    if(a && a.ptg>0){
+      lines.push("You will hear low beeps and high beeps.");
+      lines.push(`${also}tap the circle only when you hear a <b>high</b> beep.`);
+      lines.push("Do nothing for the low beeps.");
+    } else {
+      lines.push("You will hear beeps.");
+      lines.push(`${also}tap the circle every time you hear a beep.`);
+    }
+  }
+  if(c.count){
+    lines.push("You will hear low beeps and high beeps.");
+    lines.push("Count the <b>high</b> beeps silently in your head.");
+    lines.push("Do not tap.");
+    lines.push("Tell me the number when the trial ends.");
+  }
+
+  return { id:condId, title:c.label, lines,
+           figure: !!c.spiral && !dualTask, mode, implement:impl,
+           length: c.lengthS===null ? "Ends when the administrator stops it."
+                                    : `About ${a?a.durS:c.lengthS} seconds.` };
+}
+
+// The posture figure shows drawing BETWEEN the lines. Tracing needs its own picture, so
+// the spiral panel is generated from the same geometry the trial uses.
+function spiralFigureSVG(mode){
+  const R=58, turns=4, pitch=R/turns;
+  const sp=spiralPath(R,turns,"cw",90,700);
+  const d=pts=>pts.map((q,i)=>(i?"L":"M")+(75+q.x).toFixed(1)+","+(75-q.y).toFixed(1)).join(" ");
+  const cut=Math.round(sp.pts.length*0.70);
+  const drawnPts = mode==="between"
+    ? sp.pts.slice(0,cut).map(q=>{ const r=q.r+pitch/2;
+        return {x:r*Math.cos(q.a), y:r*Math.sin(q.a)}; })
+    : sp.pts.slice(0,cut);
+  const tip=drawnPts[drawnPts.length-1];
+  return `<svg viewBox="0 0 150 158" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg">
+    <path d="${d(sp.pts)}" fill="none" stroke="#9aa2ac"
+      stroke-width="${mode==="between"?1.1:2.4}" ${mode==="between"?'stroke-dasharray="3.2 3.2"':''}/>
+    <path d="${d(drawnPts)}" fill="none" stroke="#d0342c" stroke-width="1.7" stroke-linecap="round"/>
+    <circle cx="${(75+tip.x).toFixed(1)}" cy="${(75-tip.y).toFixed(1)}" r="2.4" fill="#d0342c"/>
+    <text x="75" y="154" text-anchor="middle" font-family="system-ui" font-size="9" fill="#5d6570">
+      ${mode==="between"?"keep your line in the gap":"follow the line itself"}</text>
+  </svg>`;
+}
+
+function instructionHTML(ins, opts){
+  if(!ins) return "";
+  const big=(opts&&opts.big)!==false;
+  const fs=big?"21px":"17px";
+  return `<ul style="text-align:left;max-width:660px;margin:6px auto;padding-left:22px;
+            font-size:${fs};line-height:1.65">` +
+    ins.lines.map(l=>`<li>${l}</li>`).join("") + `</ul>` +
+    (ins.figure?`<div style="display:flex;gap:20px;align-items:center;justify-content:center;
+      margin-top:12px;flex-wrap:wrap">
+      <img src="${POSTURE_PNG}" alt="posture and grip" style="width:min(46vw,380px);height:auto">
+      <div style="width:min(25vw,165px)">${spiralFigureSVG(ins.mode)}</div></div>`:"");
+}   // instruction, transition, hand swap per trial
 
 /* ------------------------------------------------------------------ utils */
 const $ = id => document.getElementById(id);
@@ -497,12 +641,13 @@ let pcPts=null;
 
 /* ------------------------------------------------------------------ pages */
 function goPage(n){
-  [1,2,3,4,5].forEach(i=>$("pg"+i).classList.toggle("hidden", i!==n));
-  [1,2,3,4,5].forEach(i=>$("s"+i).classList.toggle("on", i===n));
+  [1,2,3,4,5,6].forEach(i=>$("pg"+i).classList.toggle("hidden", i!==n));
+  [1,2,3,4,5,6].forEach(i=>$("s"+i).classList.toggle("on", i===n));
   if(n===3){ renderPlan(); renderQueue(); }
   renderStatus();
   if(n===4){ renderAudioTable(); updateGeo(); }
-  if(n===5){ renderSaved(); if(!LAST){ $("saveState").innerHTML="";
+  if(n===5) renderInstrPage();
+  if(n===6){ renderSaved(); if(!LAST){ $("saveState").innerHTML="";
     $("rsum").innerHTML=`<p class="note" style="margin:0">No trial run yet this session.</p>`;
     $("rwin").innerHTML=""; $("rq").innerHTML=""; } }
   window.scrollTo(0,0);
@@ -715,6 +860,28 @@ function onVisitChange(){
   $("sessnum").value = ses.size ? Math.max(...ses)+1 : 1;
   renderStatus();
 }
+function renderInstrPage(){
+  const sel=$("insCond");
+  if(!sel.options.length){
+    CATALOGUE.slice().sort((a,b)=>a.order-b.order).forEach(c=>{
+      const o=document.createElement("option"); o.value=c.id; o.textContent=`${c.id} — ${c.label}`;
+      sel.appendChild(o); });
+  }
+  const id=sel.value||CATALOGUE[0].id; sel.value=id;
+  const c=byId(id);
+  const ins=instructionFor(id,{mode:$("insMode").value});
+  $("insTitle").textContent=`${id} — ${c.label}`;
+  $("insBody").innerHTML=instructionHTML(ins,{big:false});
+  $("insMeta").innerHTML=`${ins.length} · ` +
+    `${c.spiral?(ins.implement==="finger"?"drawn with the index finger":"drawn with the pen"):"no drawing"}` +
+    `${c.zones===2?" · both hands":c.tap?" · one hand taps":""}`;
+}
+function stepInstr(d){
+  const sel=$("insCond"), i=sel.selectedIndex;
+  sel.selectedIndex=Math.max(0,Math.min(sel.options.length-1,i+d));
+  renderInstrPage();
+}
+
 function renderStatus(){
   const pid=pid_();
   if($("sessno")) $("sessno").value = pid ? `${pid}-v${visitNo()}-s${sessNo()}` : "";
@@ -832,7 +999,7 @@ function buildQueue(){
     else { for(let r=0;r<s.repeats;r++) push(s.oneHand); }
   });
   $("queueBox").classList.remove("hidden");
-  renderQueue();
+  renderQueue(); saveState();
 }
 function renderQueue(){
   if(!QUEUE.length){ $("queueBox").classList.add("hidden"); $("nextUp").classList.add("hidden"); return; }
@@ -848,13 +1015,17 @@ function renderQueue(){
       skipped. Build a new session, or change the plan and build again.</div>`;
   }
   $("queueBox").classList.remove("hidden");
-  let h=`<tr><th>#</th><th>Condition</th><th>Hand</th><th>Length</th><th>Status</th></tr>`;
+  let h=`<tr><th>#</th><th>Condition</th><th>Hand</th><th>Length</th><th>Status</th><th>Move</th></tr>`;
   QUEUE.forEach((q,i)=>{
     const cls=i===QPOS?"now":(q.status!=="pending"?"done":"");
+    const movable=q.status==="pending";
     h+=`<tr><td class="${cls}">${i+1}</td><td class="${cls}">${q.cond}</td>
         <td class="${cls}">${handWord(q.hand)}${q.role?" ("+q.role+")":""}</td>
         <td class="${cls}">${q.lengthS===null?"self-paced":q.lengthS+" s"}</td>
-        <td class="${cls}">${q.status}${q.skipReason?" — "+q.skipReason:""}</td></tr>`;
+        <td class="${cls}">${q.status}${q.skipReason?" — "+q.skipReason:""}</td>
+        <td>${movable?`<button class="ghost sm" onclick="moveTrial(${i},-1)">↑</button>
+             <button class="ghost sm" onclick="moveTrial(${i},1)">↓</button>
+             <button class="ghost sm" onclick="dropTrial(${i})">✕</button>`:""}</td></tr>`;
   });
   $("queueTable").innerHTML=h;
   renderStatus();
@@ -866,6 +1037,21 @@ function physHand(h){
   if(h==="both") return "both";
   return h==="dominant"?dom:(dom==="right"?"left":"right");
 }
+// Reordering only applies to trials not yet run, and never moves anything above the
+// current position, so a completed trial cannot be displaced.
+function moveTrial(i,dir){
+  const j=i+dir;
+  if(j<QPOS || j>=QUEUE.length || i<QPOS) return;
+  if(QUEUE[j].status!=="pending") return;
+  [QUEUE[i],QUEUE[j]]=[QUEUE[j],QUEUE[i]];
+  renderQueue();
+}
+function dropTrial(i){
+  if(i<QPOS || QUEUE[i].status!=="pending") return;
+  if(!confirm(`Remove ${QUEUE[i].cond} (${handWord(QUEUE[i].hand)}) from the list?`)) return;
+  QUEUE.splice(i,1); renderQueue();
+}
+
 function skipCurrent(){
   if(QPOS>=QUEUE.length) return;
   const why=prompt("Skip this trial. Reason (recorded on the session):","");
@@ -899,6 +1085,7 @@ function newVisit(){
 
 // A different person entirely.
 function newParticipant(){
+  clearState();
   if(!confirm("Start a new participant?\n\nThe fields on this page are cleared and a new session begins. Trials already saved on this device are kept.")) return;
   ["pid","grp","byear","notes","sessnote"].forEach(id=>{ if($(id)) $(id).value=""; });
   ["sex","bmonth"].forEach(id=>{ if($(id)) $(id).value=""; });
@@ -911,7 +1098,7 @@ function newParticipant(){
   penPadClear(); renderAudioCheck();
   SERIES=0;
   Object.keys(REPEATS).forEach(k=>delete REPEATS[k]);
-  QUEUE=[]; QPOS=0; LAST=null;
+  QUEUE=[]; QPOS=0; LAST=null; INSTRUCTED.clear();
   SESSION_KEY=nextSessionNumber();
   $("visitno").value=1; $("sessnum").value=1;
   updateAgeNote(); renderStatus(); renderPlan(); renderQueue();
@@ -1048,7 +1235,7 @@ function demo(w){ const c=audio(), t0=c.currentTime+.08, lv=+$("lvl").value;
 
 /* ------------------------------------------------------- layout + draw */
 let L=null,SPIRAL=null,STROKES=[],TAPS=[],TAPFLASH=null;
-const FLASH_MS=220;
+const FLASH_MS=260;
 let TRIAL=null;                   // the queue item being run
 
 function layout(){
@@ -1146,9 +1333,27 @@ function drawScene(){
 
 /* ------------------------------------------------------- trial engine */
 let RUN=null,RAF=null,LAST=null;
+const INSTRUCTED=new Set();      // conditions already explained this session
+
+function storageUsed(){
+  const ts=listTrials();
+  return { n:ts.length, bytes:ts.reduce((a,b)=>a+b.size,0) };
+}
+// A full battery fills browser storage. Warn before the next trial, not after a save
+// has already failed.
+function storageGuard(){
+  const u=storageUsed(), pct=100*u.bytes/(5*1024*1024);
+  if(pct<70) return true;
+  return confirm(`Storage is ${pct.toFixed(0)}% full (${u.n} trials, ${(u.bytes/1024/1024).toFixed(1)} MB).\n\n` +
+    `Saving may fail soon. Export from Results and data, then delete, before continuing.\n\n` +
+    `Continue anyway?`);
+}
+
+let LAST_COND=null, LAST_HAND=null;      // what the participant was last shown
 
 function runCurrent(){
-  if(QPOS>=QUEUE.length){ alert("The trial list is finished. Build a new session, or add trials on the Session page."); goPage(3); return; }
+  if(!storageGuard()){ goPage(6); return; }
+  if(QPOS>=QUEUE.length){ sessionComplete(); return; }
   const q=QUEUE[QPOS], c=byId(q.cond);
   TRIAL={ ...q, index:QPOS,
     drawHand: c.spiral ? physHand(q.hand) : null,
@@ -1156,7 +1361,34 @@ function runCurrent(){
              : c.spiral&&c.tap ? (physHand(q.hand)==="right"?"left":"right")
              : physHand(q.hand),
     implement: c.implement || "pen" };
-  openTrial(false);
+  // The instruction page appears only when the condition changes. A hand swap inside a
+  // condition is not a change of condition; it is called out on the ready screen instead.
+  openTrial(TRIAL.cond !== LAST_COND);
+}
+
+// Every overlay goes through here: body scrolls, buttons stay pinned.
+function showOverlay(bodyHTML, buttons){
+  const ov=$("overlay"); ov.style.display="flex";
+  $("ovBody").innerHTML=bodyHTML;
+  $("ovFoot").innerHTML="";
+  (buttons||[]).forEach(b=>{
+    const el=document.createElement("button");
+    el.textContent=b.label; if(b.ghost) el.className="ghost";
+    el.onclick=b.onClick; $("ovFoot").appendChild(el);
+  });
+  $("ovBody").scrollTop=0;
+}
+function hideOverlay(){ $("overlay").style.display="none"; }
+
+function sessionComplete(){
+  stageOn(true);
+  const done=QUEUE.filter(q=>q.status==="done").length;
+  const skipped=QUEUE.filter(q=>q.status==="skipped").length;
+  showOverlay(`<h3>Session complete</h3>
+    <p>${done} trial${done===1?"":"s"} saved${skipped?`, ${skipped} skipped`:""}.</p>
+    <p style="font-size:17px;color:#5d6570">Export before clearing this device.</p>`,
+    [{label:"Export data", onClick:()=>{ stageOn(false); RUN=null; goPage(6); }},
+     {label:"Back to session", ghost:true, onClick:()=>{ stageOn(false); RUN=null; goPage(3); }}]);
 }
 
 function audioCfgFor(cond){
@@ -1165,84 +1397,35 @@ function audioCfgFor(cond){
   return { ...a, key:cond, durS: TRIAL.lengthS ?? a.durS };
 }
 
-function openTrial(instructionOnly){
+function openTrial(showInstruction){
   const c=byId(TRIAL.cond);
   let seq=null;
   const cfg=audioCfgFor(TRIAL.cond);
-  if(cfg && !instructionOnly){
+  if(cfg){
     try{ seq=makeSequence(cfg.durS,cfg.isi,cfg.jit/100,cfg.ptg,drawSeed()); }
     catch(e){ alert("Cannot build the stream for this trial:\n\n"+e.message); return; }
     audio();
   }
   STROKES=[]; TAPS=[]; TAPFLASH=null;
-  $("stage").classList.add("on");
+  stageOn(true);
   layout(); drawScene();
 
-  const ov=$("overlay"); ov.style.display="flex";
-  const lines=[];
-  if(c.spiral){
-    const impl = TRIAL.implement==="finger" ? "finger" : "pen";
-    lines.push(`<p>Start at the green dot and draw outwards to <b>End</b>, ` +
-      ($("instr").value==="between"?`keeping your line in the space between the turns.`
-                                   :`following the line as closely as you can.`) + `</p>`);
-    lines.push(`<p style="font-size:18px;text-align:left;max-width:640px;margin:6px auto 0">
-      <b>One continuous line</b> — do not lift the ${impl} until you reach End.<br>
-      <b>Keep your hand and forearm off the table</b> — move from the shoulder, not the wrist.<br>
-      ${impl==="pen"?`<b>Hold the pen normally</b>, not in a fist.`:``}</p>`);
-    lines.push(`<div style="display:flex;gap:20px;align-items:center;justify-content:center;
-      margin-top:14px;flex-wrap:wrap">
-      <img src="${POSTURE_PNG}" alt="posture and grip" style="width:min(48vw,400px);height:auto">
-      <div style="width:min(26vw,175px)">${spiralFigureSVG($("instr").value)}</div>
-    </div>`);
-  }
-  if(c.audio && cfg.ptg>0) lines.push(`<p>Tap the circle every time you hear a <b>high</b> beep. Ignore the low ones.</p>`);
-  if(c.audio && cfg.ptg<=0) lines.push(`<p>Tap the circle every time you hear <b>any</b> beep.</p>`);
-  if(c.count) lines.push(`<p><b>Count the high beeps silently</b> as you draw. Do not tap.
-    Tell me the number when the trial ends.</p>`);
-  if(!c.audio && c.zones===1) lines.push(`<p>Tap the circle as fast as you can.</p>`);
-  if(c.zones===2) lines.push(`<p>Tap both circles ` +
-    (TRIAL.cond==="BMANT"?`<b>one after the other</b>, left then right`:`<b>at the same time</b>`) +
-    `, as fast as you can.</p>`);
-  ov.innerHTML=`<h3>${TRIAL.cond} — trial ${TRIAL.index+1} of ${QUEUE.length}</h3>`+lines.join("")+
-    `<p style="font-size:16px;color:#5d6570">${c.lengthS===null?"Take your time; the trial ends when the administrator presses End."
-      :"The tone task lasts "+(TRIAL.lengthS??cfg?.durS)+" seconds."}</p>`;
-  const wrap=document.createElement("div"); wrap.className="btnrow";
-  wrap.style.justifyContent="center"; wrap.style.marginTop="24px";
-  const b=document.createElement("button"); b.className="big";
-  b.textContent=instructionOnly?"Close":"Next";
-  b.style.fontSize="26px"; b.style.padding="22px 56px";
-  b.onclick=()=>{ ov.style.display="none";
-    if(instructionOnly){ $("stage").classList.remove("on"); return; }
-    readyTrial(seq,c); };
-  wrap.appendChild(b); ov.appendChild(wrap);
+  if(!showInstruction){ readyTrial(seq,c); return; }
+  showInstructionScreen(seq,c);
 }
 
-// The uploaded figure shows drawing BETWEEN the turns. Tracing needs its own picture,
-// so the spiral panel is generated from the same geometry the trial uses and switches
-// with the instruction.
-function spiralFigureSVG(mode){
-  const R=58, turns=4, pitch=R/turns;
-  const sp=spiralPath(R,turns,"cw",90,700);
-  const d=pts=>pts.map((q,i)=>(i?"L":"M")+(75+q.x).toFixed(1)+","+(75-q.y).toFixed(1)).join(" ");
-  const cut=Math.round(sp.pts.length*0.70);            // drawn part-way, as in the figure
-  const drawnPts = mode==="between"
-    ? sp.pts.slice(0,cut).map(q=>{ const r=q.r+pitch/2;
-        return {x:r*Math.cos(q.a), y:r*Math.sin(q.a)}; })
-    : sp.pts.slice(0,cut);
-  const tip=drawnPts[drawnPts.length-1];
-  return `<svg viewBox="0 0 150 158" style="width:100%;height:auto" xmlns="http://www.w3.org/2000/svg">
-    <path d="${d(sp.pts)}" fill="none" stroke="#9aa2ac"
-      stroke-width="${mode==="between"?1.1:2.4}" ${mode==="between"?'stroke-dasharray="3.2 3.2"':''}/>
-    <path d="${d(drawnPts)}" fill="none" stroke="#d0342c" stroke-width="1.7" stroke-linecap="round"/>
-    <circle cx="${(75+tip.x).toFixed(1)}" cy="${(75-tip.y).toFixed(1)}" r="2.4" fill="#d0342c"/>
-    <text x="75" y="154" text-anchor="middle" font-family="system-ui" font-size="9" fill="#5d6570">
-      ${mode==="between"?"keep your line in the gap":"follow the line itself"}</text>
-  </svg>`;
+// The instruction page, drawn from the same source as the Instructions tab.
+function showInstructionScreen(seq,c,returnToReady){
+  const ins=instructionFor(TRIAL.cond,{implement:TRIAL.implement});
+  showOverlay(`<h3>${TRIAL.cond} — ${c.label}</h3>` + instructionHTML(ins) +
+    `<p style="font-size:16px;color:#5d6570;margin-top:10px">${ins.length}</p>`,
+    [{label:"Ready", onClick:()=>{ hideOverlay(); LAST_COND=TRIAL.cond;
+        readyTrial(returnToReady?returnToReady.seq:seq, c); }}]);
 }
 
 function reminderText(){
   const c=byId(TRIAL.cond), bits=[];
-  if(c.spiral){ bits.push($("instr").value==="between"?"between the turns":"trace the line");
+  if(c.spiral){ bits.push($("instr").value==="between"?"between the lines":"trace the line");
     bits.push(TRIAL.implement==="finger"?"index finger":"pen");
     bits.push(TRIAL.drawHand+" hand draws"); }
   if(c.zones===2) bits.push("both index fingers");
@@ -1254,15 +1437,71 @@ function reminderText(){
 }
 
 function readyTrial(seq,c){
-  $("hud").textContent = c.lengthS===null && !c.audio ? "" : (TRIAL.lengthS??"")+" s";
+  $("hud").textContent = (c.lengthS===null && !c.audio) ? "" : (TRIAL.lengthS??"")+" s";
   $("reminder").innerHTML=reminderText();
+  $("tapcount").textContent="";
   $("ctrl").innerHTML="";
-  const b=document.createElement("button"); b.textContent="START";
-  b.onclick=()=>{ $("ctrl").innerHTML=""; runTrial(seq,c); };
-  $("ctrl").appendChild(b);
+
+  // What changed since the last trial is the thing that gets missed once the instruction
+  // page stops appearing, so it is stated large on the screen itself.
+  const handNow = TRIAL.drawHand || TRIAL.tapHand || "both";
+  const changed = LAST_HAND && handNow!==LAST_HAND && TRIAL.cond===LAST_COND;
+  const ov=$("overlay");
+  if(changed){
+    // Name the effector, not just the side: "the right hand" is ambiguous when the task
+    // is drawn with a fingertip.
+    const cc=byId(TRIAL.cond);
+    const what = cc.spiral
+      ? (TRIAL.implement==="finger"
+          ? `Now use the <b>index finger</b> of the <b>${handNow.toUpperCase()}</b> hand to draw`
+          : `Now draw with the <b>${handNow.toUpperCase()}</b> hand`)
+      : `Now tap with the <b>${handNow.toUpperCase()}</b> index finger`;
+    showOverlay(`<h3 style="font-size:34px;line-height:1.3">${what}</h3>
+      <p style="font-size:19px;color:#5d6570">${TRIAL.cond} · trial ${TRIAL.index+1} of ${QUEUE.length}</p>`,
+      [{label:"Ready", onClick:hideOverlay}]);
+  } else hideOverlay();
+
+  const start=document.createElement("button"); start.textContent="START";
+  start.onclick=()=>{ $("ctrl").innerHTML=""; LAST_COND=TRIAL.cond; LAST_HAND=handNow;
+                      runTrial(seq,c); };
+  $("ctrl").appendChild(start);
+
+  const ins=document.createElement("button"); ins.textContent="Instruction";
+  ins.className="ghost"; ins.style.minWidth="0";
+  ins.onclick=()=>showInstructionScreen(seq,c,{seq});
+  $("ctrl").appendChild(ins);
+
+  const lst=document.createElement("button"); lst.textContent="List";
+  lst.className="ghost"; lst.style.minWidth="0";
+  lst.onclick=()=>showQueueOverlay(seq,c);
+  $("ctrl").appendChild(lst);
+
   RUN={ready:true};
   cancelAnimationFrame(RAF);
   const loop=()=>{ drawScene(); RAF=requestAnimationFrame(loop); }; loop();
+}
+
+// Skip or jump without leaving the stage.
+function showQueueOverlay(seq,c){
+  let rows=QUEUE.map((q,i)=>`<tr>
+      <td style="padding:5px 9px">${i+1}</td>
+      <td style="padding:5px 9px"><b>${q.cond}</b></td>
+      <td style="padding:5px 9px">${handWord(q.hand)}</td>
+      <td style="padding:5px 9px;color:#5d6570">${q.status}</td>
+      <td style="padding:5px 9px">${q.status==="pending"&&i!==QPOS
+        ? `<button class="ghost sm" onclick="jumpTo(${i})">go</button>`:
+          (i===QPOS?"<b>now</b>":"")}</td></tr>`).join("");
+  showOverlay(`<h3>Trial list</h3>
+    <div style="width:min(90vw,620px)"><table style="font-size:16px">${rows}</table></div>`,
+    [{label:"Back", onClick:hideOverlay},
+     {label:"Skip this trial", ghost:true, onClick:()=>{
+        const why=prompt("Reason for skipping (recorded):","")||"no reason given";
+        QUEUE[QPOS].status="skipped"; QUEUE[QPOS].skipReason=why; QPOS++;
+        hideOverlay(); renderQueue(); runCurrent(); }}]);
+}
+function jumpTo(i){
+  if(QUEUE[i].status!=="pending") return;
+  QPOS=i; $("overlay").style.display="none"; renderQueue(); runCurrent();
 }
 
 function runTrial(seq,c){
@@ -1304,6 +1543,7 @@ function runTrial(seq,c){
     const z=hitZone(e.clientX,e.clientY);
     if(z){ TAPS.push({t:+t.toFixed(2),zone:z,pointerType:e.pointerType});
       TAPFLASH={zone:z,until:performance.now()+FLASH_MS}; drawScene();
+      $("tapcount").textContent = TAPS.length + " taps";
       if(RUN.firstContactMs===null) RUN.firstContactMs=+t.toFixed(2); return; }
     if(!c.spiral) return;
     if(!drawOK(e.pointerType)) return;
@@ -1357,8 +1597,8 @@ function resetTrial(){
   layout(); drawScene(); readyTrial(seq,c);
 }
 function stopTrial(auto){
-  if(!RUN) { $("stage").classList.remove("on"); return; }
-  if(RUN.ready){ cancelAnimationFrame(RAF); $("stage").classList.remove("on"); RUN=null; return; }
+  if(!RUN) { stageOn(false); return; }
+  if(RUN.ready){ cancelAnimationFrame(RAF); stageOn(false); RUN=null; return; }
   clearTimeout(RUN.timer); cancelAnimationFrame(RAF); stopAudio();
   if(RUN.teardown) RUN.teardown();
   RUN.stoppedEarly=!auto; finish();
@@ -1372,7 +1612,7 @@ function abandonTrial(){
      "The participant, the plan and all saved trials are kept.")) return;
   if(RUN){ clearTimeout(RUN.timer); if(RUN.teardown) RUN.teardown(); }
   cancelAnimationFrame(RAF); stopAudio();
-  $("stage").classList.remove("on"); RUN=null; goPage(3);
+  stageOn(false); RUN=null; goPage(3);
 }
 
 /* ------------------------------------------------------- results */
@@ -1442,7 +1682,6 @@ function askCount(seq){
     finish();                       // re-enter now that the count exists
   };
   row.appendChild(b); ov.appendChild(row);
-  setTimeout(()=>{ const el=$("countInput"); if(el) el.focus(); },50);
 }
 
 function showEndControls(seq,c,pts,rate,att,tp){
@@ -1452,7 +1691,13 @@ function showEndControls(seq,c,pts,rate,att,tp){
   rp.onclick=()=>{ if(!okUnsaved()) return; RUN=null; openTrial(false); }; $("ctrl").appendChild(rp);
   const nx=document.createElement("button"); nx.textContent="NEXT"; nx.className="ghost";
   nx.onclick=()=>{ if(!okUnsaved()) return;
-    $("stage").classList.remove("on"); RUN=null; goPage(3); }; $("ctrl").appendChild(nx);
+    if(RUN&&RUN.saved && QPOS===TRIAL.index) QPOS++;   // advance past the saved trial
+    RUN=null; runCurrent(); };
+  $("ctrl").appendChild(nx);
+  const ex=document.createElement("button"); ex.textContent="Exit"; ex.className="ghost";
+  ex.style.minWidth="0";
+  ex.onclick=()=>{ if(!okUnsaved()) return; stageOn(false); RUN=null; goPage(3); };
+  $("ctrl").appendChild(ex);
 
   $("saveState").innerHTML=`<div class="warn">The last trial has not been saved.</div>`;
   renderResult(seq,c,pts,rate,att,tp);
@@ -1556,7 +1801,7 @@ function buildRecord(){
   const tid=`${pid}_v${visitNo()}s${sessNo()}_${R.cond}_${H}${pad2(R.repeatN)}_${String(R.seriesN).padStart(3,"0")}`;
   const b=birthInfo();
   return {
-    schema:"motiq_prototype/5", build:BUILD,
+    schema:"motiq_prototype/6", build:BUILD,
     note:"PROTOTYPE. Browser mm and browser timing are approximations.",
     trial_id:tid, trial_uid:R.startedISO.replace(/[:.]/g,"-")+"_"+tid,
     session_key:SESSION_KEY,
@@ -1613,13 +1858,15 @@ function saveTrial(btn){
     RUN.saved=true;
     if(btn){ btn.textContent="SAVED"; btn.disabled=true; }
     QUEUE[TRIAL.index].status="done";
-    if(QPOS===TRIAL.index) QPOS++;
-    renderQueue();
+    renderQueue(); saveState();
+    const nb=[...$("ctrl").querySelectorAll("button")].find(b=>b.textContent==="NEXT");
+    if(nb) nb.className="";                            // NEXT becomes the primary action
     $("reminder").innerHTML=`<span style="color:var(--ok)">saved as ${rec.trial_id}</span>`;
     $("saveState").innerHTML=`<div class="good">Trial <b>${rec.trial_id}</b> saved
       (${(res.bytes/1024).toFixed(0)} KB).</div>`;
-    alert("Saved.\n\nTrial ID: "+rec.trial_id+"\nSession: "+rec.session_id+
-          "\n\nNext in the list: "+(QPOS<QUEUE.length?`${QUEUE[QPOS].cond} (${handWord(QUEUE[QPOS].hand)})`:"none — list complete"));
+    // Saving does not advance. REPEAT stays available until the administrator chooses.
+    $("saveState").innerHTML += `<div class="note">Press NEXT for the next trial, or REPEAT
+      to run this one again.</div>`;
   } else {
     const k=`${pid}|${TRIAL.cond}|${H}`;
     REPEATS[k]=Math.max(0,(REPEATS[k]||1)-1); SERIES=Math.max(0,SERIES-1);
@@ -1791,6 +2038,73 @@ function showCSVText(){ const r=listTrials().map(t=>getTrial(t.key)).filter(Bool
   if(!r.length){ alert("Nothing saved."); return; }
   const b=$("csvbox"); b.classList.remove("hidden"); b.value=csvText(r); b.focus(); b.select(); }
 
+// Swallow scroll gestures while the stage is up, including two-finger drags that
+// touch-action alone does not stop on iPadOS.
+document.addEventListener("touchmove", e=>{
+  if($("stage").classList.contains("on")) e.preventDefault();
+}, {passive:false});
+["gesturestart","gesturechange","gestureend"].forEach(ev=>
+  document.addEventListener(ev, e=>{ if($("stage").classList.contains("on")) e.preventDefault(); },
+    {passive:false}));
+// A second finger anywhere outside a tap zone starts a pinch, and once zoomed there is no
+// way back without a reload.
+document.addEventListener("touchstart", e=>{
+  if($("stage").classList.contains("on") && e.touches.length>2) e.preventDefault();
+}, {passive:false});
+// Double-tap zoom: swallow the second tap of a rapid pair on non-interactive areas.
+let _lastTap=0;
+document.addEventListener("touchend", e=>{
+  if(!$("stage").classList.contains("on")) return;
+  const now=Date.now();
+  if(now-_lastTap < 320 && e.target && e.target.tagName!=="BUTTON") e.preventDefault();
+  _lastTap=now;
+}, {passive:false});
+const stageOn = on => {
+  $("stage").classList.toggle("on", on);
+  document.body.classList.toggle("locked", on);
+};
+
+// Refreshing was the only escape from a stuck zoom, and it wiped the participant. Keep the
+// working state on the device so a reload is recoverable.
+const STATE_KEY="motiq_state";
+const STATE_FIELDS=["pid","grp","sex","byear","bmonth","domhand","notes",
+                    "visitno","sessnum","sessnote","instr","tmpl","implement",
+                    "pitch","turns","startdia","endang","split","tapdia","zonegap",
+                    "fstd","ftgt","lvl","seedmode","idle","ppmm"];
+function saveState(){
+  try{
+    const f={}; STATE_FIELDS.forEach(id=>{ if($(id)) f[id]=$(id).value; });
+    localStorage.setItem(STATE_KEY, JSON.stringify({
+      fields:f, sessionKey:SESSION_KEY, plan:PLAN, queue:QUEUE, qpos:QPOS,
+      series:SERIES, repeats:REPEATS, lastCond:LAST_COND, lastHand:LAST_HAND,
+      audio:AUDIO_DEFAULTS, savedAt:new Date().toISOString()
+    }));
+  }catch(e){}
+}
+function restoreState(){
+  let st=null;
+  try{ st=JSON.parse(localStorage.getItem(STATE_KEY)||"null"); }catch(e){}
+  if(!st||!st.fields||!st.fields.pid) return false;
+  Object.entries(st.fields).forEach(([id,v])=>{ if($(id)) $(id).value=v; });
+  if(st.sessionKey) SESSION_KEY=st.sessionKey;
+  if(st.plan) PLAN=st.plan;
+  if(st.queue){ QUEUE=st.queue; QPOS=st.qpos||0; }
+  SERIES=st.series||0;
+  if(st.repeats) Object.assign(REPEATS, st.repeats);
+  LAST_COND=st.lastCond||null; LAST_HAND=st.lastHand||null;
+  if(st.audio) Object.entries(st.audio).forEach(([k,v])=>{ if(AUDIO_DEFAULTS[k]) Object.assign(AUDIO_DEFAULTS[k],v); });
+  applyCal(); updateAgeNote(); renderStatus(); renderPlan(); renderQueue(); renderAudioTable();
+  const done=QUEUE.filter(q=>q.status==="done").length;
+  $("statusbar").insertAdjacentHTML("beforeend",
+    ` <span style="color:var(--ok)">· restored (${done} of ${QUEUE.length} done)</span>`);
+  return true;
+}
+function clearState(){ try{ localStorage.removeItem(STATE_KEY); }catch(e){} }
+// persist on any change that matters, and after each trial
+document.addEventListener("change", e=>{ if(STATE_FIELDS.includes(e.target.id)) saveState(); });
+document.addEventListener("input",  e=>{ if(STATE_FIELDS.includes(e.target.id)) saveState(); });
+
 window.addEventListener("resize",()=>{ if($("stage").classList.contains("on")){ layout(); drawScene(); }});
 renderPlan(); renderAudioTable(); renderSaved(); renderStatus();
+if(restoreState()) goPage(3);
 </script>
