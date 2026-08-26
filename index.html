@@ -4,34 +4,40 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MotiQ">
 <meta name="format-detection" content="telephone=no">
-<title>MotiQ spiral + audio prototype</title>
+<title>MotiQ prototype</title>
 
 <!--
-  MotiQ spiral + audio prototype
-  ==============================
-  PROTOTYPE. Not the instrument. Browser timing and browser millimetres are both
-  approximations; use this to feel out the interaction and collect indicative
-  data, not to fix template geometry or publish latencies.
+  MotiQ spiral + audio prototype  v0.2
+  ====================================
+  PROTOTYPE. Browser millimetres and browser timing are approximations. Use it to
+  feel out the interaction and gather indicative data, not to fix template
+  geometry or publish latencies.
 
-  Spiral parameterisation is taken directly from motiq_spiral.R:
-      r = (radius / (turns * 2*pi)) * theta,   theta in [0, turns*2*pi]
+  v0.2 changes
+  ------------
+  * MULTITOUCH FIX. Strokes are keyed by pointerId. Previously a single global
+    "current stroke" meant the tapping finger's pointerup ended the pen's stroke,
+    so drawing stopped after the first tap and dual-task conditions were unusable.
+    setPointerCapture is gone -- it was unnecessary on a full-screen canvas.
+  * Explicit START button on the trial screen. Nothing begins until it is pressed,
+    so the first tap is a response rather than a trigger.
+  * TAP condition (one finger, hand selectable) added; BMIN/BMANT get 5/10/15/20 s.
+  * Three setup pages: calibration, session, parameters. The parameter page shows
+    only the blocks the chosen condition needs.
+
+  Spiral parameterisation, unchanged from motiq_spiral.R:
+      r = (radius / (turns * 2*pi)) * theta,  theta in [0, turns*2*pi]
       a = s*theta + phi,   s = -1 cw (right hand), +1 ccw (left hand)
-  so pitch = radius / turns and the inner loop is present. A single line is
-  drawn, matching the printed templates; the instruction toggle chooses whether
-  the participant traces the line or draws in the space between the turns.
+  so pitch = radius / turns. A single line is drawn, matching the printed set.
 
-  Sequence generation mirrors DET_ODT_app.R: fixed target count, no target in
-  the first two tones, no two adjacent, jittered ISI rescaled to the exact
-  stream duration. A JSON sequence definition exported by the R app can be
-  loaded instead, so the two can be checked against each other.
+  Sequence generation mirrors DET_ODT_app.R: fixed target count, no target in the
+  first two tones, no two adjacent, jittered ISI rescaled to the exact duration.
 
-  Millimetres: CSS pixels are NOT physical. On an iPad Pro 11 the real figure is
-  about 132 CSS px per inch, not the nominal 96 -- a "12 mm" pitch drawn on the
-  naive assumption comes out near 8.7 mm. The app auto-detects known devices and
-  then asks you to confirm against a credit card (ISO/IEC 7810 ID-1,
-  85.60 x 53.98 mm).
+  Millimetres: CSS pixels are not physical. On an iPad Pro 11 the real figure is
+  about 132 CSS px/inch, not the nominal 96. Known devices are auto-detected, then
+  confirmed against an ID-1 bank card (85.60 x 53.98 mm).
 
-  Nothing is uploaded. Export writes local files.
+  Nothing is uploaded. Everything stays on the device.
 -->
 
 <style>
@@ -41,30 +47,32 @@
   html,body { margin:0; height:100%; overscroll-behavior:none; }
   body { background:var(--bg); color:var(--ink);
          font:16px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
-  .wrap { max-width:820px; margin:0 auto; padding:22px 20px 60px; }
-  h1 { font-size:23px; margin:0 0 4px; letter-spacing:-.01em; }
-  h2 { font-size:17px; margin:26px 0 8px; }
-  .sub { color:var(--muted); margin:0 0 22px; font-size:15px; }
+  .wrap { max-width:840px; margin:0 auto; padding:20px 20px 90px; }
+  h1 { font-size:22px; margin:0 0 2px; letter-spacing:-.01em; }
+  h2 { font-size:17px; margin:24px 0 8px; }
+  .sub { color:var(--muted); margin:0 0 18px; font-size:14px; }
   fieldset { border:1px solid var(--line); border-radius:8px; margin:0 0 16px;
              padding:14px 16px 16px; background:#fff; }
   legend { font-weight:600; padding:0 6px; font-size:14px; }
   label { display:block; margin:10px 0 3px; font-size:13px; color:var(--muted); }
-  input,select { width:100%; padding:8px 10px; font:inherit; font-size:15px;
-                 border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink); }
+  input,select,textarea { width:100%; padding:9px 10px; font:inherit; font-size:16px;
+    border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink); }
   .r2 { display:grid; grid-template-columns:1fr 1fr; gap:0 14px; }
   .r3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:0 14px; }
   .r4 { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:0 14px; }
-  button { font:600 16px/1 inherit; padding:13px 20px; border-radius:8px;
+  button { font:600 15px/1 inherit; padding:11px 17px; border-radius:8px;
            border:1px solid transparent; background:var(--accent); color:#fff; cursor:pointer; }
   button.ghost { background:#fff; color:var(--accent); border-color:var(--accent); }
-  button.sm { font-size:14px; padding:8px 13px; }
-  button:disabled { opacity:.45; }
-  .btnrow { display:flex; gap:9px; flex-wrap:wrap; margin-top:12px; }
+  button.sm { font-size:13px; padding:7px 11px; }
+  /* primary navigation and trial control: deliberately much larger */
+  button.big { font-size:23px; padding:20px 44px; border-radius:12px; min-width:190px; }
+  .btnrow { display:flex; gap:10px; flex-wrap:wrap; margin-top:14px; align-items:center; }
+  .navrow { display:flex; gap:14px; justify-content:space-between; margin-top:22px; }
   .note { font-size:13px; color:var(--muted); margin-top:8px; }
   .warn { background:#fdf3e7; border:1px solid #e8c9a4; color:#7a4410;
           padding:10px 12px; border-radius:7px; font-size:13px; margin-top:10px; }
-  .bad { background:#fdecec; border:1px solid #e9b7b7; color:#8c2020;
-         padding:10px 12px; border-radius:7px; font-size:13px; margin-top:10px; }
+  .bad  { background:#fdecec; border:1px solid #e9b7b7; color:#8c2020;
+          padding:10px 12px; border-radius:7px; font-size:13px; margin-top:10px; }
   .good { background:#eef7f1; border:1px solid #b3d9c3; color:#155e39;
           padding:10px 12px; border-radius:7px; font-size:13px; margin-top:10px; }
   table { border-collapse:collapse; width:100%; font-size:14px; margin-top:6px; }
@@ -73,255 +81,262 @@
   .num { text-align:right; font-variant-numeric:tabular-nums; }
   .hidden { display:none !important; }
   code { background:#eef1f5; padding:1px 5px; border-radius:4px; font-size:13px; }
-
-  /* calibration */
+  .steps { display:flex; gap:8px; margin:0 0 18px; font-size:13px; color:var(--muted); flex-wrap:wrap; }
+  .steps span { padding:5px 11px; border-radius:20px; background:#eef1f5; }
+  .steps span.on { background:var(--accent); color:#fff; font-weight:600; }
   #cardOutline { border:3px solid var(--warm); border-radius:9px; background:#fff8f2;
                  display:flex; align-items:center; justify-content:center;
                  color:var(--warm); font-size:13px; text-align:center; margin:14px 0; }
   #cardokRow { display:flex; align-items:flex-start; gap:9px; margin:0;
-               font-size:13px; color:var(--ink); cursor:pointer; }
-  #cardok { width:auto; flex:0 0 auto; margin:2px 0 0; }
+               font-size:14px; color:var(--ink); cursor:pointer; }
+  #cardok { width:auto; flex:0 0 auto; margin:3px 0 0; }
 
-  /* run stage */
+  /* ---- run stage ---- */
   #stage { position:fixed; inset:0; background:#fff; z-index:60; display:none; }
   #stage.on { display:block; }
   #canvas { position:absolute; inset:0; touch-action:none; display:block; }
   #overlay { position:absolute; inset:0; display:flex; align-items:center;
              justify-content:center; flex-direction:column; text-align:center;
-             padding:30px; background:rgba(255,255,255,.97); }
-  #overlay h3 { font-size:26px; margin:0 0 12px; }
-  #overlay p { font-size:19px; max-width:640px; margin:0 0 10px; color:#2c3238; }
-  #hud { position:absolute; top:10px; left:50%; transform:translateX(-50%);
-         font-size:14px; color:var(--muted); font-variant-numeric:tabular-nums; }
-  #abort { position:absolute; top:8px; right:12px; font-size:13px; padding:7px 12px;
-           background:#fff; color:var(--muted); border:1px solid var(--line); }
+             padding:34px; background:rgba(255,255,255,.98); }
+  #overlay h3 { font-size:27px; margin:0 0 14px; }
+  #overlay p { font-size:20px; max-width:660px; margin:0 0 12px; color:#2c3238; }
+  #hud { position:absolute; top:12px; left:50%; transform:translateX(-50%);
+         font-size:30px; font-weight:600; color:var(--muted);
+         font-variant-numeric:tabular-nums; pointer-events:none; }
+  #ctrl { position:absolute; bottom:26px; left:50%; transform:translateX(-50%); }
+  #ctrl button { font-size:26px; padding:22px 56px; border-radius:14px; min-width:230px; }
+  #quit { position:absolute; top:10px; right:14px; font-size:13px; padding:8px 13px;
+          background:#fff; color:var(--muted); border:1px solid var(--line); }
 </style>
 
 <div class="wrap" id="app">
-  <h1>MotiQ spiral + audio prototype</h1>
-  <p class="sub">Spiral drawing with a concurrent auditory stream. Prototype only —
-  browser millimetres and browser timing are both approximations.<br>
+  <h1>MotiQ prototype</h1>
+  <p class="sub">Spiral drawing, tapping, and auditory load. Prototype — millimetres
+  and timing are approximate.<br>
   <span id="buildstamp"></span></p>
 
-  <!-- ---------------------------------------------------------------- -->
-  <fieldset>
-    <legend>1. Screen calibration</legend>
-    <div id="detected" class="note"></div>
-    <p class="note" style="margin-top:10px">Hold a credit card flat against the screen
-    over the outline below (any ID-1 bank card — they are all 85.60 × 53.98 mm).
-    Adjust until the outline matches the card exactly.</p>
-    <div id="cardOutline">credit card</div>
-    <label id="cardokRow" for="cardok"><input id="cardok" type="checkbox">
-      <span>I have checked this outline against a real bank card and it matches.</span></label>
-    <div id="calwarn"></div>
-    <div class="r3">
-      <div><label for="ppmm">CSS pixels per mm</label>
-        <input id="ppmm" type="number" step="0.001" value="3.780"></div>
-      <div><label>&nbsp;</label>
-        <div class="btnrow" style="margin:0">
-          <button class="ghost sm" onclick="nudge(-0.02)">−</button>
-          <button class="ghost sm" onclick="nudge(0.02)">+</button>
-        </div></div>
-      <div><label>&nbsp;</label>
-        <div class="btnrow" style="margin:0">
-          <button class="ghost sm" onclick="autoDetect()">Auto-detect</button>
-        </div></div>
-    </div>
-    <div id="calnote"></div>
-  </fieldset>
-
-  <!-- ---------------------------------------------------------------- -->
-  <fieldset>
-    <legend>2. Session</legend>
-    <div class="r3">
-      <div><label for="pid">Participant ID</label><input id="pid" type="text" placeholder="P001"></div>
-      <div><label for="grp">Group / note</label><input id="grp" type="text" placeholder="control, PD…"></div>
-      <div><label for="cond">Condition</label>
-        <select id="cond">
-          <option value="SP">SP — spiral only, no audio</option>
-          <option value="SP_DET">SP_DET — spiral + detection (respond to every tone)</option>
-          <option value="SP_ODT" selected>SP_ODT — spiral + oddball (respond to high tones)</option>
-          <option value="DET">DET — audio only, respond to every tone</option>
-          <option value="ODT">ODT — audio only, respond to high tones</option>
-          <option value="BMIN">BMIN — bimanual tapping, in phase (together)</option>
-          <option value="BMANT">BMANT — bimanual tapping, antiphase (alternating)</option>
-        </select></div>
-    </div>
-    <div class="r3">
-      <div><label for="sex">Sex</label>
-        <select id="sex">
-          <option value="">—</option>
-          <option value="female">Female</option>
-          <option value="male">Male</option>
-          <option value="other">Other</option>
-          <option value="undisclosed">Prefer not to say</option>
-        </select></div>
-      <div><label for="age">Age (optional)</label><input id="age" type="number" min="18" max="110"></div>
-      <div><label for="domhand">Dominant hand</label>
-        <select id="domhand"><option value="right">Right</option>
-          <option value="left">Left</option>
-          <option value="ambidextrous">Ambidextrous</option></select></div>
-    </div>
-    <div class="r3">
-      <div><label for="penonly">Input</label>
-        <select id="penonly">
-          <option value="any">Accept pen, touch or mouse</option>
-          <option value="pen">Pen only (reject palm and finger)</option>
-        </select></div>
-      <div><label for="hand">Drawing hand</label>
-        <select id="hand"><option value="right">Right (clockwise)</option>
-          <option value="left">Left (counterclockwise)</option></select></div>
-      <div><label for="ontouch">Trial starts</label>
-        <select id="ontouch">
-          <option value="touch" selected>When the participant touches the green dot</option>
-          <option value="immediate">Immediately after the instruction screen</option>
-        </select></div>
-    </div>
-    <div class="note">No name is collected. Use a study ID that cannot be resolved to a
-    person without a separate key held elsewhere.</div>
-  </fieldset>
-
-  <!-- ---------------------------------------------------------------- -->
-  <fieldset>
-    <legend>3. Spiral geometry <span style="font-weight:400;color:var(--muted)">— millimetres, as in motiq_spiral.R</span></legend>
-    <div class="r4">
-      <div><label for="pitch">Pitch (mm)</label><input id="pitch" type="number" value="12" step="0.5" min="6" max="25"></div>
-      <div><label for="turns">Turns</label><input id="turns" type="number" value="5" step="1" min="2" max="8"></div>
-      <div><label for="instr">Instruction</label>
-        <select id="instr">
-          <option value="trace">Trace on the line</option>
-          <option value="between">Draw between the turns</option>
-        </select></div>
-      <div><label for="startdia">Start zone (mm)</label><input id="startdia" type="number" value="8" step="1" min="4" max="20"></div>
-    </div>
-    <div class="r3">
-      <div><label for="split">Split (drawing share)</label><input id="split" type="number" value="0.70" step="0.05" min="0.4" max="1"></div>
-      <div><label for="tapdia">Tap zone (mm)</label><input id="tapdia" type="number" value="45" step="5" min="20" max="90"></div>
-      <div><label for="zonegap">Bimanual zone spacing (mm)</label><input id="zonegap" type="number" value="110" step="5" min="60" max="200"></div>
-    </div>
-    <div class="r2">
-      <div><label for="endang">End angle (deg)</label><input id="endang" type="number" value="90" step="15"></div>
-      <div><label>&nbsp;</label><div class="note" style="margin:0">Zone spacing is
-        centre-to-centre for BMIN and BMANT, matching the printed BMANT template.</div></div>
-    </div>
-    <div class="r2" style="margin-top:6px">
-      <div><label for="preset">Match a printed template</label>
-        <select id="preset">
-          <option value="">— choose —</option>
-          <option value="11,4">SP-R44-T4 — pitch 11, 4 turns (dia 88 mm)</option>
-          <option value="11,5">SP-R55-T5 — pitch 11, 5 turns (dia 110 mm)</option>
-          <option value="12,4">SP-R48-T4 — pitch 12, 4 turns (dia 96 mm)</option>
-          <option value="12,5">SP-R60-T5 — pitch 12, 5 turns (dia 120 mm)</option>
-          <option value="13,4">SP-R52-T4 — pitch 13, 4 turns (dia 104 mm)</option>
-          <option value="13,5">SP-R65-T5 — pitch 13, 5 turns (dia 130 mm)</option>
-        </select></div>
-      <div><label>&nbsp;</label><div class="note" style="margin:0">
-        Sets pitch and turns to match the printed A4 set, so the screen and the
-        paper template are the same geometry.</div></div>
-    </div>
-    <div id="geonote" class="note"></div>
-    <p class="note">Lane 0 draws a single line to trace. Set split to 1 for full screen
-    (no tap zone) — appropriate for SP with no audio.</p>
-  </fieldset>
-
-  <!-- ---------------------------------------------------------------- -->
-  <fieldset>
-    <legend>4. Auditory stream</legend>
-    <div class="r4">
-      <div><label for="dur">Duration (s)</label><input id="dur" type="number" value="30" step="5" min="10" max="180"></div>
-      <div><label for="isi">Mean ISI (ms)</label><input id="isi" type="number" value="700" step="50" min="400" max="4000"></div>
-      <div><label for="jit">Jitter (±%)</label><input id="jit" type="number" value="25" step="1" min="0" max="40"></div>
-      <div><label for="ptg">Target probability</label><input id="ptg" type="number" value="0.25" step="0.01" min="0.1" max="0.4"></div>
-    </div>
-    <div class="r4">
-      <div><label for="fstd">Standard (Hz)</label><input id="fstd" type="number" value="1000" step="50"></div>
-      <div><label for="ftgt">Target (Hz)</label><input id="ftgt" type="number" value="2000" step="50"></div>
-      <div><label for="tone">Tone (ms)</label><input id="tone" type="number" value="100" step="10"></div>
-      <div><label for="lvl">Level (peak amplitude)</label><input id="lvl" type="number" value="0.5" step="0.05" min="0.05" max="1"></div>
-    </div>
-    <div class="r2">
-      <div><label for="seed">Seed</label><input id="seed" type="number" value="1" step="1"></div>
-      <div><label for="seqfile">Or load a sequence from the R generator (.json)</label>
-        <input id="seqfile" type="file" accept=".json"></div>
-    </div>
-    <div id="seqnote" class="note"></div>
-    <div id="isiwarn"></div>
-    <div class="btnrow">
-      <button class="ghost sm" onclick="demo('std')">Play standard</button>
-      <button class="ghost sm" onclick="demo('tgt')">Play target</button>
-    </div>
-    <div class="note">Level is the tone's peak amplitude as a fraction of the loudest
-    signal the device can produce without distorting. 1.0 is full scale, 0.5 is half
-    (about −6 dBFS), 0.25 about −12 dBFS. It is not loudness at the ear — that also
-    depends on the device volume, the speaker, and how far away the participant is.</div>
-    <div class="warn">No response window is applied while recording. Every tap is
-    stored with a raw timestamp and attributed to the nearest preceding tone with
-    no upper bound, so you can choose the window afterwards from the data.</div>
-  </fieldset>
-
-  <fieldset>
-    <legend>5. Saved trials on this device</legend>
-    <div id="savedBody"></div>
-    <div id="savedMeter"></div>
-    <div class="btnrow">
-      <button onclick="exportAllCSV()">Export all as one CSV</button>
-      <button class="ghost" onclick="exportAllJSON()">Export all as JSON</button>
-      <button class="ghost" onclick="showCSVText()">Show CSV as text</button>
-      <button class="ghost" onclick="renderSaved()">Refresh</button>
-      <button class="ghost" onclick="delAllTrials()">Delete all</button>
-    </div>
-    <textarea id="csvbox" class="hidden" rows="10" readonly
-      style="width:100%;margin-top:10px;font:12px/1.4 ui-monospace,Menlo,monospace"></textarea>
-    <div class="note">Trials are written here the moment they finish, so a failed download
-    or an accidental reload costs nothing. This is browser storage, not a database —
-    clearing Safari's website data erases it. Export at the end of every session.
-    "Show CSV as text" is the fallback if downloads are blocked: select all, copy, paste
-    into a file.</div>
-  </fieldset>
-
-  <div class="btnrow">
-    <button onclick="start()">Start trial</button>
-    <button class="ghost" onclick="preview()">Instruction</button>
+  <div class="steps">
+    <span id="s1" class="on">1 · Calibration</span>
+    <span id="s2">2 · Session</span>
+    <span id="s3">3 · Parameters</span>
+    <span id="s4">4 · Run</span>
   </div>
-  <div id="err"></div>
 
-  <!-- ---------------------------------------------------------------- -->
-  <div id="results" class="hidden">
-    <h2>Trial result</h2>
+  <!-- ============================ PAGE 1: CALIBRATION ==================== -->
+  <div id="pg1">
+    <fieldset>
+      <legend>Screen calibration</legend>
+      <div id="detected" class="note"></div>
+      <p class="note">Hold a bank card flat on the screen over the outline. Any card
+      works — they are all 85.60 × 53.98 mm. Adjust until the outline matches it exactly.
+      Without this the spiral is the wrong physical size and nothing else is meaningful.</p>
+      <div id="cardOutline">bank card</div>
+      <label id="cardokRow" for="cardok"><input id="cardok" type="checkbox">
+        <span>I have checked this outline against a real bank card and it matches.</span></label>
+      <div id="calwarn"></div>
+      <div class="r3">
+        <div><label for="ppmm">CSS pixels per mm</label>
+          <input id="ppmm" type="number" step="0.001" value="3.780"></div>
+        <div><label>&nbsp;</label><div class="btnrow" style="margin:0">
+          <button class="ghost" onclick="nudge(-0.02)">−</button>
+          <button class="ghost" onclick="nudge(0.02)">+</button></div></div>
+        <div><label>&nbsp;</label><div class="btnrow" style="margin:0">
+          <button class="ghost" onclick="autoDetect()">Auto-detect</button></div></div>
+      </div>
+      <div id="calnote"></div>
+    </fieldset>
+    <div class="navrow"><span></span>
+      <button class="big" onclick="goPage(2)">Next</button></div>
+  </div>
+
+  <!-- ============================ PAGE 2: SESSION ======================== -->
+  <div id="pg2" class="hidden">
+    <fieldset>
+      <legend>Session</legend>
+      <div class="r3">
+        <div><label for="pid">Participant ID</label><input id="pid" type="text" placeholder="P001"></div>
+        <div><label for="grp">Group / note</label><input id="grp" type="text" placeholder="control, PD…"></div>
+        <div><label for="sex">Sex</label>
+          <select id="sex"><option value="">—</option><option value="female">Female</option>
+            <option value="male">Male</option><option value="other">Other</option>
+            <option value="undisclosed">Prefer not to say</option></select></div>
+      </div>
+      <div class="r3">
+        <div><label for="age">Age (optional)</label><input id="age" type="number" min="18" max="110"></div>
+        <div><label for="domhand">Dominant hand</label>
+          <select id="domhand"><option value="right">Right</option><option value="left">Left</option>
+            <option value="ambidextrous">Ambidextrous</option></select></div>
+        <div><label for="penonly">Input</label>
+          <select id="penonly"><option value="any">Accept pen, touch or mouse</option>
+            <option value="pen">Pen only for drawing (rejects palm and finger)</option></select></div>
+      </div>
+      <div>
+        <label for="notes">Notes</label>
+        <textarea id="notes" rows="4" placeholder="Anything worth recording about this session — glasses, tremor, fatigue, interruptions, deviations from protocol."></textarea>
+      </div>
+      <div class="note">Tapping is always accepted from a finger, even in pen-only mode.
+      Notes are saved with every trial in this session.</div>
+    </fieldset>
+    <div class="navrow">
+      <button class="big ghost" onclick="goPage(1)">Back</button>
+      <button class="big" onclick="goPage(3)">Next</button></div>
+  </div>
+
+  <!-- ============================ PAGE 3: PARAMETERS ===================== -->
+  <div id="pg3" class="hidden">
+
+    <fieldset>
+      <legend>Condition</legend>
+      <div class="r2">
+        <div><label for="cond">Task</label>
+          <select id="cond">
+            <option value="SP">SP — spiral only</option>
+            <option value="TAP">TAP — single-finger tapping</option>
+            <option value="BMIN">BMIN — bimanual tapping, in phase</option>
+            <option value="BMANT">BMANT — bimanual tapping, antiphase</option>
+            <option value="DET">DET — tones only, tap every tone</option>
+            <option value="ODT">ODT — tones only, tap high tones</option>
+            <option value="SP_DET">SP_DET — spiral + tap every tone</option>
+            <option value="SP_ODT" selected>SP_ODT — spiral + tap high tones</option>
+          </select></div>
+        <div><label>&nbsp;</label><div id="condnote" class="note" style="margin:0"></div></div>
+      </div>
+    </fieldset>
+
+    <fieldset id="blkSpiral">
+      <legend>Spiral geometry <span style="font-weight:400;color:var(--muted)">— millimetres</span></legend>
+      <div class="r4">
+        <div><label for="pitch">Pitch (mm)</label><input id="pitch" type="number" value="12" step="0.5" min="6" max="25"></div>
+        <div><label for="turns">Turns</label><input id="turns" type="number" value="5" step="1" min="2" max="8"></div>
+        <div><label for="instr">Instruction</label>
+          <select id="instr"><option value="trace">Trace on the line</option>
+            <option value="between">Draw between the turns</option></select></div>
+        <div id="drawHandWrap"><label for="hand">Drawing hand</label>
+          <select id="hand"><option value="right">Right (clockwise)</option>
+            <option value="left">Left (counterclockwise)</option></select></div>
+      </div>
+      <div class="r4">
+        <div><label for="startdia">Start zone (mm)</label><input id="startdia" type="number" value="8" step="1" min="4" max="20"></div>
+        <div><label for="endang">End angle (deg)</label><input id="endang" type="number" value="90" step="15"></div>
+        <div><label for="split">Split (drawing share)</label><input id="split" type="number" value="0.70" step="0.05" min="0.4" max="1"></div>
+        <div><label for="preset">Match printed template</label>
+          <select id="preset"><option value="">— choose —</option>
+            <option value="11,4">SP-R44-T4 · pitch 11, 4 turns</option>
+            <option value="11,5">SP-R55-T5 · pitch 11, 5 turns</option>
+            <option value="12,4">SP-R48-T4 · pitch 12, 4 turns</option>
+            <option value="12,5">SP-R60-T5 · pitch 12, 5 turns</option>
+            <option value="13,4">SP-R52-T4 · pitch 13, 4 turns</option>
+            <option value="13,5">SP-R65-T5 · pitch 13, 5 turns</option>
+          </select></div>
+      </div>
+      <div id="geonote" class="note"></div>
+      <div id="splitnote" class="note"></div>
+    </fieldset>
+
+    <fieldset id="blkTap">
+      <legend>Tapping</legend>
+      <div class="r4">
+        <div><label for="tapdur">Trial length (s)</label>
+          <select id="tapdur"><option>5</option><option selected>10</option>
+            <option>15</option><option>20</option></select></div>
+        <div><label for="tapdia">Zone size (mm)</label><input id="tapdia" type="number" value="45" step="5" min="20" max="90"></div>
+        <div id="tapHandWrap"><label for="taphand">Tapping hand</label>
+          <select id="taphand"><option value="right">Right</option><option value="left">Left</option></select></div>
+        <div id="zoneGapWrap"><label for="zonegap">Zone spacing (mm)</label>
+          <input id="zonegap" type="number" value="110" step="5" min="60" max="200"></div>
+      </div>
+      <div id="tapnote" class="note"></div>
+    </fieldset>
+
+    <fieldset id="blkAudio">
+      <legend>Auditory stream</legend>
+      <div class="r4">
+        <div><label for="dur">Duration (s)</label><input id="dur" type="number" value="30" step="5" min="10" max="180"></div>
+        <div><label for="isi">Mean ISI (ms)</label><input id="isi" type="number" value="700" step="50" min="400" max="4000"></div>
+        <div><label for="jit">Jitter (±%)</label><input id="jit" type="number" value="25" step="1" min="0" max="40"></div>
+        <div><label for="ptg">Target probability</label><input id="ptg" type="number" value="0.25" step="0.01" min="0.1" max="0.4"></div>
+      </div>
+      <div class="r4">
+        <div><label for="fstd">Standard (Hz)</label><input id="fstd" type="number" value="1000" step="50"></div>
+        <div><label for="ftgt">Target (Hz)</label><input id="ftgt" type="number" value="2000" step="50"></div>
+        <div><label for="tone">Tone (ms)</label><input id="tone" type="number" value="100" step="10"></div>
+        <div><label for="lvl">Level (peak amplitude)</label><input id="lvl" type="number" value="0.5" step="0.05" min="0.05" max="1"></div>
+      </div>
+      <div class="r2">
+        <div><label for="seed">Seed</label><input id="seed" type="number" value="1" step="1"></div>
+        <div><label for="seqfile">Or load a sequence from the R generator (.json)</label>
+          <input id="seqfile" type="file" accept=".json"></div>
+      </div>
+      <div class="btnrow">
+        <button class="ghost sm" onclick="demo('std')">Play standard</button>
+        <button class="ghost sm" onclick="demo('tgt')">Play target</button>
+      </div>
+      <div class="note">Level is peak amplitude as a fraction of full scale: 1.0 is the
+      loudest undistorted output, 0.5 about −6 dBFS. Not loudness at the ear.</div>
+      <div id="seqnote" class="note"></div>
+      <div id="isiwarn"></div>
+    </fieldset>
+
+    <div id="err"></div>
+    <div class="navrow">
+      <button class="big ghost" onclick="goPage(2)">Back</button>
+      <button class="big" onclick="openTrial()">Start trial</button></div>
+    <div class="btnrow" style="justify-content:center">
+      <button class="ghost" onclick="openTrial(true)">Show instruction only</button></div>
+  </div>
+
+  <!-- ============================ PAGE 4: RESULTS ======================== -->
+  <div id="pg4" class="hidden">
     <div id="saveState"></div>
+    <h2>Trial result</h2>
     <div id="rsum"></div>
     <div id="rwin"></div>
     <div id="rq"></div>
-    <div class="btnrow">
-      <button onclick="exportCSV()">Download CSV (everything, flat)</button>
-      <button class="ghost" onclick="exportJSON()">Download JSON (full record)</button>
-      <button class="ghost" onclick="document.getElementById('results').classList.add('hidden')">Close</button>
-    </div>
-    <div class="note"><b>CSV</b> is one flat table for analysis: session details repeat on
-    every row, and <code>row_type</code> marks each row as a pen sample, a tap, or a tone.
-    Reads straight into R. <b>JSON</b> is the complete record — calibration, safe area,
-    every parameter, the full sequence, device details — kept nested. Use CSV to analyse,
-    JSON to know exactly what was presented.<br><br>
-    <code>t_ms</code> is milliseconds from the trial clock origin: the moment the
-    participant first touched the start dot, or the first tone, depending on how the
-    trial was set to start. Pen samples, taps and tone onsets all share that origin, which
-    is what makes reaction time computable.</div>
+
+    <fieldset style="margin-top:22px">
+      <legend>Saved trials on this device</legend>
+      <div id="savedBody"></div>
+      <div id="savedMeter"></div>
+      <div class="btnrow">
+        <button onclick="exportAllCSV()">Export all as one CSV</button>
+        <button class="ghost" onclick="exportAllJSON()">Export all as JSON</button>
+        <button class="ghost" onclick="showCSVText()">Show CSV as text</button>
+        <button class="ghost" onclick="renderSaved()">Refresh</button>
+        <button class="ghost" onclick="delAllTrials()">Delete all</button>
+      </div>
+      <textarea id="csvbox" class="hidden" rows="10" readonly
+        style="margin-top:10px;font:12px/1.4 ui-monospace,Menlo,monospace"></textarea>
+      <div class="note">Trials are written here the moment they end, so a failed download
+      or a reload costs nothing. This is browser storage, not a database — clearing
+      Safari's website data erases it. Export at the end of every session.
+      <br><br><b>CSV</b> is one flat table: session details repeat on every row and
+      <code>row_type</code> marks each row as a pen sample, a tap, or a tone.
+      <b>JSON</b> is the complete nested record. <code>t_ms</code> counts from the
+      moment START was pressed; pen samples, taps and tone onsets share that origin.</div>
+    </fieldset>
+
+    <div class="navrow">
+      <button class="big ghost" onclick="goPage(3)">Change parameters</button>
+      <button class="big" onclick="openTrial()">Run again</button></div>
+    <div class="btnrow" style="justify-content:center">
+      <button class="ghost" onclick="goPage(2)">New participant</button></div>
   </div>
 </div>
 
 <div id="stage">
   <canvas id="canvas"></canvas>
   <div id="hud"></div>
-  <button id="abort" onclick="abort()">Stop</button>
+  <button id="quit" onclick="quitTrial()">Quit</button>
+  <div id="ctrl"></div>
   <div id="overlay"></div>
 </div>
 
 <script>
 "use strict";
 
-const BUILD = "v0.3 2026-08-16";
+const BUILD = "v2.02 2026-08-16";
 
-const MM = { CARD_W: 85.60, CARD_H: 53.98 };   // ISO/IEC 7810 ID-1
+const MM = { CARD_W: 85.60, CARD_H: 53.98 };
 const $ = id => document.getElementById(id);
 const clamp = (v,a,b) => Math.max(a, Math.min(b, v));
 const quantile = (arr,q) => { if(!arr.length) return NaN;
@@ -330,9 +345,71 @@ const quantile = (arr,q) => { if(!arr.length) return NaN;
 
 $("buildstamp").textContent = "Build " + BUILD;
 
-// ------------------------------------------------------------ calibration
+// which blocks each condition needs
+const NEEDS = {
+  SP:     { spiral:true,  tap:false, audio:false, zones:0 },
+  TAP:    { spiral:false, tap:true,  audio:false, zones:1 },
+  BMIN:   { spiral:false, tap:true,  audio:false, zones:2 },
+  BMANT:  { spiral:false, tap:true,  audio:false, zones:2 },
+  DET:    { spiral:false, tap:true,  audio:true,  zones:1 },
+  ODT:    { spiral:false, tap:true,  audio:true,  zones:1 },
+  SP_DET: { spiral:true,  tap:true,  audio:true,  zones:1 },
+  SP_ODT: { spiral:true,  tap:true,  audio:true,  zones:1 }
+};
+const needs = () => NEEDS[$("cond").value];
 
-// device pixels (long, short) -> ppi. CSS px per mm = ppi / 25.4 / devicePixelRatio.
+// ---------------------------------------------------------------- pages
+
+function goPage(n){
+  [1,2,3,4].forEach(i => $("pg"+i).classList.toggle("hidden", i!==n));
+  [1,2,3,4].forEach(i => $("s"+i).classList.toggle("on", i===n));
+  if (n===3) syncBlocks();
+  if (n===4) renderSaved();
+  window.scrollTo(0,0);
+}
+
+// show only the parameter blocks this condition uses
+// In a dual task the two hands are complementary: the tapping hand is chosen and
+// the drawing hand is the other one, which fixes both the spiral direction and
+// which side of the screen each task occupies.
+function syncHands(){
+  const nd=needs();
+  if(nd.spiral && nd.tap){
+    $("hand").value = $("taphand").value==="right" ? "left" : "right";
+  }
+}
+function syncBlocks(){
+  const nd = needs(), c = $("cond").value;
+  const dual = nd.spiral && nd.tap;
+  $("blkSpiral").classList.toggle("hidden", !nd.spiral);
+  $("blkAudio").classList.toggle("hidden", !nd.audio);
+  $("blkTap").classList.toggle("hidden", !nd.tap);
+  $("tapHandWrap").classList.toggle("hidden", nd.zones!==1);
+  $("zoneGapWrap").classList.toggle("hidden", nd.zones!==2);
+  $("drawHandWrap").classList.toggle("hidden", dual);   // derived, not chosen
+  $("tapdur").parentElement.classList.toggle("hidden", nd.audio);
+  syncHands();
+  $("splitnote").innerHTML = dual
+    ? `Dual task: tapping with the <b>${$("taphand").value}</b> hand, so the spiral is drawn
+       with the <b>${$("hand").value}</b> hand — ${$("hand").value==="left"?"counterclockwise":"clockwise"},
+       on the ${$("hand").value} of the screen, with the tap zone opposite. Both are live at once.`
+    : nd.spiral ? `Spiral only — the whole drawing area is used and no tap zone is shown.` : ``;
+  $("tapnote").innerHTML = c==="BMANT"
+    ? `Antiphase: hands alternate, one finger down at a time.`
+    : c==="BMIN" ? `In phase: both fingers land together.`
+    : c==="TAP" ? `Tap as fast as you can for the whole trial.`
+    : nd.zones===1 ? `Tap only in response to a tone.` : ``;
+  $("condnote").innerHTML = `Needs: ` +
+    [nd.spiral?"spiral geometry":null, nd.tap?"tapping":null, nd.audio?"auditory stream":null]
+      .filter(Boolean).join(", ") + `.` +
+    (nd.spiral ? ` Ends when you press END, not on the clock.` : ``);
+  updateGeo(); updateISIWarn();
+}
+$("cond").addEventListener("change", syncBlocks);
+$("taphand").addEventListener("change", syncBlocks);
+
+// ---------------------------------------------------------------- calibration
+
 const DEVICES = [
   { px:[2420,1668], ppi:264, label:"iPad Pro 11-inch (M4)" },
   { px:[2752,2064], ppi:264, label:"iPad Pro 13-inch (M4)" },
@@ -342,9 +419,10 @@ const DEVICES = [
   { px:[2266,1488], ppi:326, label:"iPad mini" },
   { px:[2160,1620], ppi:264, label:"iPad 9th gen" }
 ];
-
-let store = { get(k){ try { return localStorage.getItem(k); } catch(e){ return this._m?.[k] ?? null; } },
-              set(k,v){ try { localStorage.setItem(k,v); } catch(e){ (this._m ||= {})[k]=v; } } };
+const store = {
+  get(k){ try { return localStorage.getItem(k); } catch(e){ return null; } },
+  set(k,v){ try { localStorage.setItem(k,v); } catch(e){} }
+};
 
 // Where the current px/mm figure actually came from. Recorded per trial, because a
 // silent 96 ppi fallback and a matched device are not the same evidence.
@@ -354,30 +432,30 @@ let store = { get(k){ try { return localStorage.getItem(k); } catch(e){ return t
 //   manual   — the operator typed or nudged the value; overrides any earlier source
 const CAL = { source:null, deviceLabel:null };
 
-function autoDetect() {
+function autoDetect(){
   const dpr = window.devicePixelRatio || 1;
   const w = Math.max(screen.width, screen.height) * dpr;
   const h = Math.min(screen.width, screen.height) * dpr;
-  const hit = DEVICES.find(d => Math.abs(d.px[0]-w) <= 2 && Math.abs(d.px[1]-h) <= 2);
+  const hit = DEVICES.find(d => Math.abs(d.px[0]-w)<=2 && Math.abs(d.px[1]-h)<=2);
   if (hit) {
     const ppmm = hit.ppi / 25.4 / dpr;
     CAL.source = "detected"; CAL.deviceLabel = hit.label;
     $("ppmm").value = ppmm.toFixed(3);
-    $("detected").innerHTML = `Recognised <b>${hit.label}</b> — ${hit.ppi} ppi, ` +
-      `device pixel ratio ${dpr}. Starting value <b>${ppmm.toFixed(3)}</b> CSS px/mm ` +
-      `(${(ppmm*25.4).toFixed(1)} px/inch, not the nominal 96).`;
+    $("detected").innerHTML = `Recognised <b>${hit.label}</b> — ${hit.ppi} ppi, pixel ratio
+      ${dpr}. Starting value <b>${ppmm.toFixed(3)}</b> px/mm (${(ppmm*25.4).toFixed(1)} px/inch,
+      not the nominal 96). Still confirm against a card.`;
   } else {
     CAL.source = "fallback"; CAL.deviceLabel = null;
-    $("detected").innerHTML = `Device not in the table (${Math.round(w)}×${Math.round(h)} ` +
-      `device px, ratio ${dpr}). Falling back to the nominal 96 px/inch, which is ` +
-      `<b>probably wrong</b> — calibrate against a card.`;
+    $("detected").innerHTML = `Device not in the table (${Math.round(w)}×${Math.round(h)}
+      device px, ratio ${dpr}). Falling back to the nominal 96 px/inch, which is
+      <b>probably wrong</b> — calibrate against a card.`;
     $("ppmm").value = (96/25.4).toFixed(3);
   }
   applyCal();
 }
 function setManual(){ CAL.source = "manual"; CAL.deviceLabel = null; }
 function nudge(d){ setManual();
-  $("ppmm").value = (parseFloat($("ppmm").value)+d).toFixed(3); applyCal(); }
+  $("ppmm").value=(parseFloat($("ppmm").value)+d).toFixed(3); applyCal(); }
 
 // The card confirmation belongs to one px/mm value and no other, so any change to
 // that value drops it. It is never restored from storage: a saved figure may have
@@ -390,27 +468,25 @@ function renderCalWarn(){
 }
 $("cardok").addEventListener("change", renderCalWarn);
 
-function applyCal() {
+function applyCal(){
   const p = parseFloat($("ppmm").value) || 3.78;
-  const el = $("cardOutline");
-  el.style.width  = (MM.CARD_W * p) + "px";
-  el.style.height = (MM.CARD_H * p) + "px";
+  $("cardOutline").style.width  = (MM.CARD_W*p)+"px";
+  $("cardOutline").style.height = (MM.CARD_H*p)+"px";
   store.set("motiq_ppmm", String(p));
   $("cardok").checked = false;          // a confirmation cannot outlive its value
   renderCalWarn();
-  $("calnote").innerHTML = `<div class="good">1 mm = ${p.toFixed(3)} CSS px ` +
-    `(${(p*25.4).toFixed(1)} px/inch). A 12 mm pitch will render ${(12*p).toFixed(1)} px wide.</div>`;
+  $("calnote").innerHTML = `<div class="good">1 mm = ${p.toFixed(3)} CSS px
+    (${(p*25.4).toFixed(1)} px/inch). A 12 mm pitch renders ${(12*p).toFixed(1)} px wide.</div>`;
   updateGeo();
 }
 $("ppmm").addEventListener("input", () => { setManual(); applyCal(); });
-const saved = store.get("motiq_ppmm");
-if (saved) { CAL.source = "saved"; CAL.deviceLabel = null;
-  $("ppmm").value = saved; applyCal(); $("detected").textContent =
-  "Using a previously saved calibration. Re-check it against a card if this is a different device."; }
+const savedCal = store.get("motiq_ppmm");
+if (savedCal) { CAL.source = "saved"; CAL.deviceLabel = null;
+  $("ppmm").value = savedCal; applyCal();
+  $("detected").textContent = "Using a saved calibration from this device. Re-check it against a card if this is a different iPad."; }
 else autoDetect();
 
-// safe-area insets, reported in mm (replaces the PROVISIONAL values in motiq_spiral.R)
-function safeAreaMM() {
+function safeAreaMM(){
   const p = parseFloat($("ppmm").value) || 3.78;
   const probe = document.createElement("div");
   probe.style.cssText = "position:fixed;top:0;left:0;padding:env(safe-area-inset-top) " +
@@ -422,96 +498,98 @@ function safeAreaMM() {
   probe.remove(); return o;
 }
 
-// ------------------------------------------------------------ geometry
-// r = (radius / (turns*2pi)) * theta ; pitch = radius / turns   [motiq_spiral.R]
+// ---------------------------------------------------------------- geometry
 
-function spiralPath(radius, turns, direction, endAngleDeg, nPts=3000) {
-  const s = direction === "cw" ? -1 : 1, phi = endAngleDeg * Math.PI/180;
-  const b = radius / (turns * 2*Math.PI);
-  const pts = [], thMax = turns * 2*Math.PI;
-  for (let i=0; i<nPts; i++) {
-    const th = thMax * i/(nPts-1), r = b*th, a = s*th + phi;
+function spiralPath(radius, turns, direction, endAngleDeg, nPts=3000){
+  const s = direction==="cw" ? -1 : 1, phi = endAngleDeg*Math.PI/180;
+  const b = radius/(turns*2*Math.PI), pts=[], thMax = turns*2*Math.PI;
+  for(let i=0;i<nPts;i++){
+    const th = thMax*i/(nPts-1), r = b*th, a = s*th+phi;
     pts.push({ x:r*Math.cos(a), y:r*Math.sin(a), r, a });
   }
-  let len = 0;
-  for (let i=1;i<pts.length;i++) len += Math.hypot(pts[i].x-pts[i-1].x, pts[i].y-pts[i-1].y);
-  return { pts, b, s, phi, pathMM: len };
+  let len=0; for(let i=1;i<pts.length;i++) len+=Math.hypot(pts[i].x-pts[i-1].x, pts[i].y-pts[i-1].y);
+  return { pts, b, s, phi, pathMM:len };
 }
-
-function updateGeo() {
+function updateGeo(){
+  if (!$("pitch")) return;
   const pitch=+$("pitch").value, turns=+$("turns").value;
-  const radius = pitch*turns, p = parseFloat($("ppmm").value)||3.78;
+  const radius=pitch*turns, p=parseFloat($("ppmm").value)||3.78;
   const sp = spiralPath(radius, turns, "cw", +$("endang").value, 600);
-  $("geonote").innerHTML = `Outer radius <b>${radius} mm</b> (diameter ${2*radius} mm), ` +
-    `path length about <b>${Math.round(sp.pathMM)} mm</b>. ` +
-    `Needs ${((2*radius+14)*p).toFixed(0)} px of drawing region including the end label.`;
+  $("geonote").innerHTML = `Outer radius <b>${radius} mm</b> (diameter ${2*radius} mm),
+    path about <b>${Math.round(sp.pathMM)} mm</b>. Needs ${((2*radius+14)*p).toFixed(0)} px
+    of drawing region.`;
 }
 ["pitch","turns","endang"].forEach(id => $(id).addEventListener("input", updateGeo));
 $("preset").addEventListener("change", e => {
-  if (!e.target.value) return;
-  const [p, t] = e.target.value.split(",");
-  $("pitch").value = p; $("turns").value = t; updateGeo();
+  if(!e.target.value) return;
+  const [p,t] = e.target.value.split(",");
+  $("pitch").value=p; $("turns").value=t; updateGeo();
 });
 updateGeo();
 
-// ------------------------------------------------------------ sequence
+// ---------------------------------------------------------------- sequence
 
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
   t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
 
-function makeSequence(durationS, meanISI, jitter, pTarget, seed, det) {
-  const rng = mulberry32(seed>>>0), durMs = durationS*1000;
-  const n = Math.floor(durMs/meanISI), t = det ? 0 : Math.round(n*pTarget);
-  const lo = meanISI*(1-jitter), hi = meanISI*(1+jitter);
-  if (n < 4) throw new Error(`Only ${n} tones at this ISI — lengthen the stream.`);
-  if (!det && t < 1) throw new Error("Target probability yields no targets.");
-  if (!det && t > Math.ceil((n-2)/2)) throw new Error(`Cannot place ${t} non-adjacent targets.`);
+function makeSequence(durationS, meanISI, jitter, pTarget, seed, det){
+  const rng=mulberry32(seed>>>0), durMs=durationS*1000;
+  const n=Math.floor(durMs/meanISI), t=det?0:Math.round(n*pTarget);
+  const lo=meanISI*(1-jitter), hi=meanISI*(1+jitter);
+  if(n<4) throw new Error(`Only ${n} tones at this ISI — lengthen the stream.`);
+  if(!det && t<1) throw new Error("Target probability yields no targets.");
+  if(!det && t>Math.ceil((n-2)/2)) throw new Error(`Cannot place ${t} non-adjacent targets.`);
   let iv=null;
-  for (let k=0;k<5000;k++){
+  for(let k=0;k<5000;k++){
     const c=Array.from({length:n},()=>lo+rng()*(hi-lo));
     const scale=durMs/c.reduce((a,b)=>a+b,0), s=c.map(v=>v*scale);
-    if (Math.abs(scale-1)<=0.05){ iv=s; break; }
+    if(Math.abs(scale-1)<=0.05){ iv=s; break; }
   }
   if(!iv) throw new Error("Could not generate intervals — loosen the parameters.");
   let pos=[];
-  if (!det) {
+  if(!det){
     const m=n-2, pool=[]; for(let i=0;i<m-t+1;i++) pool.push(i);
     for(let i=pool.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
-    pos = pool.slice(0,t).sort((a,b)=>a-b).map((b,i)=>b+i+2);
+    pos=pool.slice(0,t).sort((a,b)=>a-b).map((b,i)=>b+i+2);
   }
   const onsets=[0]; for(let i=0;i<n-1;i++) onsets.push(onsets[i]+iv[i]);
   const isTarget=Array(n).fill(false); pos.forEach(p=>isTarget[p]=true);
   return { n, t, onsets, intervals:iv, isTarget, positions:pos, det:!!det,
-           minISI:Math.min(...iv), maxISI:Math.max(...iv), durationMs:durMs,
-           source:"browser" };
+           minISI:Math.min(...iv), maxISI:Math.max(...iv), durationMs:durMs, source:"browser" };
 }
 
-let LOADED_SEQ = null;
+let LOADED_SEQ=null;
 $("seqfile").addEventListener("change", ev => {
-  const f = ev.target.files[0]; if (!f) return;
-  const rd = new FileReader();
-  rd.onload = () => {
-    try {
-      const d = JSON.parse(rd.result);
-      if (!d.onsets_ms || !d.tone_type) throw new Error("not a sequence definition");
-      LOADED_SEQ = {
-        n: d.n_tones, t: d.n_targets, onsets: d.onsets_ms,
-        intervals: d.intervals_ms, isTarget: d.tone_type.map(x => x === "target"),
-        positions: d.target_positions || [], det: (d.mode === "DET"),
-        minISI: d.min_isi_ms, maxISI: d.max_isi_ms,
-        durationMs: d.stream_duration_ms, source: "R:" + (d.sequence_id || "unknown"),
-        wav_md5: d.wav_md5 || null
-      };
-      $("seqnote").innerHTML = `<div class="good">Loaded <b>${d.sequence_id}</b> from the R generator — ` +
-        `${d.n_tones} tones, ${d.n_targets} targets, min ISI ${Math.round(d.min_isi_ms)} ms. ` +
-        `This overrides the stream settings above. Tones are still synthesised here, ` +
-        `so the WAV checksum is recorded for reference only.</div>`;
-    } catch(e) { $("seqnote").innerHTML = `<div class="bad">Could not read that file: ${e.message}</div>`; }
-  };
+  const f=ev.target.files[0]; if(!f) return;
+  const rd=new FileReader();
+  rd.onload=()=>{ try{
+    const d=JSON.parse(rd.result);
+    if(!d.onsets_ms||!d.tone_type) throw new Error("not a sequence definition");
+    LOADED_SEQ={ n:d.n_tones, t:d.n_targets, onsets:d.onsets_ms, intervals:d.intervals_ms,
+      isTarget:d.tone_type.map(x=>x==="target"), positions:d.target_positions||[],
+      det:(d.mode==="DET"), minISI:d.min_isi_ms, maxISI:d.max_isi_ms,
+      durationMs:d.stream_duration_ms, source:"R:"+(d.sequence_id||"unknown"), wav_md5:d.wav_md5||null };
+    $("seqnote").innerHTML=`<div class="good">Loaded <b>${d.sequence_id}</b> — ${d.n_tones} tones,
+      ${d.n_targets} targets, min ISI ${Math.round(d.min_isi_ms)} ms. Overrides the stream settings.</div>`;
+  }catch(e){ $("seqnote").innerHTML=`<div class="bad">Could not read that file: ${e.message}</div>`; } };
   rd.readAsText(f);
 });
 
-// ------------------------------------------------------------ audio
+function updateISIWarn(){
+  if(!$("isi")) return;
+  const mean=+$("isi").value, jit=+$("jit").value/100, minISI=mean*(1-jit);
+  const n=Math.floor((+$("dur").value)*1000/mean), t=Math.round(n*(+$("ptg").value));
+  let msg=`<div class="note">${n} tones, ${t} targets. Shortest interval <b>${Math.round(minISI)} ms</b>.</div>`;
+  if(minISI<700) msg+=`<div class="warn">Attribution is capped at ${Math.round(minISI)} ms:
+    a tap slower than that lands after the next tone and is assigned to the wrong one.
+    Fine if the tones are only a loader; unreliable if you want reaction time or hit rate —
+    reported RT in Lewy body dementia sits near 900 ms before any dual-task load.</div>`;
+  $("isiwarn").innerHTML=msg;
+}
+["isi","jit","dur","ptg"].forEach(id => $(id).addEventListener("input", updateISIWarn));
+updateISIWarn();
+
+// ---------------------------------------------------------------- audio
 
 let ctx=null, MASTER=null, OSCS=[];
 function audio(){ if(!ctx) ctx=new (window.AudioContext||window.webkitAudioContext)();
@@ -519,494 +597,483 @@ function audio(){ if(!ctx) ctx=new (window.AudioContext||window.webkitAudioConte
 function newMaster(){ const c=audio(); stopAudio();
   MASTER=c.createGain(); MASTER.gain.value=1; MASTER.connect(c.destination); OSCS=[]; return MASTER; }
 function stopAudio(){
-  try { if (MASTER) MASTER.gain.setValueAtTime(0, audio().currentTime); } catch(e){}
-  OSCS.forEach(o => { try { o.stop(); } catch(e){} });
-  OSCS = [];
-  if (MASTER) { try { MASTER.disconnect(); } catch(e){} MASTER = null; }
+  try{ if(MASTER) MASTER.gain.setValueAtTime(0, audio().currentTime); }catch(e){}
+  OSCS.forEach(o=>{ try{o.stop();}catch(e){} }); OSCS=[];
+  if(MASTER){ try{MASTER.disconnect();}catch(e){} MASTER=null; }
 }
-function tone(at, freq, durMs, level){
+function tone(at,freq,durMs,level){
   const c=audio(), o=c.createOscillator(), g=c.createGain();
-  const d=durMs/1000, ramp=Math.min(.01, d/3);
+  const d=durMs/1000, ramp=Math.min(.01,d/3);
   o.type="sine"; o.frequency.value=freq;
   g.gain.setValueAtTime(0,at);
-  g.gain.linearRampToValueAtTime(level, at+ramp);
-  g.gain.setValueAtTime(level, at+d-ramp);
-  g.gain.linearRampToValueAtTime(0, at+d);
-  o.connect(g); g.connect(MASTER || c.destination); o.start(at); o.stop(at+d+.02);
+  g.gain.linearRampToValueAtTime(level,at+ramp);
+  g.gain.setValueAtTime(level,at+d-ramp);
+  g.gain.linearRampToValueAtTime(0,at+d);
+  o.connect(g); g.connect(MASTER||c.destination); o.start(at); o.stop(at+d+.02);
   OSCS.push(o);
 }
 function demo(w){ const c=audio(), t0=c.currentTime+.08;
   tone(t0, w==="tgt"? +$("ftgt").value : +$("fstd").value, +$("tone").value, +$("lvl").value); }
 
-// ------------------------------------------------------------ layout
+// ---------------------------------------------------------------- layout
 
-let L = null;   // current layout, in CSS px
-function layout() {
-  const p = parseFloat($("ppmm").value)||3.78;
-  const cv = $("canvas"), dpr = window.devicePixelRatio||1;
-  const W = window.innerWidth, H = window.innerHeight;
-  cv.width = W*dpr; cv.height = H*dpr;
-  cv.style.width = W+"px"; cv.style.height = H+"px";
-  const g = cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0);
+let L=null;
+function layout(){
+  const p=parseFloat($("ppmm").value)||3.78;
+  const cv=$("canvas"), dpr=window.devicePixelRatio||1;
+  const W=window.innerWidth, H=window.innerHeight;
+  cv.width=W*dpr; cv.height=H*dpr; cv.style.width=W+"px"; cv.style.height=H+"px";
+  const g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0);
 
-  const sa = safeAreaMM();
-  const ux0 = Math.max(sa.left,2)*p, uy0 = Math.max(sa.top,2)*p;
-  const uw = W - ux0 - Math.max(sa.right,2)*p, uh = H - uy0 - Math.max(sa.bottom,2)*p;
+  const sa=safeAreaMM();
+  const ux0=Math.max(sa.left,2)*p, uy0=Math.max(sa.top,2)*p;
+  const uw=W-ux0-Math.max(sa.right,2)*p, uh=H-uy0-Math.max(sa.bottom,2)*p;
 
-  const cond = $("cond").value;
-  const bimanual = (cond === "BMIN" || cond === "BMANT");
+  const nd=needs(), cond=$("cond").value;
+  const bottomPad = 110;                       // keep clear of the START/END control
+  const cy = uy0 + (uh-bottomPad)/2;
 
-  const split = clamp(+$("split").value, .4, 1);
-  const drawLeft = $("hand").value === "left";       // ccw -> draws on the left
-  const dw = uw*split;
-  let dx0, tapCx;
-  if (split >= .999) { dx0 = ux0; tapCx = null; }
-  else if (drawLeft) { dx0 = ux0;            tapCx = ux0 + dw + (uw-dw)/2; }
-  else               { dx0 = ux0 + (uw-dw);  tapCx = ux0 + (uw-dw)/2; }
+  let dx0=ux0, dw=uw, tapCx=null, zones=null, splitX=null;
 
-  // bimanual: two zones, centre-to-centre, ignoring the split
-  let zones = null;
-  if (bimanual) {
-    const gap = (+$("zonegap").value) * p, mid = ux0 + uw/2;
-    zones = [ { id:"left",  cx: mid - gap/2 }, { id:"right", cx: mid + gap/2 } ];
-    tapCx = null;
+  if (nd.spiral && nd.tap) {                   // dual task: split screen
+    const split = clamp(+$("split").value,.4,1);
+    const drawLeft = $("hand").value==="left";
+    dw = uw*split;
+    if (drawLeft) { dx0=ux0;           tapCx=ux0+dw+(uw-dw)/2; splitX=ux0+dw; }
+    else          { dx0=ux0+(uw-dw);   tapCx=ux0+(uw-dw)/2;    splitX=ux0+(uw-dw); }
+  } else if (nd.spiral) {                      // spiral only: full width, no tap zone
+    dx0=ux0; dw=uw;
+  } else if (nd.zones===2) {                   // bimanual: two zones
+    const gap=(+$("zonegap").value)*p, mid=ux0+uw/2;
+    zones=[{id:"left",cx:mid-gap/2},{id:"right",cx:mid+gap/2}];
+  } else if (nd.zones===1) {                   // one zone
+    if (cond==="TAP") {                        // on the tapping hand's side
+      tapCx = $("taphand").value==="left" ? ux0+uw*0.28 : ux0+uw*0.72;
+    } else tapCx = ux0+uw/2;                   // audio only: centred
   }
 
-  L = { p, W, H, g, ux0, uy0, uw, uh, dw, dx0, tapCx, zones, bimanual,
-        cx: dx0 + dw/2, cy: uy0 + uh/2,
-        splitX: (bimanual || split>=.999) ? null : (drawLeft ? ux0+dw : ux0+(uw-dw)),
-        safeAreaMM: sa };
+  L={ p,W,H,g,ux0,uy0,uw,uh,dw,dx0,tapCx,zones,splitX,
+      spiralOn:nd.spiral, cx:dx0+dw/2, cy, safeAreaMM:sa };
+
+  // The clock belongs to the tapping task, not the drawing, which is untimed.
+  // Put it over the tap zone so it is never read as a drawing deadline.
+  const hudX = zones ? (zones[0].cx+zones[1].cx)/2 : (tapCx!==null ? tapCx : dx0+dw/2);
+  $("hud").style.left = hudX+"px";
+  $("hud").style.top = Math.max(10, cy - mm2pxRaw(+$("tapdia").value/2, p) - 54)+"px";
   return L;
 }
-const mm2px = v => v * L.p;
-const toCanvas = (xmm, ymm) => ({ x: L.cx + xmm*L.p, y: L.cy - ymm*L.p });   // y up -> y down
-const toMM     = (px, py)   => ({ x: (px - L.cx)/L.p, y: (L.cy - py)/L.p });
+const mm2pxRaw = (v,p) => v*p;
+const mm2px = v => v*L.p;
+const toCanvas = (xmm,ymm) => ({ x:L.cx+xmm*L.p, y:L.cy-ymm*L.p });
+const toMM = (px,py) => ({ x:(px-L.cx)/L.p, y:(L.cy-py)/L.p });
 
-function drawScene() {
-  const g = L.g;
-  g.clearRect(0,0,L.W,L.H);
-  g.fillStyle = "#fff"; g.fillRect(0,0,L.W,L.H);
+let SPIRAL=null, STROKES=[], TAPS=[], TAPFLASH=null;
 
-  // bimanual tapping: two zones, no spiral
-  if (L.bimanual) {
-    const td = +$("tapdia").value;
-    g.textAlign = "center";
-    L.zones.forEach(z => {
-      const lit = TAPFLASH === z.id;
-      g.strokeStyle = lit ? "#1d5fa8" : "#8a929c";
-      g.fillStyle   = lit ? "#1d5fa8" : "#f2f5f8";
-      g.lineWidth = 2;
-      g.beginPath(); g.arc(z.cx, L.cy, mm2px(td/2), 0, 7); g.fill(); g.stroke();
-      g.fillStyle = lit ? "#fff" : "#5d6570"; g.font = "16px system-ui";
-      g.fillText(z.id === "left" ? "left hand" : "right hand", z.cx, L.cy+6);
-    });
-    return;
-  }
+function drawScene(){
+  const g=L.g;
+  g.clearRect(0,0,L.W,L.H); g.fillStyle="#fff"; g.fillRect(0,0,L.W,L.H);
+  g.textAlign="center";
 
-  if (L.splitX !== null) {
+  if (L.splitX!==null){
     g.strokeStyle="#c9ced6"; g.lineWidth=1; g.setLineDash([5,5]);
-    g.beginPath(); g.moveTo(L.splitX, L.uy0); g.lineTo(L.splitX, L.uy0+L.uh); g.stroke();
+    g.beginPath(); g.moveTo(L.splitX,L.uy0); g.lineTo(L.splitX,L.uy0+L.uh); g.stroke();
     g.setLineDash([]);
   }
 
-  const pitch=+$("pitch").value, turns=+$("turns").value;
-  const radius = pitch*turns;
-  const dir = $("hand").value === "left" ? "ccw" : "cw";
-  const sp = spiralPath(radius, turns, dir, +$("endang").value);
-  SPIRAL = { radius, turns, pitch, direction:dir, pathMM: sp.pathMM,
-             instruction: $("instr").value };
+  if (L.spiralOn){
+    const pitch=+$("pitch").value, turns=+$("turns").value, radius=pitch*turns;
+    const dir=$("hand").value==="left" ? "ccw" : "cw";
+    const sp=spiralPath(radius,turns,dir,+$("endang").value);
+    SPIRAL={ radius,turns,pitch,direction:dir,pathMM:sp.pathMM,instruction:$("instr").value };
 
-  // start zone under the inner loop
-  const sd = +$("startdia").value, c0 = toCanvas(0,0);
-  g.fillStyle="#D9EFD6"; g.strokeStyle="#4C8C4A"; g.lineWidth=1;
-  g.beginPath(); g.arc(c0.x, c0.y, mm2px(sd/2), 0, 7); g.fill(); g.stroke();
+    const sd=+$("startdia").value, c0=toCanvas(0,0);
+    g.fillStyle="#D9EFD6"; g.strokeStyle="#4C8C4A"; g.lineWidth=1;
+    g.beginPath(); g.arc(c0.x,c0.y,mm2px(sd/2),0,7); g.fill(); g.stroke();
 
-  g.strokeStyle="#16191d"; g.lineWidth=1.6;
-  const trace = pts => { g.beginPath(); pts.forEach((q,i)=>{ const c=toCanvas(q.x,q.y);
-    i? g.lineTo(c.x,c.y) : g.moveTo(c.x,c.y); }); g.stroke(); };
-  trace(sp.pts);   // single line, as in the printed templates
+    g.strokeStyle="#16191d"; g.lineWidth=1.6;
+    g.beginPath(); sp.pts.forEach((q,i)=>{ const c=toCanvas(q.x,q.y);
+      i? g.lineTo(c.x,c.y):g.moveTo(c.x,c.y); }); g.stroke();
 
-  // end tick
-  const last = sp.pts[sp.pts.length-1];
-  const ux=Math.cos(last.a), uy=Math.sin(last.a);
-  const e1=toCanvas(last.x-ux*3, last.y-uy*3), e2=toCanvas(last.x+ux*7, last.y+uy*7);
-  g.lineWidth=1.8; g.beginPath(); g.moveTo(e1.x,e1.y); g.lineTo(e2.x,e2.y); g.stroke();
-  const et=toCanvas(last.x+ux*13, last.y+uy*13);
-  g.fillStyle="#5d6570"; g.font="13px system-ui"; g.textAlign="center";
-  g.fillText("End", et.x, et.y);
-  g.fillStyle="#2F6B2D"; g.fillText("start", c0.x, c0.y + mm2px(sd/2) + 15);
+    const last=sp.pts[sp.pts.length-1], ux=Math.cos(last.a), uy=Math.sin(last.a);
+    const e1=toCanvas(last.x-ux*3,last.y-uy*3), e2=toCanvas(last.x+ux*7,last.y+uy*7);
+    g.lineWidth=1.8; g.beginPath(); g.moveTo(e1.x,e1.y); g.lineTo(e2.x,e2.y); g.stroke();
+    const et=toCanvas(last.x+ux*13,last.y+uy*13);
+    g.fillStyle="#5d6570"; g.font="13px system-ui"; g.fillText("End",et.x,et.y);
+    g.fillStyle="#2F6B2D"; g.fillText("start",c0.x,c0.y+mm2px(sd/2)+15);
+  } else SPIRAL=null;
 
-  // tap zone
-  if (L.tapCx !== null) {
-    const td=+$("tapdia").value, lit = TAPFLASH === "tap";
-    g.strokeStyle = lit ? "#1d5fa8" : "#8a929c";
-    g.fillStyle   = lit ? "#1d5fa8" : "#f2f5f8";
-    g.lineWidth=2; g.beginPath(); g.arc(L.tapCx, L.cy, mm2px(td/2), 0, 7); g.fill(); g.stroke();
-    g.fillStyle = lit ? "#fff" : "#5d6570"; g.font="15px system-ui";
-    g.fillText("tap", L.tapCx, L.cy+5);
-  }
+  const td=+$("tapdia").value;
+  const circle=(cx,label,id)=>{
+    const lit = TAPFLASH===id;
+    g.strokeStyle=lit?"#1d5fa8":"#8a929c"; g.fillStyle=lit?"#1d5fa8":"#f2f5f8"; g.lineWidth=2;
+    g.beginPath(); g.arc(cx,L.cy,mm2px(td/2),0,7); g.fill(); g.stroke();
+    g.fillStyle=lit?"#fff":"#5d6570"; g.font="16px system-ui"; g.fillText(label,cx,L.cy+6);
+  };
+  if (L.zones) L.zones.forEach(z=>circle(z.cx, z.id==="left"?"left hand":"right hand", z.id));
+  else if (L.tapCx!==null) circle(L.tapCx,"tap","tap");
 
-  // participant's ink
   g.strokeStyle="#1d5fa8"; g.lineWidth=2.2; g.lineCap="round"; g.lineJoin="round";
-  for (const st of STROKES) {
-    if (st.length<2) continue;
-    g.beginPath();
-    st.forEach((q,i)=>{ const c=toCanvas(q.x,q.y); i? g.lineTo(c.x,c.y):g.moveTo(c.x,c.y); });
-    g.stroke();
+  for(const st of STROKES){
+    if(st.length<2) continue;
+    g.beginPath(); st.forEach((q,i)=>{ const c=toCanvas(q.x,q.y);
+      i? g.lineTo(c.x,c.y):g.moveTo(c.x,c.y); }); g.stroke();
   }
 }
 
-// ------------------------------------------------------------ trial
+// ---------------------------------------------------------------- trial
 
-let SPIRAL=null, STROKES=[], CUR=null, TAPS=[], TAPFLASH=null, RUN=null, RAF=null;
+let RUN=null, RAF=null, LAST=null;
 
-function preview(){ startTrial(true); }
-function start(){ startTrial(false); }
+function trialLengthS(){
+  const nd=needs();
+  return nd.audio ? +$("dur").value : +$("tapdur").value;
+}
 
-function startTrial(instructionOnly) {
-  $("err").innerHTML=""; $("results").classList.add("hidden");
-  const cond = $("cond").value;
-  const bimanual = (cond==="BMIN" || cond==="BMANT");
-  const spiralOn = cond.startsWith("SP");
-  const wantsAudio = !instructionOnly && !bimanual && cond!=="SP";
-  let seq = null;
-  if (wantsAudio) {
-    try {
-      seq = LOADED_SEQ || makeSequence(+$("dur").value, +$("isi").value,
-              +$("jit").value/100, +$("ptg").value, +$("seed").value,
-              cond === "DET" || cond === "SP_DET");
-    } catch(e){ $("err").innerHTML=`<div class="bad">${e.message}</div>`; return; }
+function openTrial(instructionOnly){
+  $("err").innerHTML="";
+  const cond=$("cond").value, nd=needs();
+  let seq=null;
+  if(nd.audio && !instructionOnly){
+    try{ seq = LOADED_SEQ || makeSequence(+$("dur").value, +$("isi").value,
+           +$("jit").value/100, +$("ptg").value, +$("seed").value,
+           cond==="DET"||cond==="SP_DET"); }
+    catch(e){ $("err").innerHTML=`<div class="bad">${e.message}</div>`; return; }
     audio();
   }
 
-  STROKES=[]; CUR=null; TAPS=[]; TAPFLASH=null;
+  STROKES=[]; TAPS=[]; TAPFLASH=null;
   $("stage").classList.add("on");
   layout(); drawScene();
+  $("hud").textContent=""; $("ctrl").innerHTML="";
 
   const ov=$("overlay"); ov.style.display="flex";
-  const isOdd = cond==="SP_ODT"||cond==="ODT";
-  const isDet = cond==="SP_DET"||cond==="DET";
   ov.innerHTML = `<h3>${cond}</h3>` +
-    (spiralOn?`<p>Start at the green dot and draw outwards until you reach <b>End</b>, ` +
-      ($("instr").value === "between"
-        ? `keeping your line in the space between the turns.`
-        : `following the line as closely as you can.`) + `</p>`:"") +
-    (isOdd?`<p>At the same time, tap the circle every time you hear a <b>high</b> beep. Ignore the low ones.</p>`:"") +
-    (isDet?`<p>At the same time, tap the circle every time you hear <b>any</b> beep.</p>`:"") +
-    (cond==="BMIN"?`<p>Tap the two circles with both index fingers <b>at the same time</b>, as fast as you can.</p>`:"") +
-    (cond==="BMANT"?`<p>Tap the two circles <b>one after the other</b>, left then right, as fast as you can. Only one finger touches at a time.</p>`:"") +
-    (cond==="SP"?`<p style="font-size:16px;color:#5d6570">Take your time. The trial ends when you press Stop.</p>`:"") +
-    `<p style="font-size:15px;color:#5d6570">${instructionOnly?"Tap anywhere to close.":"Tap anywhere, then begin."}</p>`;
+    (nd.spiral?`<p>Start at the green dot and draw outwards until you reach <b>End</b>, ` +
+      ($("instr").value==="between" ? `keeping your line in the space between the turns.`
+                                    : `following the line as closely as you can.`) + `</p>`:"") +
+    (cond==="ODT"||cond==="SP_ODT"?`<p>Tap the circle every time you hear a <b>high</b> beep. Ignore the low ones.</p>`:"") +
+    (cond==="DET"||cond==="SP_DET"?`<p>Tap the circle every time you hear <b>any</b> beep.</p>`:"") +
+    (cond==="TAP"?`<p>Tap the circle as fast as you can with your ${$("taphand").value} index finger.</p>`:"") +
+    (cond==="BMIN"?`<p>Tap both circles with your index fingers <b>at the same time</b>, as fast as you can.</p>`:"") +
+    (cond==="BMANT"?`<p>Tap the circles <b>one after the other</b>, left then right, as fast as you can. Only one finger touches at a time.</p>`:"") +
+    (cond==="SP"?`<p style="font-size:17px;color:#5d6570">Take your time. Press End when you have finished.</p>`
+               : `<p style="font-size:17px;color:#5d6570">The trial lasts ${trialLengthS()} seconds.</p>`);
 
-  const go = () => {
-    ov.removeEventListener("pointerdown", go);
+  const cont=document.createElement("div");
+  cont.className="btnrow"; cont.style.justifyContent="center"; cont.style.marginTop="26px";
+  const b=document.createElement("button");
+  b.className="big"; b.textContent = instructionOnly ? "Close" : "Next";
+  b.style.fontSize="26px"; b.style.padding="22px 56px";
+  b.onclick = () => {
     ov.style.display="none";
-    if (instructionOnly) { $("stage").classList.remove("on"); return; }
-    armTrial(seq, cond, spiralOn, bimanual);
+    if(instructionOnly){ $("stage").classList.remove("on"); return; }
+    readyTrial(seq, cond, nd);
   };
-  ov.addEventListener("pointerdown", go);
+  cont.appendChild(b); ov.appendChild(cont);
 }
 
-// Waits for the participant's first contact before the clock (and audio) start,
-// so drawing time and stimulus time share an origin.
-function armTrial(seq, cond, spiralOn, bimanual) {
-  const waitForTouch = $("ontouch").value === "touch";
-  if (!waitForTouch) { runTrial(seq, cond, spiralOn, bimanual); return; }
-
-  const cv = $("canvas");
-  $("hud").textContent = bimanual ? "touch either circle to begin"
-        : spiralOn ? "touch the green dot to begin" : "touch the circle to begin";
-
-  const inStart = (x,y) => {
-    if (bimanual) return L.zones.some(z => Math.hypot(x-z.cx, y-L.cy) <= mm2px(+$("tapdia").value/2));
-    if (spiralOn) { const c0 = toCanvas(0,0);
-      return Math.hypot(x-c0.x, y-c0.y) <= mm2px(Math.max(+$("startdia").value, 14)/2); }
-    return L.tapCx!==null && Math.hypot(x-L.tapCx, y-L.cy) <= mm2px(+$("tapdia").value/2);
-  };
-  const arm = e => {
-    if (!inStart(e.clientX, e.clientY)) return;
-    cv.removeEventListener("pointerdown", arm);
-    runTrial(seq, cond, spiralOn, bimanual, e);
-  };
-  cv.addEventListener("pointerdown", arm);
-  RUN = { armListener: arm, armed:false };
+// Trial screen with the stimulus visible and an explicit START. Nothing is
+// recorded and no tone is scheduled until START is pressed.
+function readyTrial(seq, cond, nd){
+  $("hud").textContent = cond==="SP" ? "" : trialLengthS()+" s";
+  $("ctrl").innerHTML="";
+  const b=document.createElement("button");
+  b.textContent="START";
+  b.onclick=()=>{ $("ctrl").innerHTML=""; runTrial(seq,cond,nd); };
+  $("ctrl").appendChild(b);
+  RUN={ ready:true };
+  const loop=()=>{ drawScene(); RAF=requestAnimationFrame(loop); };
+  cancelAnimationFrame(RAF); loop();
 }
 
-function runTrial(seq, cond, spiralOn, bimanual, triggerEvent) {
+function runTrial(seq, cond, nd){
   const a = seq ? audio() : null;
-  // If the participant triggered it, start essentially now; otherwise give a lead-in.
-  const lead = triggerEvent ? 0.15 : 1.5;
-  const perf0 = performance.now() + (triggerEvent ? 0 : lead*1000);
+  const lead = 0.4;                              // brief settle after START
+  const perf0 = performance.now() + lead*1000;
   const outLat = seq ? (a.outputLatency||0)*1000 : 0;
   const baseLat = seq ? (a.baseLatency||0)*1000 : 0;
-  if (seq) {
+  if(seq){
     newMaster();
-    const t0 = a.currentTime + lead;
-    seq.onsets.forEach((on,i) =>
-      tone(t0 + on/1000, seq.isTarget[i] ? +$("ftgt").value : +$("fstd").value,
+    const t0=a.currentTime+lead;
+    seq.onsets.forEach((on,i)=>
+      tone(t0+on/1000, seq.isTarget[i]? +$("ftgt").value : +$("fstd").value,
            +$("tone").value, +$("lvl").value));
   }
-  // SP is self-paced: no fixed duration, ends on Stop.
-  const selfPaced = (cond === "SP");
-  const durMs = seq ? seq.durationMs : (+$("dur").value)*1000;
+  // Drawing is never on the clock. Any condition with a spiral stays open until
+  // END is pressed, even after the tones and the tapping window have finished.
+  const untimed = nd.spiral;
+  const durMs = seq ? seq.durationMs : trialLengthS()*1000;
 
-  RUN = { seq, cond, perf0, outLat, baseLat, durMs, spiralOn, bimanual, selfPaced,
-          startedISO:new Date().toISOString(), triggered: !!triggerEvent };
+  RUN={ seq, cond, perf0, outLat, baseLat, durMs, spiralOn:nd.spiral, nd,
+        bimanual:nd.zones===2, selfPaced:untimed, startedISO:new Date().toISOString(),
+        firstContactMs:null, toneClockDone:false };
 
   const cv=$("canvas");
-  const penOnly = $("penonly").value === "pen";
+  const penOnly = $("penonly").value==="pen";
   const tapR = () => mm2px(+$("tapdia").value/2);
   const hitZone = (x,y) => {
-    if (bimanual) { const z = L.zones.find(z => Math.hypot(x-z.cx, y-L.cy) <= tapR());
-                    return z ? z.id : null; }
-    if (L.tapCx!==null && Math.hypot(x-L.tapCx, y-L.cy) <= tapR()) return "tap";
+    if(L.zones){ const z=L.zones.find(z=>Math.hypot(x-z.cx,y-L.cy)<=tapR()); return z?z.id:null; }
+    if(L.tapCx!==null && Math.hypot(x-L.tapCx,y-L.cy)<=tapR()) return "tap";
     return null;
   };
 
+  // ---- MULTITOUCH: one stroke per pointerId, so a tapping finger cannot end
+  // the pen's stroke and a moving finger cannot append to it.
+  const strokeFor = new Map();                   // pointerId -> point array
+
+  const addPoint=(st,e,t,coalesced)=>{
+    const m=toMM(e.clientX,e.clientY);
+    st.push({ t:+t.toFixed(2), x:+m.x.toFixed(3), y:+m.y.toFixed(3),
+              p:+(e.pressure??0).toFixed(4), tx:e.tiltX??null, ty:e.tiltY??null,
+              k:e.pointerType, c:coalesced?1:0 });
+  };
   const down = e => {
     const t = performance.now()-perf0;
-    const z = hitZone(e.clientX, e.clientY);
-    if (z) {
+    const z = hitZone(e.clientX,e.clientY);
+    if(z){                                       // a tap, never a stroke
       TAPS.push({ t:+t.toFixed(2), zone:z, pointerType:e.pointerType });
       TAPFLASH=z; setTimeout(()=>{ if(TAPFLASH===z) TAPFLASH=null; },90);
+      if(RUN.firstContactMs===null) RUN.firstContactMs=+t.toFixed(2);
       return;
     }
-    if (!spiralOn) return;
-    if (penOnly && e.pointerType!=="pen") return;
-    if (e.clientX < L.dx0 - 4) return;
-    CUR = []; STROKES.push(CUR);
-    addPoint(e, t);
-    try { cv.setPointerCapture(e.pointerId); } catch(err){}
+    if(!nd.spiral) return;
+    if(penOnly && e.pointerType!=="pen") return; // palm rejection, drawing only
+    if(e.clientX < L.dx0-4) return;              // outside the drawing region
+    const st=[]; STROKES.push(st); strokeFor.set(e.pointerId, st);
+    addPoint(st,e,t);
+    if(RUN.firstContactMs===null) RUN.firstContactMs=+t.toFixed(2);
   };
   const move = e => {
-    if (!CUR) return;
+    const st = strokeFor.get(e.pointerId);       // only this pointer's own stroke
+    if(!st) return;
     const evs = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
-    for (const ev of evs) addPoint(ev, performance.now()-perf0, evs.length>1);
+    for(const ev of evs) addPoint(st, ev, performance.now()-perf0, evs.length>1);
   };
-  const up = () => { CUR = null; };
+  const up = e => { strokeFor.delete(e.pointerId); };   // only this pointer ends
 
-  function addPoint(e, t, coalesced) {
-    const m = toMM(e.clientX, e.clientY);
-    CUR.push({ t: +t.toFixed(2), x:+m.x.toFixed(3), y:+m.y.toFixed(3),
-               p:+(e.pressure??0).toFixed(4),
-               tx:e.tiltX??null, ty:e.tiltY??null,
-               k:e.pointerType, c:coalesced?1:0 });
-  }
+  cv.addEventListener("pointerdown",down);
+  cv.addEventListener("pointermove",move);
+  cv.addEventListener("pointerup",up);
+  cv.addEventListener("pointercancel",up);
+  RUN.teardown=()=>{ cv.removeEventListener("pointerdown",down);
+    cv.removeEventListener("pointermove",move); cv.removeEventListener("pointerup",up);
+    cv.removeEventListener("pointercancel",up); };
 
-  cv.addEventListener("pointerdown", down);
-  cv.addEventListener("pointermove", move);
-  cv.addEventListener("pointerup", up);
-  cv.addEventListener("pointercancel", up);
-  RUN.teardown = () => {
-    cv.removeEventListener("pointerdown",down); cv.removeEventListener("pointermove",move);
-    cv.removeEventListener("pointerup",up); cv.removeEventListener("pointercancel",up);
-  };
+  $("ctrl").innerHTML="";
+  const eb=document.createElement("button");
+  eb.textContent="END"; eb.onclick=()=>stopTrial(false);
+  $("ctrl").appendChild(eb);
+  const rb=document.createElement("button");
+  rb.textContent="Reset"; rb.className="ghost";
+  rb.style.marginLeft="14px"; rb.style.fontSize="20px"; rb.style.padding="20px 34px";
+  rb.style.minWidth="150px";
+  rb.onclick=()=>resetTrial();
+  $("ctrl").appendChild(rb);
 
-  // the trigger contact is itself the first sample
-  if (triggerEvent && spiralOn) down(triggerEvent);
-
-  const loop = () => { drawScene();
-    const el = (performance.now()-perf0)/1000;
-    $("hud").textContent = selfPaced
-      ? el.toFixed(1)+" s elapsed"
-      : Math.max(0, (perf0+durMs-performance.now())/1000).toFixed(1)+" s";
-    RAF = requestAnimationFrame(loop); };
+  cancelAnimationFrame(RAF);
+  const loop=()=>{ drawScene();
+    const left=(perf0+durMs-performance.now())/1000;
+    if(left<=0 && !RUN.toneClockDone){
+      RUN.toneClockDone=true;
+      if(untimed) stopAudio();                   // tones over, drawing continues
+    }
+    if(untimed){
+      $("hud").textContent = left>0 ? left.toFixed(1)+" s"
+        : (cond==="SP" ? ((performance.now()-perf0)/1000).toFixed(1)+" s" : "tones done");
+    } else {
+      $("hud").textContent = Math.max(0,left).toFixed(1)+" s";
+    }
+    RAF=requestAnimationFrame(loop); };
   loop();
 
-  if (!selfPaced) {
-    RUN.timer = setTimeout(() => stopTrial(true), (triggerEvent?0:lead*1000) + durMs + 800);
-  }
+  if(!untimed) RUN.timer=setTimeout(()=>stopTrial(true), lead*1000+durMs+600);
 }
 
-// Stop ends the trial, silences any scheduled audio, and keeps the data.
-function stopTrial(auto) {
-  if (!RUN) { $("stage").classList.remove("on"); return; }
-  if (RUN.armListener) { $("canvas").removeEventListener("pointerdown", RUN.armListener);
-    $("stage").classList.remove("on"); RUN=null; return; }
-  clearTimeout(RUN.timer);
-  cancelAnimationFrame(RAF);
-  stopAudio();
-  if (RUN.teardown) RUN.teardown();
+// Discard an invalid trial and return to START with the same settings.
+function resetTrial(){
+  if(!RUN) return;
+  clearTimeout(RUN.timer); cancelAnimationFrame(RAF); stopAudio();
+  if(RUN.teardown) RUN.teardown();
+  const cond=RUN.cond, nd=RUN.nd;
+  STROKES=[]; TAPS=[]; TAPFLASH=null;
+  let seq=null;
+  if(nd.audio){
+    try{ seq = LOADED_SEQ || makeSequence(+$("dur").value, +$("isi").value,
+           +$("jit").value/100, +$("ptg").value, +$("seed").value,
+           cond==="DET"||cond==="SP_DET"); }catch(e){ seq=null; }
+  }
+  layout(); drawScene();
+  readyTrial(seq, cond, nd);
+}
+
+function stopTrial(auto){
+  if(!RUN) { $("stage").classList.remove("on"); return; }
+  if(RUN.ready){ cancelAnimationFrame(RAF); $("stage").classList.remove("on"); RUN=null; return; }
+  clearTimeout(RUN.timer); cancelAnimationFrame(RAF); stopAudio();
+  if(RUN.teardown) RUN.teardown();
   RUN.stoppedEarly = !auto;
   finish();
 }
-function abort(){ stopTrial(false); }
-
-// ------------------------------------------------------------ results
-
-let LAST=null;
-function finish() {
-  $("stage").classList.remove("on");
-  const seq = RUN.seq;
-  const pts = STROKES.flat();
-  const dur = pts.length>1 ? (pts[pts.length-1].t - pts[0].t) : 0;
-  const rate = dur>0 ? (pts.length-1)/(dur/1000) : 0;
-  const coalesced = pts.filter(q=>q.c).length;
-  const withPressure = pts.filter(q=>q.p>0 && q.p!==0.5).length;
-
-  let att = null;
-  if (seq) att = attribute(seq, TAPS.map(t=>t.t), RUN.outLat);
-
-  // bimanual summary
-  let bim = null;
-  if (RUN.bimanual) {
-    const lt = TAPS.filter(t=>t.zone==="left").map(t=>t.t).sort((a,b)=>a-b);
-    const rt = TAPS.filter(t=>t.zone==="right").map(t=>t.t).sort((a,b)=>a-b);
-    const iti = v => v.length>1 ? v.slice(1).map((x,i)=>x-v[i]) : [];
-    const mean = v => v.length ? v.reduce((a,b)=>a+b,0)/v.length : NaN;
-    const sd = v => { if(v.length<2) return NaN; const m=mean(v);
-      return Math.sqrt(v.reduce((a,b)=>a+(b-m)*(b-m),0)/(v.length-1)); };
-    // alternation: proportion of consecutive taps that switch hand
-    const seqZ = TAPS.slice().sort((a,b)=>a.t-b.t).map(t=>t.zone);
-    let alt=0; for(let i=1;i<seqZ.length;i++) if(seqZ[i]!==seqZ[i-1]) alt++;
-    bim = { nL:lt.length, nR:rt.length,
-            itiL:mean(iti(lt)), itiR:mean(iti(rt)),
-            sdL:sd(iti(lt)), sdR:sd(iti(rt)),
-            altPct: seqZ.length>1 ? 100*alt/(seqZ.length-1) : NaN,
-            rateL: lt.length>1 ? 1000/mean(iti(lt)) : NaN,
-            rateR: rt.length>1 ? 1000/mean(iti(rt)) : NaN };
-  }
-  LAST = { RUN, STROKES, TAPS, att, SPIRAL, bim, layoutSafe: L.safeAreaMM, ppmm: L.p };
-
-  $("results").classList.remove("hidden");
-
-  // Persist immediately, before the operator touches anything. A failed download
-  // or an accidental reload must not cost the trial.
-  const savedRes = putTrial(buildRecord());
-  renderSaved();
-  $("saveState").innerHTML = savedRes.ok
-    ? `<div class="good">Trial saved on this device (${(savedRes.bytes/1024).toFixed(0)} KB).
-       It is in the saved list below and survives a refresh.</div>`
-    : `<div class="bad">Could not write to browser storage (${savedRes.error}). This trial is
-       held in memory only and will be lost if the page reloads — export it now.</div>`;
-
-  $("rsum").innerHTML = `<table>
-    <tr><th>Condition</th><td>${RUN.cond}</td><th>Participant</th><td>${$("pid").value||"unnamed"}</td></tr>
-    <tr><th>Pen samples</th><td class="num">${pts.length}</td>
-        <th>Achieved rate</th><td class="num">${rate.toFixed(0)} Hz</td></tr>
-    <tr><th>From getCoalescedEvents</th><td class="num">${coalesced}</td>
-        <th>Non-trivial pressure</th><td class="num">${withPressure}</td></tr>
-    <tr><th>Strokes (pen lifts)</th><td class="num">${STROKES.length}</td>
-        <th>Drawing time</th><td class="num">${(dur/1000).toFixed(1)} s</td></tr>
-    <tr><th>Spiral</th><td>pitch ${SPIRAL?.pitch} mm, ${SPIRAL?.turns} turns, path ${Math.round(SPIRAL?.pathMM||0)} mm</td>
-        <th>1 mm =</th><td class="num">${L.p.toFixed(3)} px</td></tr>
-    ${seq?`<tr><th>Tones / targets</th><td class="num">${seq.n} / ${seq.t}</td>
-        <th>Taps</th><td class="num">${TAPS.length}</td></tr>
-    <tr><th>Audio output latency</th><td class="num">${RUN.outLat.toFixed(1)} ms</td>
-        <th>Sequence source</th><td>${seq.source}</td></tr>`:""}
-    <tr><th>Safe area (mm)</th><td colspan="3">top ${L.safeAreaMM.top.toFixed(1)},
-        right ${L.safeAreaMM.right.toFixed(1)}, bottom ${L.safeAreaMM.bottom.toFixed(1)},
-        left ${L.safeAreaMM.left.toFixed(1)} — measured, for INSET_X / INSET_Y</td></tr>
-  </table>
-  ${rate < 55 ? `<div class="warn">Achieved sample rate is low. Under 60 Hz suggests the
-    browser is only delivering one point per frame — expected in Safari without coalesced
-    events, and a reason not to read too much into browser kinematics.</div>`:""}
-  ${seq && RUN.outLat===0 ? `<div class="warn">Output latency reported as zero, which is
-    almost certainly wrong. Compare conditions rather than trusting absolute RT.</div>`:""}`;
-
-  if (bim) {
-    $("rwin").innerHTML = `<h2>Bimanual tapping</h2><table>
-      <tr><th></th><th class="num">Taps</th><th class="num">Mean ITI</th>
-          <th class="num">ITI SD</th><th class="num">Rate</th></tr>
-      <tr><th>Left</th><td class="num">${bim.nL}</td><td class="num">${isNaN(bim.itiL)?"–":bim.itiL.toFixed(0)+" ms"}</td>
-          <td class="num">${isNaN(bim.sdL)?"–":bim.sdL.toFixed(0)+" ms"}</td>
-          <td class="num">${isNaN(bim.rateL)?"–":bim.rateL.toFixed(2)+" Hz"}</td></tr>
-      <tr><th>Right</th><td class="num">${bim.nR}</td><td class="num">${isNaN(bim.itiR)?"–":bim.itiR.toFixed(0)+" ms"}</td>
-          <td class="num">${isNaN(bim.sdR)?"–":bim.sdR.toFixed(0)+" ms"}</td>
-          <td class="num">${isNaN(bim.rateR)?"–":bim.rateR.toFixed(2)+" Hz"}</td></tr>
-      </table>
-      <p class="note">Hand alternation: <b>${isNaN(bim.altPct)?"–":bim.altPct.toFixed(0)+"%"}</b> of
-      consecutive taps switched hand. Near 100% is antiphase, near 0% means the hands
-      are landing together — expected for BMIN, a coordination breakdown for BMANT.
-      Touch timestamps come from the browser event loop, so treat these as indicative.</p>`;
-    $("rq").innerHTML = "";
-  } else if (att && seq.t>0) {
-    const cands=[500,600,700,800,900,1000,1200,1500,2000].filter(w=>w<=seq.minISI);
-    let h=`<h2>What each candidate window would capture</h2><table>
-      <tr><th class="num">Window (ms)</th><th class="num">Targets caught</th>
-      <th class="num">%</th><th class="num">False alarms</th></tr>`;
-    cands.forEach(w=>{ let hit=0,fa=0;
-      for(let i=0;i<seq.n;i++){ const lg=att.firstLag[i]; if(lg===null) continue;
-        const Lc=lg-RUN.outLat; if(Lc>=150&&Lc<=w){ seq.isTarget[i]?hit++:fa++; } }
-      h+=`<tr><td class="num">${w}</td><td class="num">${hit} of ${seq.t}</td>
-          <td class="num">${(100*hit/seq.t).toFixed(0)}%</td><td class="num">${fa}</td></tr>`; });
-    $("rwin").innerHTML = h+"</table>";
-    const Lg=att.targetLags;
-    $("rq").innerHTML = Lg.length ? `<h2>Response times to targets</h2><table>
-      <tr><th class="num">n</th><th class="num">min</th><th class="num">25th</th>
-      <th class="num">median</th><th class="num">75th</th><th class="num">90th</th><th class="num">max</th></tr>
-      <tr><td class="num">${Lg.length}</td><td class="num">${Math.round(Math.min(...Lg))}</td>
-      <td class="num">${Math.round(quantile(Lg,.25))}</td><td class="num">${Math.round(quantile(Lg,.5))}</td>
-      <td class="num">${Math.round(quantile(Lg,.75))}</td><td class="num">${Math.round(quantile(Lg,.9))}</td>
-      <td class="num">${Math.round(Math.max(...Lg))}</td></tr></table>
-      <p class="note">Latency-corrected ms from tone onset to first tap.</p>` : "";
-  } else { $("rwin").innerHTML=""; $("rq").innerHTML=""; }
-  window.scrollTo(0, document.body.scrollHeight);
+function quitTrial(){
+  if(RUN && !RUN.ready && !confirm("Discard this trial?")) return;
+  if(RUN){ clearTimeout(RUN.timer); if(RUN.teardown) RUN.teardown(); }
+  cancelAnimationFrame(RAF); stopAudio();
+  $("stage").classList.remove("on"); RUN=null;
 }
 
-// nearest preceding onset, no upper bound — window chosen later, in analysis
-function attribute(seq, taps, outLat) {
-  const firstLag = new Array(seq.n).fill(null), rows=[];
+// ---------------------------------------------------------------- results
+
+function attribute(seq, taps, outLat){
+  const firstLag=new Array(seq.n).fill(null), rows=[];
   taps.forEach((tapMs,ti)=>{
     let idx=-1;
     for(let i=0;i<seq.n;i++){ if(seq.onsets[i]<=tapMs) idx=i; else break; }
     if(idx<0){ rows.push({ti,tapMs,tone:null,type:null,lag:null}); return; }
     const lag=tapMs-seq.onsets[idx];
     if(firstLag[idx]===null) firstLag[idx]=lag;
-    rows.push({ti,tapMs,tone:idx+1,type:seq.isTarget[idx]?"target":"standard",
-               lag, lagCorrected:lag-outLat});
+    rows.push({ti,tapMs,tone:idx+1,type:seq.isTarget[idx]?"target":"standard",lag,lagCorrected:lag-outLat});
   });
   const targetLags=[];
-  for(let i=0;i<seq.n;i++) if(seq.isTarget[i]&&firstLag[i]!==null)
-    targetLags.push(firstLag[i]-outLat);
+  for(let i=0;i<seq.n;i++) if(seq.isTarget[i]&&firstLag[i]!==null) targetLags.push(firstLag[i]-outLat);
   return { rows, firstLag, targetLags };
 }
 
-// ------------------------------------------------------------ export
+function finish(){
+  $("stage").classList.remove("on");
+  const seq=RUN.seq, pts=STROKES.flat();
+  const dur = pts.length>1 ? (pts[pts.length-1].t-pts[0].t) : 0;
+  const rate = dur>0 ? (pts.length-1)/(dur/1000) : 0;
+  const coalesced = pts.filter(q=>q.c).length;
 
-function stamp(){ const d=new Date(),p=n=>String(n).padStart(2,"0");
-  return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; }
-function save(name,text,mime){ const b=new Blob([text],{type:mime}),a=document.createElement("a");
-  a.href=URL.createObjectURL(b); a.download=name; a.click();
-  setTimeout(()=>URL.revokeObjectURL(a.href),2000); }
+  let att=null; if(seq) att=attribute(seq, TAPS.map(t=>t.t), RUN.outLat);
 
-// ---- record construction -------------------------------------------------
-// One canonical object per trial. Everything else (JSON file, CSV rows, storage)
-// derives from it, so the live trial and a reloaded one behave identically.
+  let bim=null;
+  if(RUN.bimanual || RUN.cond==="TAP"){
+    const mean=v=>v.length?v.reduce((a,b)=>a+b,0)/v.length:NaN;
+    const sd=v=>{ if(v.length<2) return NaN; const m=mean(v);
+      return Math.sqrt(v.reduce((a,b)=>a+(b-m)*(b-m),0)/(v.length-1)); };
+    const iti=v=>v.length>1?v.slice(1).map((x,i)=>x-v[i]):[];
+    const lt=TAPS.filter(t=>t.zone==="left").map(t=>t.t).sort((a,b)=>a-b);
+    const rt=TAPS.filter(t=>t.zone==="right").map(t=>t.t).sort((a,b)=>a-b);
+    const single=TAPS.filter(t=>t.zone==="tap").map(t=>t.t).sort((a,b)=>a-b);
+    const seqZ=TAPS.slice().sort((a,b)=>a.t-b.t).map(t=>t.zone);
+    let alt=0; for(let i=1;i<seqZ.length;i++) if(seqZ[i]!==seqZ[i-1]) alt++;
+    bim={ nL:lt.length, nR:rt.length, nS:single.length,
+          itiL:mean(iti(lt)), itiR:mean(iti(rt)), itiS:mean(iti(single)),
+          sdL:sd(iti(lt)), sdR:sd(iti(rt)), sdS:sd(iti(single)),
+          altPct: RUN.bimanual && seqZ.length>1 ? 100*alt/(seqZ.length-1) : NaN,
+          rateL: lt.length>1?1000/mean(iti(lt)):NaN, rateR: rt.length>1?1000/mean(iti(rt)):NaN,
+          rateS: single.length>1?1000/mean(iti(single)):NaN };
+  }
+
+  LAST={ RUN, STROKES, TAPS, att, SPIRAL, bim, layoutSafe:L.safeAreaMM, ppmm:L.p };
+  goPage(4);
+
+  const savedRes=putTrial(buildRecord());
+  renderSaved();
+  $("saveState").innerHTML = savedRes.ok
+    ? `<div class="good">Trial saved on this device (${(savedRes.bytes/1024).toFixed(0)} KB).
+       It survives a refresh.</div>`
+    : `<div class="bad">Could not write to browser storage (${savedRes.error}). This trial is
+       in memory only and will be lost on reload — export it now.</div>`;
+
+  $("rsum").innerHTML=`<table>
+    <tr><th>Condition</th><td>${RUN.cond}${RUN.stoppedEarly?" (ended early)":""}</td>
+        <th>Participant</th><td>${$("pid").value||"unnamed"}</td></tr>
+    ${RUN.spiralOn?`<tr><th>Pen samples</th><td class="num">${pts.length}</td>
+        <th>Achieved rate</th><td class="num">${rate.toFixed(0)} Hz</td></tr>
+    <tr><th>Strokes (pen lifts)</th><td class="num">${STROKES.length}</td>
+        <th>Drawing time</th><td class="num">${(dur/1000).toFixed(1)} s</td></tr>
+    <tr><th>From coalesced events</th><td class="num">${coalesced}</td>
+        <th>Spiral</th><td>pitch ${SPIRAL?.pitch} mm, ${SPIRAL?.turns} turns</td></tr>`:""}
+    <tr><th>Taps</th><td class="num">${TAPS.length}</td>
+        <th>First contact</th><td class="num">${RUN.firstContactMs??"–"} ms</td></tr>
+    ${seq?`<tr><th>Tones / targets</th><td class="num">${seq.n} / ${seq.t}</td>
+        <th>Audio output latency</th><td class="num">${RUN.outLat.toFixed(1)} ms</td></tr>`:""}
+    <tr><th>1 mm =</th><td class="num">${L.p.toFixed(3)} px</td>
+        <th>Safe area (mm)</th><td>t ${L.safeAreaMM.top.toFixed(1)} · r ${L.safeAreaMM.right.toFixed(1)}
+        · b ${L.safeAreaMM.bottom.toFixed(1)} · l ${L.safeAreaMM.left.toFixed(1)}</td></tr>
+  </table>
+  ${RUN.spiralOn && rate<55 ? `<div class="warn">Pen sample rate under 60 Hz suggests the browser
+    is delivering one point per frame. Expected in Safari without coalesced events, and a reason
+    not to read too much into browser kinematics.</div>`:""}
+  ${seq && RUN.outLat===0 ? `<div class="warn">Output latency reported as zero, which is almost
+    certainly wrong. Compare conditions rather than trusting absolute reaction times.</div>`:""}`;
+
+  if(bim){
+    const f=(v,u)=>isNaN(v)?"–":v.toFixed(u===0?0:2)+(u===0?" ms":" Hz");
+    $("rwin").innerHTML = RUN.bimanual ? `<h2>Bimanual tapping</h2><table>
+      <tr><th></th><th class="num">Taps</th><th class="num">Mean ITI</th><th class="num">ITI SD</th><th class="num">Rate</th></tr>
+      <tr><th>Left</th><td class="num">${bim.nL}</td><td class="num">${f(bim.itiL,0)}</td>
+          <td class="num">${f(bim.sdL,0)}</td><td class="num">${f(bim.rateL,1)}</td></tr>
+      <tr><th>Right</th><td class="num">${bim.nR}</td><td class="num">${f(bim.itiR,0)}</td>
+          <td class="num">${f(bim.sdR,0)}</td><td class="num">${f(bim.rateR,1)}</td></tr></table>
+      <p class="note">Hand alternation <b>${isNaN(bim.altPct)?"–":bim.altPct.toFixed(0)+"%"}</b> of
+      consecutive taps. Near 100% is antiphase; near 0% means the hands land together — expected
+      for BMIN, a coordination breakdown for BMANT.</p>`
+    : `<h2>Tapping</h2><table>
+      <tr><th class="num">Taps</th><th class="num">Mean ITI</th><th class="num">ITI SD</th><th class="num">Rate</th></tr>
+      <tr><td class="num">${bim.nS}</td><td class="num">${f(bim.itiS,0)}</td>
+          <td class="num">${f(bim.sdS,0)}</td><td class="num">${f(bim.rateS,1)}</td></tr></table>`;
+    $("rq").innerHTML="";
+  } else if(att && seq.t>0){
+    const cands=[500,600,700,800,900,1000,1200,1500,2000].filter(w=>w<=seq.minISI);
+    let h=`<h2>What each candidate window would capture</h2><table>
+      <tr><th class="num">Window (ms)</th><th class="num">Targets caught</th><th class="num">%</th><th class="num">False alarms</th></tr>`;
+    cands.forEach(w=>{ let hit=0,fa=0;
+      for(let i=0;i<seq.n;i++){ const lg=att.firstLag[i]; if(lg===null) continue;
+        const Lc=lg-RUN.outLat; if(Lc>=150&&Lc<=w){ seq.isTarget[i]?hit++:fa++; } }
+      h+=`<tr><td class="num">${w}</td><td class="num">${hit} of ${seq.t}</td>
+          <td class="num">${(100*hit/seq.t).toFixed(0)}%</td><td class="num">${fa}</td></tr>`; });
+    $("rwin").innerHTML=h+"</table>";
+    const Lg=att.targetLags;
+    $("rq").innerHTML = Lg.length ? `<h2>Response times to targets</h2><table>
+      <tr><th class="num">n</th><th class="num">min</th><th class="num">25th</th><th class="num">median</th>
+      <th class="num">75th</th><th class="num">90th</th><th class="num">max</th></tr>
+      <tr><td class="num">${Lg.length}</td><td class="num">${Math.round(Math.min(...Lg))}</td>
+      <td class="num">${Math.round(quantile(Lg,.25))}</td><td class="num">${Math.round(quantile(Lg,.5))}</td>
+      <td class="num">${Math.round(quantile(Lg,.75))}</td><td class="num">${Math.round(quantile(Lg,.9))}</td>
+      <td class="num">${Math.round(Math.max(...Lg))}</td></tr></table>
+      <p class="note">Latency-corrected ms from tone onset to first tap.</p>`:"";
+  } else { $("rwin").innerHTML=""; $("rq").innerHTML=""; }
+}
+
+// ---------------------------------------------------------------- record, storage, export
+
 function buildRecord(){
   const R=LAST.RUN;
   return {
-    schema:"motiq_spiral_audio_prototype/1",
+    schema:"motiq_prototype/2",
     build: BUILD,
     note:"PROTOTYPE. Browser mm and browser timing are approximations.",
-    trial_uid: R.startedISO.replace(/[:.]/g,"-") + "_" + ($("pid").value||"unnamed") + "_" + R.cond,
+    trial_uid: R.startedISO.replace(/[:.]/g,"-")+"_"+($("pid").value||"unnamed")+"_"+R.cond,
     participant:{ id:$("pid").value, group:$("grp").value, sex:$("sex").value||null,
                   age:$("age").value||null, dominant_hand:$("domhand").value,
-                  drawing_hand:$("hand").value },
+                  drawing_hand:$("hand").value, tapping_hand:$("taphand").value },
+    notes: $("notes").value || null,
     condition:R.cond, started_iso:R.startedISO,
-    trial:{ start_mode:R.triggered?"first touch in start zone":"immediate",
-            stopped_early:!!R.stoppedEarly, self_paced:!!R.selfPaced,
-            t_zero:"trial clock origin; pen, tap and tone times all share it" },
-    bimanual: LAST.bim || null,
+    trial:{ start_mode:"START button", stopped_early:!!R.stoppedEarly,
+            self_paced:!!R.selfPaced, length_s:R.durMs/1000,
+            first_contact_ms:R.firstContactMs,
+            t_zero:"START pressed; pen, tap and tone times share this origin" },
+    tapping: LAST.bim || null,
     calibration:{ css_px_per_mm:LAST.ppmm, device_pixel_ratio:window.devicePixelRatio,
-                  screen:[screen.width,screen.height],
-                  safe_area_mm:LAST.layoutSafe,
+                  screen:[screen.width,screen.height], safe_area_mm:LAST.layoutSafe,
                   source:CAL.source, device_label:CAL.deviceLabel,
                   card_confirmed:$("cardok").checked },
-    spiral:{ ...LAST.SPIRAL, start_zone_mm:+$("startdia").value,
-             split:+$("split").value, tap_zone_mm:+$("tapdia").value,
-             end_angle_deg:+$("endang").value,
-             parameterisation:"r = (radius/(turns*2pi))*theta, pitch = radius/turns" },
+    spiral: LAST.SPIRAL ? { ...LAST.SPIRAL, start_zone_mm:+$("startdia").value,
+             split:+$("split").value, end_angle_deg:+$("endang").value,
+             parameterisation:"r = (radius/(turns*2pi))*theta, pitch = radius/turns" } : null,
+    tap_zone:{ diameter_mm:+$("tapdia").value, spacing_mm:+$("zonegap").value },
     audio: R.seq ? { source:R.seq.source, wav_md5:R.seq.wav_md5||null,
-             f_standard:+$("fstd").value, f_target:+$("ftgt").value,
-             tone_ms:+$("tone").value, level:+$("lvl").value,
-             output_latency_ms:R.outLat, base_latency_ms:R.baseLat,
+             f_standard:+$("fstd").value, f_target:+$("ftgt").value, tone_ms:+$("tone").value,
+             level:+$("lvl").value, output_latency_ms:R.outLat, base_latency_ms:R.baseLat,
              sample_rate:ctx?ctx.sampleRate:null } : null,
     sequence: R.seq ? { n_tones:R.seq.n, n_targets:R.seq.t, onsets_ms:R.seq.onsets,
              tone_type:R.seq.isTarget.map(b=>b?"target":"standard"),
              intervals_ms:R.seq.intervals, min_isi_ms:R.seq.minISI } : null,
     strokes: LAST.STROKES,
-    strokes_units:"x,y in mm from spiral centre, y up; t in ms from trial clock origin; p = pressure 0-1",
+    strokes_units:"x,y mm from spiral centre, y up; t ms from START; p pressure 0-1",
     taps: LAST.TAPS,
     attribution: LAST.att ? { rule:"nearest preceding onset, no upper bound",
              rows:LAST.att.rows, target_lags_corrected_ms:LAST.att.targetLags } : null,
@@ -1014,14 +1081,14 @@ function buildRecord(){
   };
 }
 
-const CSV_HEAD = [
-  "trial_uid","build","participant_id","group","sex","age","dominant_hand",
-  "drawing_hand","condition","instruction","started_iso","stopped_early","trial_start_mode",
-  "css_px_per_mm","device_label","calibration_source","card_confirmed",
-  "pitch_mm","turns","radius_mm","direction","template_path_mm",
-  "n_pen_samples","achieved_rate_hz","n_strokes",
+const CSV_HEAD=[
+  "trial_uid","build","participant_id","group","sex","age","dominant_hand","drawing_hand",
+  "tapping_hand","condition","instruction","notes","started_iso","stopped_early",
+  "trial_length_s","first_contact_ms","css_px_per_mm",
+  "device_label","calibration_source","card_confirmed","pitch_mm","turns","radius_mm",
+  "direction","template_path_mm","tap_zone_mm","n_pen_samples","achieved_rate_hz","n_strokes",
   "n_tones","n_targets","min_isi_ms","output_latency_ms","sequence_source",
-  "n_taps_left","n_taps_right","alternation_pct",
+  "n_taps_left","n_taps_right","n_taps_single","alternation_pct",
   "row_type","stroke","t_ms","x_mm","y_mm","pressure","tilt_x","tilt_y",
   "pointer_type","coalesced","zone","tone_index","tone_type","lag_ms","lag_corrected_ms"
 ];
@@ -1042,164 +1109,117 @@ function mkRow(meta, o){
 }
 
 function csvRows(rec){
-  const S=rec.spiral, seq=rec.sequence, bim=rec.bimanual, P=rec.participant;
+  const S=rec.spiral, seq=rec.sequence, tp=rec.tapping, P=rec.participant;
   const pts=(rec.strokes||[]).flat();
-  const dur = pts.length>1 ? (pts[pts.length-1].t - pts[0].t) : 0;
-  const rate = dur>0 ? ((pts.length-1)/(dur/1000)).toFixed(1) : "";
-  const C=rec.calibration;
-  const meta = [
+  const dur=pts.length>1?(pts[pts.length-1].t-pts[0].t):0;
+  const rate=dur>0?((pts.length-1)/(dur/1000)).toFixed(1):"";
+  const meta=[
     rec.trial_uid, rec.build??"", P.id||"unnamed", P.group, P.sex??"", P.age??"", P.dominant_hand,
-    P.drawing_hand, rec.condition, S?S.instruction:"", rec.started_iso,
-    rec.trial.stopped_early?1:0, rec.trial.start_mode,
-    C.css_px_per_mm, C.device_label??"", C.source??"",
-    C.card_confirmed==null ? "" : (C.card_confirmed?1:0),
-    S?S.pitch:"", S?S.turns:"", S?S.radius:"", S?S.direction:"",
-    S?Math.round(S.pathMM):"",
+    P.drawing_hand, P.tapping_hand??"", rec.condition, S?S.instruction:"",
+    rec.notes??"", rec.started_iso,
+    rec.trial.stopped_early?1:0, rec.trial.length_s, rec.trial.first_contact_ms??"",
+    rec.calibration.css_px_per_mm,
+    rec.calibration.device_label??"", rec.calibration.source??"",
+    rec.calibration.card_confirmed==null ? "" : (rec.calibration.card_confirmed?1:0),
+    S?S.pitch:"", S?S.turns:"", S?S.radius:"", S?S.direction:"", S?Math.round(S.pathMM):"",
+    rec.tap_zone?rec.tap_zone.diameter_mm:"",
     pts.length, rate, (rec.strokes||[]).length,
     seq?seq.n_tones:"", seq?seq.n_targets:"", seq?Math.round(seq.min_isi_ms):"",
     rec.audio?rec.audio.output_latency_ms.toFixed(2):"", rec.audio?rec.audio.source:"",
-    bim?bim.nL:"", bim?bim.nR:"",
-    bim&&!isNaN(bim.altPct)?bim.altPct.toFixed(1):""
+    // Number.isFinite, not isNaN: NaN becomes null through JSON.stringify on the way
+    // into localStorage, and isNaN(null) is false, so a reloaded TAP trial (altPct is
+    // NaN for single-hand tapping) threw on null.toFixed and killed the whole export.
+    // Bare isFinite would not do either -- it coerces null to 0 and returns true.
+    tp?tp.nL:"", tp?tp.nR:"", tp?tp.nS:"", tp&&Number.isFinite(tp.altPct)?tp.altPct.toFixed(1):""
   ];
   const out=[];
   (rec.strokes||[]).forEach((st,si)=> st.forEach(p =>
     out.push(mkRow(meta, { row_type:"pen", stroke:si+1, t_ms:p.t, x_mm:p.x, y_mm:p.y,
                            pressure:p.p, tilt_x:p.tx??"", tilt_y:p.ty??"",
                            pointer_type:p.k, coalesced:p.c }))));
-  const attRows = rec.attribution ? rec.attribution.rows : [];
-  (rec.taps||[]).forEach((t,i)=>{
-    const a = attRows[i] || {};
+  const ar=rec.attribution?rec.attribution.rows:[];
+  (rec.taps||[]).forEach((t,i)=>{ const a=ar[i]||{};
     out.push(mkRow(meta, { row_type:"tap", t_ms:t.t, pointer_type:t.pointerType, zone:t.zone,
                            tone_index:a.tone??"", tone_type:a.type??"",
                            lag_ms: a.lag!=null?(+a.lag).toFixed(2):"",
-                           lag_corrected_ms: a.lagCorrected!=null?(+a.lagCorrected).toFixed(2):"" }));
-  });
-  if (seq) seq.onsets_ms.forEach((on,i)=>
+                           lag_corrected_ms: a.lagCorrected!=null?(+a.lagCorrected).toFixed(2):"" })); });
+  if(seq) seq.onsets_ms.forEach((on,i)=>
     out.push(mkRow(meta, { row_type:"tone", t_ms:(+on).toFixed(2),
                            tone_index:i+1, tone_type:seq.tone_type[i] })));
   return out;
 }
-
-const qcsv = v => { const s = v===null||v===undefined ? "" : String(v);
-  return /[",\n]/.test(s) ? '"'+s.replace(/"/g,'""')+'"' : s; };
+const qcsv = v => { const s=v===null||v===undefined?"":String(v);
+  return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
 function csvText(recs){
   const lines=[CSV_HEAD.join(",")];
-  recs.forEach(r => csvRows(r).forEach(row => lines.push(row.map(qcsv).join(","))));
+  recs.forEach(r=>csvRows(r).forEach(row=>lines.push(row.map(qcsv).join(","))));
   return lines.join("\n");
 }
 
-// ---- storage -------------------------------------------------------------
-const STORE_PREFIX = "motiq_trial:";
-const MEM = {};              // fallback if localStorage is unavailable
-let STORAGE_OK = true;
-try { localStorage.setItem("__probe","1"); localStorage.removeItem("__probe"); }
-catch(e){ STORAGE_OK = false; }
-
+const STORE_PREFIX="motiq_trial:";
+const MEM={}; let STORAGE_OK=true;
+try{ localStorage.setItem("__probe","1"); localStorage.removeItem("__probe"); }catch(e){ STORAGE_OK=false; }
 function putTrial(rec){
-  const key = STORE_PREFIX + rec.trial_uid;
-  const s = JSON.stringify(rec);
-  if (STORAGE_OK) {
-    try { localStorage.setItem(key, s); return { ok:true, bytes:s.length }; }
-    catch(e){ MEM[key]=s; return { ok:false, bytes:s.length, error:e.name }; }
-  }
-  MEM[key]=s; return { ok:false, bytes:s.length, error:"storage unavailable" };
+  const key=STORE_PREFIX+rec.trial_uid, s=JSON.stringify(rec);
+  if(STORAGE_OK){ try{ localStorage.setItem(key,s); return {ok:true,bytes:s.length}; }
+    catch(e){ MEM[key]=s; return {ok:false,bytes:s.length,error:e.name}; } }
+  MEM[key]=s; return {ok:false,bytes:s.length,error:"storage unavailable"};
 }
 function listTrials(){
   const out=[];
-  if (STORAGE_OK) { try {
-    for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i);
-      if(k.startsWith(STORE_PREFIX)) out.push({ key:k, size:localStorage.getItem(k).length }); }
-  } catch(e){} }
-  Object.keys(MEM).forEach(k=>out.push({ key:k, size:MEM[k].length, mem:true }));
-  return out.sort((a,b)=> a.key<b.key ? 1 : -1);   // newest first
+  if(STORAGE_OK){ try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i);
+    if(k.startsWith(STORE_PREFIX)) out.push({key:k,size:localStorage.getItem(k).length}); } }catch(e){} }
+  Object.keys(MEM).forEach(k=>out.push({key:k,size:MEM[k].length,mem:true}));
+  return out.sort((a,b)=>a.key<b.key?1:-1);
 }
-function getTrial(key){
-  try { const v = localStorage.getItem(key); if (v) return JSON.parse(v); } catch(e){}
-  return MEM[key] ? JSON.parse(MEM[key]) : null;
-}
+function getTrial(key){ try{ const v=localStorage.getItem(key); if(v) return JSON.parse(v); }catch(e){}
+  return MEM[key]?JSON.parse(MEM[key]):null; }
 function delTrial(key){ try{ localStorage.removeItem(key); }catch(e){} delete MEM[key]; renderSaved(); }
 function delAllTrials(){
   if(!confirm("Delete every saved trial on this device? Export first if you have not.")) return;
-  listTrials().forEach(t => { try{ localStorage.removeItem(t.key); }catch(e){} delete MEM[t.key]; });
+  listTrials().forEach(t=>{ try{ localStorage.removeItem(t.key); }catch(e){} delete MEM[t.key]; });
   renderSaved();
 }
-
 function renderSaved(){
-  const ts = listTrials();
-  const total = ts.reduce((a,b)=>a+b.size,0);
-  const pct = Math.min(100, 100*total/(5*1024*1024));
-  if (!ts.length) {
-    $("savedBody").innerHTML = `<p class="note" style="margin:0">No trials saved on this device yet.</p>`;
-  } else {
-    let h = `<table><tr><th>Started</th><th>ID</th><th>Condition</th>
-             <th class="num">Pen</th><th class="num">Taps</th><th class="num">KB</th><th></th></tr>`;
-    ts.forEach(t=>{
-      const r = getTrial(t.key); if(!r) return;
-      const pen = (r.strokes||[]).reduce((a,s)=>a+s.length,0);
-      h += `<tr><td>${r.started_iso.slice(0,19).replace("T"," ")}</td>
-            <td>${r.participant.id||"unnamed"}</td><td>${r.condition}</td>
-            <td class="num">${pen}</td><td class="num">${(r.taps||[]).length}</td>
-            <td class="num">${(t.size/1024).toFixed(0)}</td>
-            <td><button class="ghost sm" onclick="delTrial('${t.key}')">delete</button></td></tr>`;
-    });
-    $("savedBody").innerHTML = h + `</table>`;
+  const ts=listTrials(), total=ts.reduce((a,b)=>a+b.size,0);
+  const pct=Math.min(100,100*total/(5*1024*1024));
+  if(!ts.length) $("savedBody").innerHTML=`<p class="note" style="margin:0">No trials saved yet.</p>`;
+  else{
+    let h=`<table><tr><th>Started</th><th>ID</th><th>Condition</th><th class="num">Pen</th>
+           <th class="num">Taps</th><th class="num">KB</th><th></th></tr>`;
+    ts.forEach(t=>{ const r=getTrial(t.key); if(!r) return;
+      const pen=(r.strokes||[]).reduce((a,s)=>a+s.length,0);
+      h+=`<tr><td>${r.started_iso.slice(0,19).replace("T"," ")}</td><td>${r.participant.id||"unnamed"}</td>
+          <td>${r.condition}</td><td class="num">${pen}</td><td class="num">${(r.taps||[]).length}</td>
+          <td class="num">${(t.size/1024).toFixed(0)}</td>
+          <td><button class="ghost sm" onclick="delTrial('${t.key}')">delete</button></td></tr>`; });
+    $("savedBody").innerHTML=h+`</table>`;
   }
-  $("savedMeter").innerHTML =
-    `<div class="${pct>80?"bad":"note"}" style="margin-top:8px">${ts.length} trial${ts.length===1?"":"s"} saved,
+  $("savedMeter").innerHTML=
+    `<div class="${pct>80?"bad":"note"}" style="margin-top:8px">${ts.length} trial${ts.length===1?"":"s"},
      ${(total/1024).toFixed(0)} KB — about ${pct.toFixed(0)}% of the roughly 5 MB a browser allows.
-     ${pct>80?"Export and clear soon; further trials may fail to save.":""}</div>` +
-    (STORAGE_OK ? "" : `<div class="bad">Browser storage is unavailable — trials are held in
-     memory only and will be lost on refresh. Export after every trial. This usually means the
-     page was opened as a local file rather than served over http.</div>`);
+     ${pct>80?"Export and clear soon.":""}</div>` +
+    (STORAGE_OK?"":`<div class="bad">Browser storage unavailable — trials are in memory only and
+     will be lost on refresh. Export after every trial. This usually means the page was opened as a
+     local file instead of over http.</div>`);
 }
 
-function exportAllCSV(){
-  const recs = listTrials().map(t=>getTrial(t.key)).filter(Boolean);
-  if(!recs.length){ alert("Nothing saved to export."); return; }
-  save(`motiq_all_${stamp()}.csv`, csvText(recs), "text/csv");
-}
-function exportAllJSON(){
-  const recs = listTrials().map(t=>getTrial(t.key)).filter(Boolean);
-  if(!recs.length){ alert("Nothing saved to export."); return; }
-  save(`motiq_all_${stamp()}.json`, JSON.stringify(recs,null,2), "application/json");
-}
-function showCSVText(){
-  const recs = listTrials().map(t=>getTrial(t.key)).filter(Boolean);
-  if(!recs.length){ alert("Nothing saved."); return; }
-  const box = $("csvbox");
-  box.classList.remove("hidden");
-  box.value = csvText(recs);
-  box.focus(); box.select();
-}
-
-function exportJSON(){
-  if(!LAST) return;
-  const rec = buildRecord();
-  save(`motiq_${rec.participant.id||"unnamed"}_${rec.condition}_${stamp()}.json`,
-       JSON.stringify(rec,null,2), "application/json");
-}
-function exportCSV(){
-  if(!LAST) return;
-  const rec = buildRecord();
-  save(`motiq_${rec.participant.id||"unnamed"}_${rec.condition}_${stamp()}.csv`,
-       csvText([rec]), "text/csv");
-}
-
-function updateISIWarn(){
-  const mean=+$("isi").value, jit=+$("jit").value/100;
-  const minISI = mean*(1-jit);
-  const n = Math.floor((+$("dur").value)*1000/mean), t = Math.round(n*(+$("ptg").value));
-  let msg = `<div class="note">${n} tones, ${t} targets. Shortest interval ` +
-            `<b>${Math.round(minISI)} ms</b>.</div>`;
-  if (minISI < 700) msg += `<div class="warn">Attribution is capped at ${Math.round(minISI)} ms: ` +
-    `a tap slower than that lands after the next tone and will be assigned to the wrong one. ` +
-    `Fine if the tones are only a loader, but reaction time and hit rate become unreliable — ` +
-    `reported RT in Lewy body dementia sits near 900 ms even before dual-task load.</div>`;
-  $("isiwarn").innerHTML = msg;
-}
-["isi","jit","dur","ptg"].forEach(id => $(id).addEventListener("input", updateISIWarn));
-updateISIWarn();
+function stamp(){ const d=new Date(),p=n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}${p(d.getMonth()+1)}${p(d.getDate())}_${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`; }
+function save(name,text,mime){ const b=new Blob([text],{type:mime}),a=document.createElement("a");
+  a.href=URL.createObjectURL(b); a.download=name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),2000); }
+function exportAllCSV(){ const r=listTrials().map(t=>getTrial(t.key)).filter(Boolean);
+  if(!r.length){ alert("Nothing saved to export."); return; }
+  save(`motiq_all_${stamp()}.csv`, csvText(r), "text/csv"); }
+function exportAllJSON(){ const r=listTrials().map(t=>getTrial(t.key)).filter(Boolean);
+  if(!r.length){ alert("Nothing saved to export."); return; }
+  save(`motiq_all_${stamp()}.json`, JSON.stringify(r,null,2), "application/json"); }
+function showCSVText(){ const r=listTrials().map(t=>getTrial(t.key)).filter(Boolean);
+  if(!r.length){ alert("Nothing saved."); return; }
+  const b=$("csvbox"); b.classList.remove("hidden"); b.value=csvText(r); b.focus(); b.select(); }
 
 window.addEventListener("resize", ()=>{ if($("stage").classList.contains("on")){ layout(); drawScene(); }});
+syncBlocks();
 renderSaved();
 </script>
