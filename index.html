@@ -7,15 +7,15 @@
 <title>MotiQ prototype</title>
 
 <!--
-  MotiQ prototype  v5
-  ===================
+  MotiQ prototype  v10
+  ====================
   PROTOTYPE. Browser millimetres and browser timing are approximations.
 
-  Built to be revised. Every condition is one entry in CATALOGUE below: what it
-  needs, how many repeats, which hands, where it sits in the administration order.
-  Adding, removing or renumbering a condition is an edit to that array and nothing
-  else. Repeat counts and order are defaults, not rules -- BATTERY-001 is expected
-  to change, and the app must not encode a version of it.
+  Built to be revised. Every task is one entry in CATALOGUE below: what it needs,
+  how many repeats, which hands, where it sits in the administration order. Adding,
+  removing or renumbering a task is an edit to that array and nothing else. Repeat
+  counts and order are defaults, not rules -- BATTERY-001 is expected to change, and
+  the app must not encode a version of it.
 
   The app shows consequences and does not block: projected session length, target
   events per hand, attribution limits. The only hard blocks are the ones that make
@@ -25,6 +25,14 @@
   Every trial records the plan it came from and a verbatim parameters_json, so data
   collected under one version of the battery still says exactly what was
   administered when the battery changes.
+
+  Three kinds of record leave this app, and they are kept apart deliberately:
+    - trial records      one per trial, localStorage, key prefix motiq_trial:
+    - screening records  one per screening administration, per participant rather
+                         than per trial, localStorage, key prefix motiq_screen:
+    - voice clips        one per recorded trial, IndexedDB. Never localStorage:
+                         base64 audio in a ~5 MB string store would fill the quota
+                         and silently break trial saving, which is data loss.
 
   Nothing is uploaded. Everything stays on the device.
 -->
@@ -72,6 +80,7 @@
   td input, td select { padding:6px 8px; font-size:14px; }
   td input[type=number] { width:70px; }
   td input[type=checkbox] { width:auto; }
+  tr.blocked td { opacity:.55; }
   .hidden { display:none !important; }
   code { background:#eef1f5; padding:1px 5px; border-radius:4px; font-size:13px; }
   .steps { display:flex; gap:7px; margin:0 0 16px; font-size:13px; color:var(--muted); flex-wrap:wrap; }
@@ -86,6 +95,14 @@
   #cardok { width:auto; flex:0 0 auto; margin:3px 0 0; }
   #penpad { border:1px solid var(--line); border-radius:10px; background:#fff;
             touch-action:none; display:block; margin-top:10px; width:100%; }
+  /* Screening canvases behave like the pen pad: they own their touch handling, and the
+     page behind them must not scroll while a stylus is dragging across one. */
+  .screenpad { border:1px solid var(--line); border-radius:10px; background:#fff;
+               touch-action:none; display:block; margin-top:10px; width:100%;
+               user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+  .checkrow { display:flex; align-items:flex-start; gap:9px; margin-top:12px;
+              font-size:14px; color:var(--ink); cursor:pointer; }
+  .checkrow input { width:auto; flex:0 0 auto; margin:3px 0 0; }
   .queue td.now { background:#eaf2fb; font-weight:600; }
   .queue td.done { color:var(--muted); }
 
@@ -127,7 +144,11 @@
   #adminbar .spacer { flex:1; }
   #hud { font-size:16px; font-weight:600; color:var(--muted);
          font-variant-numeric:tabular-nums; min-width:64px; padding-left:6px; }
+  #hud.cue { color:var(--warm); }
   #reminder { font-size:14px; color:var(--muted); text-align:right; max-width:50%; line-height:1.35; }
+  /* The recording indicator has to be legible from the examiner's side of the iPad
+     without competing with the trial itself. */
+  #recdot { font-size:14px; font-weight:600; color:#8c2020; min-width:78px; }
   #quit { font-size:13px !important; padding:9px 14px !important; min-width:0 !important;
           background:#fff; color:var(--muted); border:1px solid var(--line); }
 </style>
@@ -208,6 +229,12 @@
             <option value="ambidextrous">Ambidextrous</option></select></div>
       </div>
       <div id="agenote" class="note"></div>
+      <label class="checkrow" for="voiceconsent">
+        <input id="voiceconsent" type="checkbox" onchange="onVoiceConsentChange()">
+        <span><b>Voice recording consented.</b> The participant has agreed to be audio-recorded
+        for the spoken tasks. Until this is ticked those tasks cannot be added to the plan.
+        Recordings stay on this device.</span></label>
+      <div id="voicenote"></div>
       <div class="btnrow">
         <button class="ghost" onclick="newParticipant()">Start a new participant</button>
         <span class="note" style="margin:0">Clears these fields, opens a new session and
@@ -232,6 +259,50 @@
       </div>
       <canvas id="penpad" height="150"></canvas>
       <div id="pcresult" class="note"></div>
+    </fieldset>
+
+    <!-- Screening screens. Unlike the pen and sound checks these DO write a record --
+         one per administration, per participant rather than per trial, under their own
+         storage prefix and their own export. They are covariates for the analysis, not
+         trials, so they are deliberately not in CATALOGUE and never enter the queue. -->
+    <fieldset>
+      <legend>Mini Trail B <span style="font-weight:400;color:var(--muted)">— screening, per participant</span></legend>
+      <p class="note" style="margin-top:0">Ask the participant to join the circles in order —
+      <b>1, A, 2, B, 3, C, 4, D</b> — in one continuous movement, as quickly as they can without
+      lifting the stylus. The layout is the same every single time it is administered: a
+      covariate whose difficulty varied between administrations would not be comparable.
+      Expect roughly 15–20 seconds.</p>
+      <div class="r3">
+        <div><label for="mtbhand">Hand</label>
+          <select id="mtbhand"><option value="dominant">Dominant</option>
+            <option value="nondominant">Non-dominant</option></select></div>
+        <div><label for="mtbimpl">Implement</label>
+          <select id="mtbimpl"><option value="pen">Stylus</option><option value="finger">Index finger</option></select></div>
+        <div><label>&nbsp;</label><div class="btnrow" style="margin:0">
+          <button class="ghost" onclick="mtbReset()">Restart</button></div></div>
+      </div>
+      <canvas id="mtbpad" class="screenpad"></canvas>
+      <div id="mtbresult"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Dot tap screen <span style="font-weight:400;color:var(--muted)">— screening, per participant</span></legend>
+      <p class="note" style="margin-top:0">Ten seconds. A dot appears somewhere in the box; the
+      participant taps it, and the next one appears somewhere else. Tell them to tap each dot as
+      soon as they see it. A dot that is not tapped within 1.5 s counts as a miss and disappears
+      on its own.</p>
+      <div class="r3">
+        <div><label for="dothand">Hand</label>
+          <select id="dothand"><option value="dominant">Dominant</option>
+            <option value="nondominant">Non-dominant</option></select></div>
+        <div><label for="dotimpl">Implement</label>
+          <select id="dotimpl"><option value="finger">Index finger</option>
+            <option value="pen">Stylus</option></select></div>
+        <div><label>&nbsp;</label><div class="btnrow" style="margin:0">
+          <button class="ghost" id="dotstart" onclick="dotStart()">Start 10 s</button></div></div>
+      </div>
+      <canvas id="dotpad" class="screenpad"></canvas>
+      <div id="dotresult"></div>
     </fieldset>
 
     <fieldset>
@@ -300,14 +371,26 @@
 
     <fieldset>
       <legend>Plan the battery</legend>
-      <p class="note" style="margin-top:0">Repeats are per hand where a condition uses both.
+      <p class="note" style="margin-top:0">Repeats are per hand where a task uses both.
       Everything here is a default, not a rule — change anything.</p>
       <div style="overflow-x:auto"><table id="planTable"></table></div>
+      <div class="r4" style="margin-top:12px">
+        <div><label for="spest">Self-paced trial assumed to last (s)</label>
+          <input id="spest" type="number" min="5" max="180" step="5" value="20"
+                 onchange="onSelfPacedEstChange()"></div>
+        <div style="grid-column:span 3"><label>&nbsp;</label>
+          <div class="note" style="margin:0">Used <b>only</b> to project session length below.
+          A self-paced trial has no length until it is run, so the projection needs an assumed
+          one. It is not sent to any trial and changes nothing about what is administered.</div></div>
+      </div>
       <div id="planSummary"></div>
       <div class="btnrow">
         <button onclick="buildQueue()">Build session</button>
+        <button class="ghost" onclick="clearAllSelections()">Clear all selections</button>
         <button class="ghost" onclick="resetPlan()">Reset to defaults</button>
       </div>
+      <div class="note">“Clear all selections” unticks every task and leaves the repeats and
+      lengths alone, so re-ticking a task restores the numbers you had set.</div>
     </fieldset>
 
     <fieldset id="queueBox" class="hidden">
@@ -366,15 +449,15 @@
         <div><label for="zonegap">Bimanual spacing (mm)</label><input id="zonegap" type="number" value="110" step="5" min="60" max="200"></div>
         <div></div>
       </div>
-      <div class="note">Lead-in is set per condition in the auditory table below, because a dual
+      <div class="note">Lead-in is set per task in the auditory table below, because a dual
       task needs more of it than a tones-only task: the participant has to get drawing before the
       first tone lands. It matters most where the first tone is already a response demand.</div>
     </fieldset>
 
     <fieldset>
       <legend>Auditory stream</legend>
-      <p class="note" style="margin-top:0">Per-condition defaults. Edit a row to change what
-      that condition uses for the rest of the session.</p>
+      <p class="note" style="margin-top:0">Per-task defaults. Edit a row to change what
+      that task uses for the rest of the session.</p>
       <div style="overflow-x:auto"><table id="audioTable"></table></div>
       <div class="r4" style="margin-top:12px">
         <div><label for="fstd">Standard (Hz)</label><input id="fstd" type="number" value="1000" step="50"></div>
@@ -400,12 +483,12 @@
 
   <!-- ===================== 5 INSTRUCTIONS ===================== -->
   <div id="pg5" class="hidden">
-    <p class="sub">Exactly what the participant is shown. One page per condition. This is the
+    <p class="sub">Exactly what the participant is shown. One page per task. This is the
     same text the run screen uses, so the two cannot drift apart.</p>
     <fieldset>
-      <legend>Condition</legend>
+      <legend>Task</legend>
       <div class="r3">
-        <div><label for="insCond">Show</label><select id="insCond" onchange="renderInstrPage()"></select></div>
+        <div><label for="insTask">Show</label><select id="insTask" onchange="renderInstrPage()"></select></div>
         <div><label for="insMode">Spiral instruction</label>
           <select id="insMode" onchange="renderInstrPage()">
             <option value="between">Draw between the lines</option>
@@ -449,7 +532,37 @@
       <div class="note">Trials are written when you press SAVE. This is browser storage, not a
       database — clearing Safari's website data erases it. Export at the end of every session.
       <br><br><code>parameters_json</code> carries the complete parameter set verbatim, so a
-      setting added later is still recorded in full for trials run today.</div>
+      setting added later is still recorded in full for trials run today.
+      <br><br>The JSON export is one object with three sections — <code>trials</code>,
+      <code>screening</code> and <code>audio_index</code>. The CSV buttons write the trial
+      rows and the screening rows as two separate files, because they have nothing in common
+      to share columns with.</div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Screening screens on this device</legend>
+      <div id="screenBody"></div>
+      <div class="btnrow">
+        <button class="ghost" onclick="exportScreenCSV()">Export screening CSV</button>
+        <button class="ghost" onclick="renderScreens()">Refresh</button>
+        <button class="ghost" onclick="delAllScreens()">Delete all screening</button>
+      </div>
+      <div class="note">One row per administration, not per trial. Mini Trail B and the dot tap
+      screen are participant-level covariates and are kept out of the trial file entirely.</div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Voice recordings on this device</legend>
+      <div id="audioBody"></div>
+      <div class="btnrow">
+        <button class="ghost" onclick="downloadAllAudio()">Download all audio</button>
+        <button class="ghost" onclick="renderAudioStore()">Refresh</button>
+        <button class="ghost" onclick="delAllAudio()">Delete all audio</button>
+      </div>
+      <div class="note">Clips live in IndexedDB, not in the ~5 MB string store the trials use,
+      and each file is named after the trial it belongs to. A bulk download starts one download
+      per clip; Safari may ask permission for multiple downloads, and may refuse them if the
+      page is not in the foreground — download individually if that happens.</div>
     </fieldset>
 
     <div class="navrow">
@@ -464,6 +577,7 @@
   <div id="adminbar">
     <div id="ctrl" style="display:flex;gap:12px"></div>
     <div id="hud"></div>
+    <div id="recdot"></div>
     <div class="spacer"></div>
     <div id="tapcount" style="font-size:14px;color:var(--muted);min-width:70px"></div>
     <div id="reminder"></div>
@@ -480,7 +594,7 @@
 const BUILD = "v9.02 2026-08-19";
 
 /* ============================================================================
-   CATALOGUE — the one place conditions are defined.
+   CATALOGUE — the one place tasks are defined.
 
    id        identifier used in data and trial IDs
    label     shown to the administrator
@@ -496,6 +610,37 @@ const BUILD = "v9.02 2026-08-19";
    repeats   default; free integer, not a permitted-value list
    lengthS   trial length in seconds; null means self-paced (ends on END)
    implement default drawing implement where relevant
+
+   Fields added in v10 -- all optional, absent means the old behaviour:
+
+   selfPaceable 1 = the Length column offers a choice between a fixed length and
+             self-paced, instead of being fixed one way. Self-paced here means the
+             stream is generated long enough not to run out (selfPacedDurS) and is
+             cut when drawing ends, never before floorS. Only set it where there is
+             drawing to end: a tones-only task has nothing to cut the stream on.
+   fixedS    the length offered when a self-paced-by-default task is switched to
+             fixed. Falls back to lengthS, then to 45 s.
+   count     1 = a total is typed in at trial end and compared with what was played.
+             Count error is a trial validity criterion, not a measure.
+   countMode "silent" = counted in the head; "aloud" = spoken, and recorded.
+   countOf   "targets" = count the high tones only; "all" = count every tone. This
+             is what the typed total is scored against, so it must match the words
+             the participant was actually given.
+   respond   "tap" (default), "speak", or "both". "both" means one tone type is
+             tapped and the other is spoken -- SP_SWT, the switching task.
+   respondTo which tone type the TAP answers: "target" (default, the high tone, as
+             in every oddball task) or "standard" (the low tone, as in SP_SWT).
+             Response-time scoring follows this, not the tone label.
+   adjacentTargetsOK 1 = the generator may place targets next to each other. Set
+             only where every tone type carries a response, so a tap binds to the
+             preceding tone by the ISI itself rather than by the target-to-target
+             gap. Without it, no stream can exceed ~50% targets.
+   voice     1 = record the participant's voice for this task. Needs the consent
+             tick on the Participant page; the task cannot be planned without it.
+   verbal    1 = a spoken secondary task configured per trial (SP_VRB): a prompt
+             type from VERBAL_PROMPTS plus the exact wording used, written into
+             the trial record.
+
    Audio settings live in AUDIO_DEFAULTS, keyed by the same id.
    ============================================================================ */
 const CATALOGUE = [
@@ -507,39 +652,83 @@ const CATALOGUE = [
   { id:"DET",      label:"Detection tapping",          order:60, spiral:0, tap:1, audio:1, zones:1, hands:"one",   repeats:2, lengthS:20 },
   { id:"ODT",      label:"Oddball tapping",            order:70, spiral:0, tap:1, audio:1, zones:1, hands:"each",  repeats:2, lengthS:20 },
   { id:"SP_TAP",   label:"Spiral + tapping",           order:80, spiral:1, tap:1, audio:0, zones:1, hands:"roles", repeats:2, lengthS:null, implement:"pen" },
-  { id:"SP_DET",   label:"Spiral + detection",         order:90, spiral:1, tap:1, audio:1, zones:1, hands:"roles", repeats:2, lengthS:45, implement:"pen" },
-  { id:"SP_ODT",   label:"Spiral + oddball",           order:100,spiral:1, tap:1, audio:1, zones:1, hands:"roles", repeats:1, lengthS:45, implement:"pen" },
-  { id:"SPF_ODT",  label:"Spiral (finger) + oddball",  order:110,spiral:1, tap:1, audio:1, zones:1, hands:"one",   repeats:1, lengthS:45, implement:"finger" },
+  { id:"SP_DET",   label:"Spiral + detection",         order:90, spiral:1, tap:1, audio:1, zones:1, hands:"roles", repeats:2, lengthS:45, implement:"pen", selfPaceable:1 },
+  { id:"SP_ODT",   label:"Spiral + oddball",           order:100,spiral:1, tap:1, audio:1, zones:1, hands:"roles", repeats:1, lengthS:45, implement:"pen", selfPaceable:1 },
+  // Counted aloud, so the number itself is on the recording as well as typed in at
+  // the end. ptg 0 means there is nothing to discriminate: every tone is counted.
+  { id:"SP_DEC",   label:"Spiral + count every tone aloud", order:102, spiral:1, tap:0, audio:1, zones:0, hands:"one", repeats:1, lengthS:null, implement:"pen",
+                   selfPaceable:1, fixedS:45, count:1, countMode:"aloud", countOf:"all", respond:"speak", voice:1 },
+  { id:"SP_ODC",   label:"Spiral + count high tones aloud", order:104, spiral:1, tap:0, audio:1, zones:0, hands:"one", repeats:1, lengthS:null, implement:"pen",
+                   selfPaceable:1, fixedS:45, count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1 },
+  // Switching: the low tone is tapped, the high tone is spoken. Both tone types carry
+  // a response, so targets may be adjacent and the attribution gap is the ISI itself.
+  { id:"SP_SWT",   label:"Spiral + tap / speak switching", order:106, spiral:1, tap:1, audio:1, zones:1, hands:"roles", repeats:1, lengthS:null, implement:"pen",
+                   selfPaceable:1, fixedS:45, count:1, countMode:"aloud", countOf:"targets",
+                   respond:"both", respondTo:"standard", adjacentTargetsOK:1, voice:1 },
+  { id:"SPF_ODT",  label:"Spiral (finger) + oddball",  order:110,spiral:1, tap:1, audio:1, zones:1, hands:"one",   repeats:1, lengthS:45, implement:"finger", selfPaceable:1 },
   // No tap zone: the response is a silent count reported at the end, so there is no
   // timestamped response channel and no cognitive dual-task effect can be computed.
-  // Count error is a trial validity criterion, not a measure.
-  { id:"SPF_ODC",  label:"Spiral (finger) + silent count", order:120, spiral:1, tap:0, audio:1, zones:0, hands:"one", repeats:1, lengthS:45, implement:"finger", count:1 }
+  // Count error is a trial validity criterion, not a measure. Silent, and not recorded.
+  { id:"SPF_ODC",  label:"Spiral (finger) + silent count", order:120, spiral:1, tap:0, audio:1, zones:0, hands:"one", repeats:1, lengthS:45, implement:"finger",
+                   selfPaceable:1, count:1, countMode:"silent", countOf:"targets", respond:"speak" },
+  // The verbal slot: one task, four prompts. Which prompt was used, and its exact
+  // wording, are per trial rather than per task -- see VERBAL_PROMPTS.
+  { id:"SP_VRB",   label:"Spiral + spoken task",       order:130, spiral:1, tap:0, audio:0, zones:0, hands:"one", repeats:1, lengthS:null, implement:"pen",
+                   selfPaceable:1, fixedS:60, verbal:1, respond:"speak", voice:1 }
 ];
 
-// Per-condition auditory defaults. Also editable; add a key and point a catalogue
-// entry at it to introduce a new stream type.
-// Keyed by condition, not by stream type: the lead-in that a dual task needs is not
-// the lead-in a tones-only task needs, and duration differs too.
-// stopMode "fixed"  : the stream runs its full length.
+// Per-task auditory defaults. Also editable; add a key and point a catalogue entry at
+// it to introduce a new stream type.
+// Keyed by task, not by stream type: the lead-in that a dual task needs is not the
+// lead-in a tones-only task needs, and duration differs too.
+// stopMode "fixed"   : the stream runs its full length.
 // stopMode "drawEnd" : the stream stops once drawing has finished, but never before
 //                      floorS, and never after the stream's own length. Keeps a minimum
 //                      exposure without leaving a fast participant tapping to silence.
+// selfPacedDurS      : the stream length used when the task is set to self-paced. Long
+//                      on purpose -- the stream must outlast the slowest participant,
+//                      because running out of tones mid-drawing is the failure this
+//                      whole mechanism exists to prevent. It is cut at drawEnd, so the
+//                      participant never actually hears all of it.
+//
+// The three new spoken tasks (SP_DEC, SP_ODC, SP_SWT) carry UNVALIDATED starting
+// values. Nothing below has been piloted; they are starting points, editable on the
+// Parameters page exactly like every other row here, and expected to change.
+// Jitter is 50% on all three deliberately: unpredictable onsets are the point of the
+// design, not an artefact of picking a round number.
 const AUDIO_DEFAULTS = {
   DET:     { durS:20, isi:1000, jit:30, ptg:0,    tone:50, lead:500,
              label:"Tones only — respond to every tone" },
   ODT:     { durS:20, isi:700,  jit:30, ptg:0.25, tone:50, lead:500,
              label:"Tones only — respond to high tones" },
-  SP_DET:  { durS:45, isi:1000, jit:30, ptg:0,    tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3,
+  SP_DET:  { durS:45, isi:1000, jit:30, ptg:0,    tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3, selfPacedDurS:180,
              label:"Dual task — respond to every tone while drawing" },
-  SP_ODT:  { durS:45, isi:700,  jit:30, ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3,
+  SP_ODT:  { durS:45, isi:700,  jit:30, ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3, selfPacedDurS:180,
              label:"Dual task — respond to high tones while drawing" },
-  SPF_ODT: { durS:45, isi:700,  jit:30, ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3,
+  SP_DEC:  { durS:180, isi:2000, jit:50, ptg:0,    tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
+             label:"Dual task — count every tone out loud while drawing" },
+  SP_ODC:  { durS:180, isi:1200, jit:50, ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
+             label:"Dual task — count high tones out loud while drawing" },
+  SP_SWT:  { durS:180, isi:1500, jit:50, ptg:0.5,  tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
+             label:"Dual task — tap the low tone, speak the number on the high tone" },
+  SPF_ODT: { durS:45, isi:700,  jit:30, ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3, selfPacedDurS:180,
              label:"Dual task, finger drawing — high tones only" },
-  SPF_ODC: { durS:45, isi:700,  jit:30, ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0,
+  SPF_ODC: { durS:45, isi:700,  jit:30, ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
              label:"Dual task, finger drawing — count high tones silently" }
 };
 
-// Posture and grip figure, shown on the instruction screen for drawing conditions.
+// The spoken secondary tasks offered by SP_VRB. One task with a prompt type, rather
+// than four near-identical catalogue entries, because they differ only in what is said.
+const VERBAL_PROMPTS = {
+  count:     { label:"Count forward aloud at own pace", selfPaced:true,
+               help:"The articulation-only baseline: speaking without any cognitive load to speak of." },
+  subtract3: { label:"Serial subtraction by 3", selfPaced:true,
+               help:"A different two-digit start number every trial, so there are unlimited alternate forms and no contamination across visits." },
+  fluency:   { label:"Category fluency", selfPaced:true, windowS:60,
+               help:"Scored over a fixed 60 s window. Fluency output is steeply front-loaded — roughly 40–45% of words come in the first 15 s — so words per second is not comparable between windows of different length." }
+};
+
+// Posture and grip figure, shown on the instruction screen for drawing tasks.
 // Embedded so the app remains one file with nothing to fetch.
 const POSTURE_PNG = "data:image/png;base64,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";
 
@@ -550,14 +739,15 @@ const OVERHEAD_S = 25;
 // this, so what you rehearse is what the participant hears.
 // Short lines, plain words, written to be read aloud.
 // ---------------------------------------------------------------------------
-function instructionFor(condId, opts){
-  const c=byId(condId); if(!c) return null;
+function instructionFor(taskId, opts){
+  const c=byId(taskId); if(!c) return null;
   const mode = (opts&&opts.mode) || ($("instr")?$("instr").value:"between");
   const impl = (opts&&opts.implement) || c.implement || "pen";
   const tool = impl==="finger" ? "finger" : "pen";
+  const verbal = (opts&&opts.verbal) || null;
   const lines=[];
 
-  const dualTask = c.spiral && (c.tap || c.audio);
+  const dualTask = c.spiral && (c.tap || c.audio || c.verbal);
   if(c.spiral && !dualTask){
     lines.push("Sit comfortably.");
     lines.push("Start in the middle.");
@@ -575,18 +765,43 @@ function instructionFor(condId, opts){
 
   if(c.zones===2){
     lines.push("Put one index finger on each circle.");
-    lines.push(condId==="BMANT"
+    lines.push(taskId==="BMANT"
       ? "Tap left, then right, then left, then right."
       : "Tap both circles at the same time.");
-    if(condId==="BMANT") lines.push("Only one finger touches at a time.");
+    if(taskId==="BMANT") lines.push("Only one finger touches at a time.");
     lines.push("Tap as fast as you can.");
   } else if(c.tap && !c.audio){
     lines.push(`${also}tap the circle with your index finger, as fast as you can.`);
   }
 
-  const a = AUDIO_DEFAULTS[condId];
-  if(c.audio && !c.count){
-    if(a && a.ptg>0){
+  const a = AUDIO_DEFAULTS[taskId];
+  if(c.audio){
+    if(c.respond==="both"){
+      // Switching. Both tone types carry a response and they are different responses,
+      // so the two rules are stated as a pair and nothing is left implicit.
+      lines.push("You will hear low beeps and high beeps.");
+      lines.push(`${also}tap the circle every time you hear a <b>low</b> beep.`);
+      lines.push("When you hear a <b>high</b> beep, do not tap.");
+      lines.push("Say the next number out loud instead — one, two, three, and so on.");
+      lines.push("Start at one, and go up by one for every high beep.");
+      lines.push("Tell me the number you reached when the trial ends.");
+    } else if(c.count){
+      const aloud = c.countMode==="aloud";
+      if(c.countOf==="all"){
+        lines.push("You will hear beeps, one after another.");
+        lines.push(aloud
+          ? `${also}count them <b>out loud</b> — one, two, three, and so on.`
+          : `${also}count them silently in your head.`);
+      } else {
+        lines.push("You will hear low beeps and high beeps.");
+        lines.push(aloud
+          ? `${also}count the <b>high</b> beeps out loud. Say the new number each time you hear one.`
+          : `${also}count the <b>high</b> beeps silently in your head.`);
+        lines.push("Do nothing for the low beeps.");
+      }
+      if(!c.tap) lines.push("Do not tap.");
+      lines.push("Tell me the number when the trial ends.");
+    } else if(a && a.ptg>0){
       lines.push("You will hear low beeps and high beeps.");
       lines.push(`${also}tap the circle only when you hear a <b>high</b> beep.`);
       lines.push("Do nothing for the low beeps.");
@@ -595,14 +810,29 @@ function instructionFor(condId, opts){
       lines.push(`${also}tap the circle every time you hear a beep.`);
     }
   }
-  if(c.count){
-    lines.push("You will hear low beeps and high beeps.");
-    lines.push("Count the <b>high</b> beeps silently in your head.");
-    lines.push("Do not tap.");
-    lines.push("Tell me the number when the trial ends.");
+
+  if(c.verbal){
+    const type = (verbal&&verbal.type) || "count";
+    if(type==="subtract3"){
+      const from = (verbal&&verbal.start_number) || "the number I give you";
+      lines.push(`${also}start at <b>${from}</b> and count backwards, taking away three each time.`);
+      lines.push("Say every number out loud.");
+      lines.push("Keep going until I tell you to stop.");
+    } else if(type==="fluency"){
+      const cat = (verbal&&verbal.category) ? `<b>${verbal.category}</b>` : "the category I give you";
+      lines.push(`${also}name as many ${cat} as you can.`);
+      lines.push("Say them out loud, one after another, as fast as they come to you.");
+      lines.push("Keep going until I tell you to stop.");
+    } else {
+      lines.push(`${also}count out loud — one, two, three — starting at one.`);
+      lines.push("Go at whatever pace is comfortable. There is no need to hurry.");
+      lines.push("Keep going until I tell you to stop.");
+    }
   }
 
-  return { id:condId, title:c.label, lines,
+  if(c.voice) lines.push("Your voice is recorded for this task, as you agreed.");
+
+  return { id:taskId, title:c.label, lines,
            figure: !!c.spiral && !dualTask, mode, implement:impl,
            length: c.lengthS===null ? "Ends when the administrator stops it."
                                     : `About ${a?a.durS:c.lengthS} seconds.` };
@@ -649,7 +879,11 @@ const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const pad2=n=>String(n).padStart(2,"0");
 const quantile=(a,q)=>{ if(!a.length) return NaN; const s=[...a].sort((x,y)=>x-y),
   p=(s.length-1)*q,b=Math.floor(p),r=p-b; return s[b+1]!==undefined? s[b]+r*(s[b+1]-s[b]) : s[b]; };
+const meanOf=v=>v.length?v.reduce((a,b)=>a+b,0)/v.length:NaN;
+const sdOf=v=>{ if(v.length<2) return NaN; const m=meanOf(v);
+  return Math.sqrt(v.reduce((a,b)=>a+(b-m)*(b-m),0)/(v.length-1)); };
 const byId = id => CATALOGUE.find(c=>c.id===id);
+const esc = s => String(s==null?"":s).replace(/[&<>"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
 $("buildstamp").textContent = "Build " + BUILD;
 
 // Declared up here, not beside the pen-check code: applyCal() runs during calibration
@@ -662,11 +896,16 @@ let pcPts=null;
 function goPage(n){
   [1,2,3,4,5,6].forEach(i=>$("pg"+i).classList.toggle("hidden", i!==n));
   [1,2,3,4,5,6].forEach(i=>$("s"+i).classList.toggle("on", i===n));
+  // The screening canvases size themselves from clientWidth, which is not final in the
+  // same tick the page is unhidden -- laying them out then can give a pad a fraction of
+  // its real width. Measure on the next frame instead.
+  if(n===2){ onVoiceConsentChange(); requestAnimationFrame(()=>{ mtbReset(); dotReset(); }); }
   if(n===3){ renderPlan(); renderQueue(); }
   renderStatus();
   if(n===4){ renderAudioTable(); updateGeo(); }
   if(n===5) renderInstrPage();
-  if(n===6){ renderSaved(); if(!LAST){ $("saveState").innerHTML="";
+  if(n===6){ renderSaved(); renderScreens(); renderAudioStore();
+    if(!LAST){ $("saveState").innerHTML="";
     $("rsum").innerHTML=`<p class="note" style="margin:0">No trial run yet this session.</p>`;
     $("rwin").innerHTML=""; $("rq").innerHTML=""; } }
   window.scrollTo(0,0);
@@ -743,7 +982,7 @@ function renderAudioCheck(){
     its reported latency is wrong and drifts across a session.</div>`;
   else msg=`<div class="bad">Maximum volume with wired headphones and still not audible.
     Headphones raise the level but do not correct impaired frequency discrimination. Run the
-    conditions that need no sound and omit the rest, recording the reason.</div>`;
+    tasks that need no sound and omit the rest, recording the reason.</div>`;
   $("soundnote").innerHTML=msg;
 }
 
@@ -823,6 +1062,385 @@ function penPadClear(){ pcPts=null; penPadSetup(); $("pcresult").innerHTML=""; }
 })();
 window.addEventListener("resize",()=>{ if(!$("pg1").classList.contains("hidden")) penPadClear(); });
 
+/* ===========================================================================
+   SCREENING SCREENS — per participant, not per trial.
+
+   These are covariates, not trials: they are administered once per participant
+   per session, they are not in CATALOGUE, they never enter the queue, and they
+   are stored under their own prefix with their own export. Forcing them into
+   the trial record shape would put a participant-level measure on every trial
+   row, which is exactly the kind of duplication that later gets averaged by
+   mistake.
+   =========================================================================== */
+const SCREEN_PREFIX="motiq_screen:";
+
+// Fixed Mini Trail B layout. Normalised to the box, so it scales with the canvas but
+// the ARRANGEMENT never varies -- the sequence, the angles between hops and the
+// crossings are identical at every administration on every device. A covariate whose
+// difficulty is randomised is not a covariate.
+//
+// These coordinates are not eyeballed. They were chosen so that on every canvas size
+// the app can produce, the straight line of a CORRECT hop clears every other circle by
+// at least 2.3x the hit radius. That constraint is the whole point: a layout where the
+// right line grazes a wrong circle scores a correct participant as making errors, and
+// the error count is one of the two numbers this screen exists to produce. Circles stay
+// at least 3.4 hit radii apart, and the path crosses itself 8 times so the task still
+// demands visual search rather than following a ring.
+//
+// If these are ever changed, re-check both properties before collecting with them.
+const MTB_NODES=[
+  { label:"1", x:0.899, y:0.161 },
+  { label:"A", x:0.800, y:0.745 },
+  { label:"2", x:0.368, y:0.134 },
+  { label:"B", x:0.252, y:0.920 },
+  { label:"3", x:0.635, y:0.137 },
+  { label:"C", x:0.126, y:0.650 },
+  { label:"4", x:0.551, y:0.714 },
+  { label:"D", x:0.115, y:0.106 }
+];
+const MTB={};
+
+function mtbGeom(){
+  const cv=$("mtbpad"), dpr=window.devicePixelRatio||1;
+  const w=cv.clientWidth||700, h=Math.round(clamp(w*0.60,240,520));
+  cv.width=w*dpr; cv.height=h*dpr; cv.style.height=h+"px";
+  const g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0);
+  const r=clamp(Math.min(w,h)*0.062,17,34), pad=r+10;
+  const pos=MTB_NODES.map(n=>({ label:n.label,
+    x:pad+n.x*(w-2*pad), y:pad+n.y*(h-2*pad) }));
+  return {g,w,h,r,pos};
+}
+function mtbDraw(){
+  const {g,w,h,r,pos}=MTB.geom;
+  g.clearRect(0,0,w,h); g.fillStyle="#fff"; g.fillRect(0,0,w,h);
+  // the participant's own line first, so the circles stay readable over it
+  g.strokeStyle="#1d5fa8"; g.lineWidth=2.4; g.lineCap="round"; g.lineJoin="round";
+  MTB.strokes.forEach(st=>{ if(st.length<2) return;
+    g.beginPath(); st.forEach((p,i)=>i?g.lineTo(p.x,p.y):g.moveTo(p.x,p.y)); g.stroke(); });
+  pos.forEach((n,i)=>{
+    const done=i<MTB.next, isNext=i===MTB.next && MTB.state!=="done";
+    g.fillStyle = done?"#D9EFD6" : isNext?"#fff8f2" : "#f2f5f8";
+    g.strokeStyle = done?"#4C8C4A" : isNext?"#b4531f" : "#8a929c";
+    g.lineWidth = isNext?3:1.5;
+    g.beginPath(); g.arc(n.x,n.y,r,0,7); g.fill(); g.stroke();
+    g.fillStyle = done?"#2F6B2D" : isNext?"#b4531f" : "#5d6570";
+    g.font=`600 ${Math.round(r*1.05)}px system-ui`; g.textAlign="center";
+    g.fillText(n.label,n.x,n.y+r*0.37);
+  });
+}
+function mtbReset(){
+  if(!$("mtbpad")) return;
+  MTB.geom=mtbGeom(); MTB.state="idle"; MTB.next=0; MTB.arrivals=[]; MTB.errors=0;
+  MTB.errorLog=[]; MTB.strokes=[]; MTB.inside=null; MTB.t0=null; MTB.drawing=false;
+  MTB.saved=false;
+  mtbDraw();
+  $("mtbresult").innerHTML=`<div class="note" style="margin-top:10px">Not started. The first
+    touch on <b>1</b> starts the clock.</div>`;
+}
+function mtbNodeAt(x,y){
+  const {r,pos}=MTB.geom, hit=r*1.35;
+  for(let i=0;i<pos.length;i++){
+    if(Math.hypot(pos[i].x-x,pos[i].y-y)<=hit) return i;
+  }
+  return null;
+}
+(function initMtb(){
+  const cv=$("mtbpad"); if(!cv) return;
+  const rel=e=>{ const b=cv.getBoundingClientRect(); return {x:e.clientX-b.left,y:e.clientY-b.top}; };
+  const wants=()=>$("mtbimpl").value;
+  const okPointer=t=> wants()==="pen" ? (t==="pen"||t==="mouse") : (t==="touch"||t==="mouse");
+  const sample=(p,t)=>{
+    const st=MTB.strokes[MTB.strokes.length-1]; if(!st) return;
+    st.push({x:p.x,y:p.y,t});
+    const idx=mtbNodeAt(p.x,p.y);
+    if(idx===MTB.inside) return;
+    MTB.inside=idx;
+    if(idx===null || MTB.state==="done") return;
+    if(idx===MTB.next){
+      MTB.arrivals.push({ label:MTB_NODES[idx].label, order:idx+1, t_ms:+(t-MTB.t0).toFixed(1) });
+      MTB.next++;
+      if(MTB.next>=MTB_NODES.length){ MTB.state="done"; mtbDraw(); mtbFinish(); return; }
+      mtbDraw();
+    } else {
+      // Moving into any circle that is not the one due next is an error. The target
+      // does not advance: the participant carries on from where they are, as in the
+      // pen-and-paper task where the examiner points back to the last correct circle.
+      MTB.errors++;
+      MTB.errorLog.push({ t_ms:+(t-MTB.t0).toFixed(1),
+        expected:MTB_NODES[MTB.next].label, entered:MTB_NODES[idx].label });
+      mtbDraw();
+    }
+  };
+  cv.addEventListener("pointerdown",e=>{
+    if(MTB.state==="done") return;
+    if(!okPointer(e.pointerType)) return;
+    e.preventDefault();
+    const now=performance.now(), p=rel(e);
+    if(MTB.state==="idle"){ MTB.state="running"; MTB.t0=now; }
+    MTB.drawing=true; MTB.strokes.push([]); MTB.inside=null;
+    sample(p,now);
+  });
+  cv.addEventListener("pointermove",e=>{
+    if(!MTB.drawing) return; e.preventDefault();
+    // An empty coalesced list would drop the sample entirely, and with it the node the
+    // stylus passed through, so fall back to the event itself.
+    let evs=e.getCoalescedEvents?e.getCoalescedEvents():null;
+    if(!evs || !evs.length) evs=[e];
+    const g=MTB.geom.g; g.strokeStyle="#1d5fa8"; g.lineWidth=2.4; g.lineCap="round";
+    for(const ev of evs){
+      const p=rel(ev), st=MTB.strokes[MTB.strokes.length-1];
+      const last=st&&st.length?st[st.length-1]:null;
+      if(last){ g.beginPath(); g.moveTo(last.x,last.y); g.lineTo(p.x,p.y); g.stroke(); }
+      sample(p,performance.now());
+      if(MTB.state==="done") break;
+    }
+  });
+  const end=()=>{ MTB.drawing=false; MTB.inside=null; };
+  cv.addEventListener("pointerup",end);
+  cv.addEventListener("pointercancel",end);
+  cv.addEventListener("pointerleave",end);
+})();
+
+function mtbFinish(){
+  MTB.drawing=false;
+  const p=parseFloat($("ppmm").value)||3.78;
+  let pathPx=0;
+  MTB.strokes.forEach(st=>{ for(let i=1;i<st.length;i++)
+    pathPx+=Math.hypot(st[i].x-st[i-1].x, st[i].y-st[i-1].y); });
+  const pathMM=pathPx/p;
+  const lastT=MTB.arrivals.length?MTB.arrivals[MTB.arrivals.length-1].t_ms:0;
+  const firstT=MTB.arrivals.length?MTB.arrivals[0].t_ms:0;
+  const completionMs=+lastT.toFixed(1);
+  const velocity = completionMs>0 ? pathMM/(completionMs/1000) : null;
+  const rec={
+    ...screenRecordBase("mini_trail_b"),
+    hand:$("mtbhand").value, implement:$("mtbimpl").value,
+    layout:"fixed 1-A-2-B-3-C-4-D; identical at every administration",
+    layout_nodes:MTB_NODES.map(n=>({label:n.label,x_norm:n.x,y_norm:n.y})),
+    completion_time_ms:completionMs,
+    completion_time_clock:"ms from first pen contact to arrival at D",
+    time_first_to_last_node_ms:+(lastT-firstT).toFixed(1),
+    errors:MTB.errors, error_log:MTB.errorLog,
+    node_arrivals_ms:MTB.arrivals,
+    strokes:MTB.strokes.length,
+    path_length_mm:+pathMM.toFixed(1),
+    mean_velocity_mm_s: velocity==null?null:+velocity.toFixed(1),
+    samples:MTB.strokes.reduce((a,s)=>a+s.length,0)
+  };
+  const res=putScreen(rec);
+  MTB.saved=res.ok;
+  const secs=(completionMs/1000).toFixed(1);
+  $("mtbresult").innerHTML=`<div class="${MTB.errors>2||completionMs>40000?"warn":"good"}">
+    Completed in <b>${secs} s</b> with <b>${MTB.errors}</b> error${MTB.errors===1?"":"s"}.
+    Path ${Math.round(pathMM)} mm in ${rec.strokes} stroke${rec.strokes===1?"":"s"},
+    mean velocity ${velocity==null?"–":Math.round(velocity)} mm/s.</div>` +
+    (res.ok ? `<div class="note">Saved as a screening record (<code>${esc(rec.screen_uid)}</code>).
+       Press Restart to administer it again; each administration is kept.</div>`
+            : `<div class="bad">Not saved — ${esc(res.error)}. ${res.error==="no participant id"
+               ? "Enter a Participant ID at the top of this page, then Restart and run it again."
+               : "Export and clear storage from Results and data."}</div>`);
+  renderScreens();
+}
+
+/* ------------------------------------------------------- dot tap screen */
+// A screen, not a covariate-grade measure. Ten seconds cannot support an estimate of
+// response-time variability -- see measure_grade in the record it writes.
+const DOT_RUN_MS=10000;      // total screen duration
+const DOT_LIFETIME_MS=1500;  // a dot not tapped within this is a miss and disappears
+const DOT_GAP_MS=250;        // blank between one dot going and the next appearing
+const DOT={};
+
+function dotGeom(){
+  const cv=$("dotpad"), dpr=window.devicePixelRatio||1;
+  const w=cv.clientWidth||700, h=Math.round(clamp(w*0.55,220,460));
+  cv.width=w*dpr; cv.height=h*dpr; cv.style.height=h+"px";
+  const g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0);
+  return {g,w,h,r:clamp(Math.min(w,h)*0.085,22,46)};
+}
+function dotDraw(msg){
+  const {g,w,h}=DOT.geom;
+  g.clearRect(0,0,w,h); g.fillStyle="#fff"; g.fillRect(0,0,w,h);
+  if(DOT.cur && DOT.cur.visible){
+    g.fillStyle="#1d5fa8"; g.beginPath(); g.arc(DOT.cur.x,DOT.cur.y,DOT.geom.r,0,7); g.fill();
+  }
+  if(msg){ g.fillStyle="#5d6570"; g.font="16px system-ui"; g.textAlign="center";
+    g.fillText(msg,w/2,h/2); }
+}
+function dotStop(){
+  if(DOT.tick){ clearInterval(DOT.tick); DOT.tick=null; }
+  DOT.running=false;
+}
+function dotReset(){
+  if(!$("dotpad")) return;
+  dotStop();
+  DOT.geom=dotGeom(); DOT.running=false; DOT.cur=null; DOT.dots=[]; DOT.offTarget=0;
+  DOT.t0=null; DOT.nextAt=0;
+  dotDraw("Press Start, then tap each dot as it appears.");
+  if($("dotstart")) { $("dotstart").disabled=false; $("dotstart").textContent="Start 10 s"; }
+  $("dotresult").innerHTML="";
+}
+// A new dot has to be somewhere else, or "appears at a random position" degenerates
+// into "appears where your finger already is".
+function dotPlace(){
+  const {w,h,r}=DOT.geom, pad=r+8, minHop=Math.min(w,h)*0.35;
+  const prev=DOT.cur;
+  for(let k=0;k<60;k++){
+    const x=pad+Math.random()*(w-2*pad), y=pad+Math.random()*(h-2*pad);
+    if(!prev || Math.hypot(x-prev.x,y-prev.y)>=minHop) return {x,y};
+  }
+  return {x:pad+Math.random()*(w-2*pad), y:pad+Math.random()*(h-2*pad)};
+}
+function dotStart(){
+  DOT.geom=dotGeom(); DOT.dots=[]; DOT.offTarget=0; DOT.cur=null;
+  dotStop();
+  DOT.running=true; DOT.t0=performance.now(); DOT.nextAt=DOT.t0;
+  $("dotstart").disabled=true; $("dotstart").textContent="Running…";
+  $("dotresult").innerHTML=`<div class="note">Running.</div>`;
+  // A timer, not requestAnimationFrame. rAF stops entirely while the page is not
+  // visible, which would leave a run open for ever if the examiner switched away
+  // mid-screen -- the participant would come back to a box that never ends.
+  const loop=()=>{
+    if(!DOT.running) return;
+    const now=performance.now(), elapsed=now-DOT.t0;
+    if(elapsed>=DOT_RUN_MS){
+      if(DOT.cur && DOT.cur.visible){ DOT.cur.visible=false; DOT.cur.outcome="unscored"; }
+      dotStop(); dotDraw("Finished."); dotFinish(); return;
+    }
+    if(DOT.cur && DOT.cur.visible && now-DOT.cur.onsetPerf>=DOT_LIFETIME_MS){
+      DOT.cur.visible=false; DOT.cur.outcome="miss"; DOT.nextAt=now+DOT_GAP_MS;
+    }
+    if((!DOT.cur || !DOT.cur.visible) && now>=DOT.nextAt){
+      const p=dotPlace();
+      DOT.cur={ i:DOT.dots.length+1, x:p.x, y:p.y, visible:true, onsetPerf:now,
+                onset_ms:+(now-DOT.t0).toFixed(1), rt_ms:null, outcome:null };
+      DOT.dots.push(DOT.cur);
+    }
+    dotDraw();
+  };
+  DOT.tick=setInterval(loop,16);
+  loop();
+}
+(function initDot(){
+  const cv=$("dotpad"); if(!cv) return;
+  cv.addEventListener("pointerdown",e=>{
+    if(!DOT.running) return;
+    const want=$("dotimpl").value;
+    if(want==="pen" && !(e.pointerType==="pen"||e.pointerType==="mouse")) return;
+    if(want==="finger" && !(e.pointerType==="touch"||e.pointerType==="mouse")) return;
+    e.preventDefault();
+    const b=cv.getBoundingClientRect(), x=e.clientX-b.left, y=e.clientY-b.top;
+    const now=performance.now(), d=DOT.cur;
+    if(d && d.visible && Math.hypot(x-d.x,y-d.y)<=DOT.geom.r*1.25){
+      d.visible=false; d.outcome="hit"; d.rt_ms=+(now-d.onsetPerf).toFixed(1);
+      DOT.nextAt=now+DOT_GAP_MS; dotDraw();
+    } else DOT.offTarget++;
+  });
+})();
+function dotFinish(){
+  if($("dotstart")){ $("dotstart").disabled=false; $("dotstart").textContent="Run again"; }
+  const scored=DOT.dots.filter(d=>d.outcome==="hit"||d.outcome==="miss");
+  // A run that presented nothing is a run that did not happen. Saving it would put a
+  // row of zeros in the screening file that reads exactly like a participant who
+  // tapped nothing at all.
+  if(!scored.length){
+    $("dotresult").innerHTML=`<div class="warn">No dots were presented, so nothing was
+      saved. Start the screen again with the iPad in front of the participant.</div>`;
+    return;
+  }
+  const hits=scored.filter(d=>d.outcome==="hit");
+  const rts=hits.map(d=>d.rt_ms);
+  const m=meanOf(rts), s=sdOf(rts);
+  const rec={
+    ...screenRecordBase("dot_tap"),
+    hand:$("dothand").value, implement:$("dotimpl").value,
+    run_duration_ms:DOT_RUN_MS, dot_lifetime_ms:DOT_LIFETIME_MS, dot_gap_ms:DOT_GAP_MS,
+    dots_presented:scored.length,
+    dots_unscored_at_cutoff:DOT.dots.length-scored.length,
+    hits:hits.length, misses:scored.length-hits.length,
+    off_target_taps:DOT.offTarget,
+    rt_mean_ms: Number.isFinite(m)?+m.toFixed(1):null,
+    rt_sd_ms:   Number.isFinite(s)?+s.toFixed(1):null,
+    dots:DOT.dots.map(d=>({i:d.i,onset_ms:d.onset_ms,rt_ms:d.rt_ms,outcome:d.outcome})),
+    measure_grade:"screen",
+    measure_grade_note:"SCREEN, NOT A COVARIATE-GRADE MEASURE. A 10 s window yields roughly 8-14 responses, which is far too few to estimate response-time variability. rt_sd_ms is reported for completeness and must not be used as an index of intra-individual variability; rt_mean_ms is a coarse screen only."
+  };
+  const res=putScreen(rec);
+  $("dotresult").innerHTML=`<div class="good"><b>${hits.length}</b> of
+    ${scored.length} tapped, ${rec.misses} missed${rec.off_target_taps?`, ${rec.off_target_taps} tap${rec.off_target_taps===1?"":"s"} off target`:""}.
+    Mean RT ${rec.rt_mean_ms==null?"–":Math.round(rec.rt_mean_ms)+" ms"},
+    SD ${rec.rt_sd_ms==null?"–":Math.round(rec.rt_sd_ms)+" ms"}.</div>
+    <div class="warn">This is a <b>screen</b>. Ten seconds gives too few responses for the SD to
+    be a usable estimate of response-time variability — the record says so in
+    <code>measure_grade</code>, so an analyst reading the file later does not have to
+    rediscover it.</div>` +
+    (res.ok ? `<div class="note">Saved as a screening record (<code>${esc(rec.screen_uid)}</code>).</div>`
+            : `<div class="bad">Not saved — ${esc(res.error)}. ${res.error==="no participant id"
+               ? "Enter a Participant ID at the top of this page, then run it again."
+               : "Export and clear storage from Results and data."}</div>`);
+  renderScreens();
+}
+
+/* ------------------------------------------------------- screening storage */
+function screenRecordBase(which){
+  const b=birthInfo(), pid=$("pid").value||"";
+  const iso=new Date().toISOString();
+  return {
+    schema:"motiq_prototype/7", build:BUILD, record_type:"screening", screen:which,
+    screen_uid:`${iso.replace(/[:.]/g,"-")}_${pid||"unnamed"}_${which}`,
+    started_iso:iso,
+    participant:{ id:pid, group:$("grp").value, sex:$("sex").value||null,
+      birth_year:b.birth_year, birth_month:b.birth_month, age_years:b.age_years,
+      dominant_hand:$("domhand").value },
+    session_key:SESSION_KEY, session_id:`${pid}-v${visitNo()}-s${sessNo()}`,
+    visit_number:visitNo(), session_number:sessNo(),
+    calibration:{ css_px_per_mm:parseFloat($("ppmm").value)||null,
+      device_pixel_ratio:window.devicePixelRatio, source:CAL.source,
+      device_label:CAL.deviceLabel, card_confirmed:$("cardok").checked },
+    notes:$("notes").value||null,
+    device:{ user_agent:navigator.userAgent }
+  };
+}
+const SCREEN_MEM={};
+function putScreen(rec){
+  if(!rec.participant.id) return {ok:false,error:"no participant id"};
+  const key=SCREEN_PREFIX+rec.screen_uid, s=JSON.stringify(rec);
+  try{ localStorage.setItem(key,s); delete SCREEN_MEM[key]; return {ok:true,bytes:s.length}; }
+  catch(e){ SCREEN_MEM[key]=s; return {ok:false,bytes:s.length,error:e.name}; }
+}
+function listScreens(){
+  const out=[];
+  try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i);
+    if(k.startsWith(SCREEN_PREFIX)) out.push({key:k,size:localStorage.getItem(k).length}); } }catch(e){}
+  Object.keys(SCREEN_MEM).forEach(k=>out.push({key:k,size:SCREEN_MEM[k].length,mem:true}));
+  return out.sort((a,b)=>a.key<b.key?1:-1);
+}
+function getScreen(k){ try{ const v=localStorage.getItem(k); if(v) return JSON.parse(v); }catch(e){}
+  return SCREEN_MEM[k]?JSON.parse(SCREEN_MEM[k]):null; }
+function delScreen(k){ try{ localStorage.removeItem(k); }catch(e){} delete SCREEN_MEM[k]; renderScreens(); }
+function delAllScreens(){
+  if(!confirm("Delete every screening record on this device? Export first if you have not.")) return;
+  listScreens().forEach(t=>{ try{ localStorage.removeItem(t.key); }catch(e){} delete SCREEN_MEM[t.key]; });
+  renderScreens();
+}
+const SCREEN_LABEL={ mini_trail_b:"Mini Trail B", dot_tap:"Dot tap" };
+function renderScreens(){
+  if(!$("screenBody")) return;
+  const ts=listScreens();
+  if(!ts.length){ $("screenBody").innerHTML=`<p class="note" style="margin:0">No screening
+    records saved yet.</p>`; return; }
+  let h=`<table><tr><th>Started (local)</th><th>Participant</th><th>Screen</th><th>Hand</th>
+         <th>Result</th><th class="num">KB</th><th></th></tr>`;
+  ts.forEach(t=>{ const r=getScreen(t.key); if(!r) return;
+    const summary = r.screen==="mini_trail_b"
+      ? `${(r.completion_time_ms/1000).toFixed(1)} s · ${r.errors} error${r.errors===1?"":"s"}`
+      : `${r.hits}/${r.dots_presented} hit · mean ${r.rt_mean_ms==null?"–":Math.round(r.rt_mean_ms)+" ms"}`;
+    h+=`<tr><td>${localClock(r.started_iso)}</td><td>${esc(r.participant.id)}</td>
+        <td>${SCREEN_LABEL[r.screen]||esc(r.screen)}</td><td>${esc(r.hand)}</td>
+        <td>${summary}</td><td class="num">${(t.size/1024).toFixed(1)}</td>
+        <td><button class="ghost sm" onclick="delScreen('${t.key}')">delete</button></td></tr>`; });
+  $("screenBody").innerHTML=h+`</table>`;
+}
+
 /* ------------------------------------------------------- participant */
 function birthInfo(){
   const y=$("byear").value?+$("byear").value:null, m=$("bmonth").value?+$("bmonth").value:null;
@@ -839,6 +1457,30 @@ function updateAgeNote(){
 ["byear","bmonth"].forEach(id=>$(id).addEventListener("input",updateAgeNote));
 updateAgeNote();
 $("pid").addEventListener("input",()=>{ deriveNumbers(); });
+
+/* ------------------------------------------------------- voice consent */
+const voiceConsented = () => !!($("voiceconsent") && $("voiceconsent").checked);
+const VOICE_TASKS = () => CATALOGUE.filter(c=>c.voice).map(c=>c.id);
+function onVoiceConsentChange(){
+  if(!$("voicenote")) return;
+  const ok=voiceConsented(), ids=VOICE_TASKS().join(", ");
+  if(!ok){
+    // Consent can be withdrawn mid-session. Anything already ticked has to come back
+    // out of the plan here, or it stays in a queue that was built while it was allowed.
+    let dropped=[];
+    if(typeof PLAN!=="undefined" && PLAN) CATALOGUE.forEach(c=>{
+      if(c.voice && PLAN[c.id] && PLAN[c.id].include){ PLAN[c.id].include=false; dropped.push(c.id); } });
+    $("voicenote").innerHTML=`<div class="warn">Voice recording is <b>not</b> consented, so
+      ${ids} cannot be planned.${dropped.length?` Removed from the plan: <b>${dropped.join(", ")}</b>.`:""}
+      Every other task is unaffected.</div>`;
+    if(dropped.length && !$("pg3").classList.contains("hidden")) renderPlan();
+  } else {
+    $("voicenote").innerHTML=`<div class="good">Consented. ${ids} can be planned. Recordings are
+      written to this device only and are never uploaded.
+      ${RECORDER.available?"":"<b>This browser reports no microphone recording support</b> — those tasks will run, but will record nothing and will say so in the record."}</div>`;
+  }
+  if(!$("pg3").classList.contains("hidden")) renderPlan();
+}
 
 /* ------------------------------------------------------- session + plan */
 function nextSessionNumber(){
@@ -880,7 +1522,7 @@ function onVisitChange(){
   renderStatus();
 }
 function renderInstrPage(){
-  const sel=$("insCond");
+  const sel=$("insTask");
   if(!sel.options.length){
     CATALOGUE.slice().sort((a,b)=>a.order-b.order).forEach(c=>{
       const o=document.createElement("option"); o.value=c.id; o.textContent=`${c.id} — ${c.label}`;
@@ -888,15 +1530,20 @@ function renderInstrPage(){
   }
   const id=sel.value||CATALOGUE[0].id; sel.value=id;
   const c=byId(id);
-  const ins=instructionFor(id,{mode:$("insMode").value});
+  // The verbal task's wording is chosen per trial, so the rehearsal page shows the
+  // prompt type currently set in the plan with the wording left as a placeholder.
+  const vb = c.verbal ? { type:(PLAN&&PLAN[id]?PLAN[id].verbalType:"count") } : null;
+  const ins=instructionFor(id,{mode:$("insMode").value, verbal:vb});
   $("insTitle").textContent=`${id} — ${c.label}`;
   $("insBody").innerHTML=instructionHTML(ins,{big:false});
   $("insMeta").innerHTML=`${ins.length} · ` +
     `${c.spiral?(ins.implement==="finger"?"drawn with the index finger":"drawn with the pen"):"no drawing"}` +
-    `${c.zones===2?" · both hands":c.tap?" · one hand taps":""}`;
+    `${c.zones===2?" · both hands":c.tap?" · one hand taps":""}` +
+    `${c.voice?" · <b>voice recorded</b>":""}` +
+    `${vb?` · prompt: ${VERBAL_PROMPTS[vb.type].label} (the exact wording is set per trial)`:""}`;
 }
 function stepInstr(d){
-  const sel=$("insCond"), i=sel.selectedIndex;
+  const sel=$("insTask"), i=sel.selectedIndex;
   sel.selectedIndex=Math.max(0,Math.min(sel.options.length-1,i+d));
   renderInstrPage();
 }
@@ -918,16 +1565,27 @@ function renderStatus(){
 }
 let PLAN=null, QUEUE=[], QPOS=0;
 
+// The length a self-paced task is switched to when "Fixed length" is chosen.
+const fixedLengthFor = c => c.lengthS ?? c.fixedS ?? 45;
+
 function defaultPlan(){
   const p={};
   CATALOGUE.forEach(c=>{ const allowed=handsAllowed(c);
     p[c.id]={ include:["SP","TAP","BMIN","BMANT","DET","ODT","SP_ODT"].includes(c.id),
       repeats:c.repeats, hands:allowed.includes(c.hands)?c.hands:allowed[0],
-      lengthS:c.lengthS, oneHand:"dominant" }; });
+      lengthS:c.lengthS, oneHand:"dominant",
+      verbalType:c.verbal?"count":null }; });
   return p;
 }
-function resetPlan(){ PLAN=defaultPlan(); QUEUE=[]; QPOS=0; renderPlan(); renderQueue(); }
+function resetPlan(){ PLAN=defaultPlan(); QUEUE=[]; QPOS=0; renderPlan(); renderQueue(); saveState(); }
 PLAN=defaultPlan();
+
+// Unticks everything and touches nothing else, so re-ticking a task brings back the
+// repeats and length that were already set for it.
+function clearAllSelections(){
+  CATALOGUE.forEach(c=>{ if(PLAN[c.id]) PLAN[c.id].include=false; });
+  renderPlan(); saveState();
+}
 
 // A dual task always uses two hands, so "both (bimanual)" is meaningless there; a
 // bimanual tapping task has no single-hand form. Offer only what applies.
@@ -939,44 +1597,126 @@ function handsAllowed(c){
 const HAND_LABEL={ each:"Each hand, alternating", one:"One hand",
                    both:"Both (bimanual)", roles:"Alternate which hand draws" };
 
+// Why a task cannot be planned right now, or null. One place, so the plan table, the
+// summary and the queue builder cannot disagree about it.
+function taskBlocked(c){
+  if(c.voice && !voiceConsented())
+    return "voice recording not consented — tick the box on the Participant page";
+  return null;
+}
+
+// How long a task's auditory stream is expected to run, for planning only.
+// A fixed-length trial runs its length. A self-paced one is cut when drawing stops, so
+// it runs at least floorS and never longer than the stream itself -- the estimate is
+// the assumed self-paced drawing time, clamped into that range. Using the raw stream
+// length here would be wrong by a factor of four or more: a self-paced stream is 180 s
+// long precisely so that it never runs out, not because anyone hears 180 s of it.
+function expectedStreamS(c,s){
+  const a=AUDIO_DEFAULTS[c.id]; if(!a) return null;
+  if(s.lengthS!=null) return s.lengthS;
+  const full=a.selfPacedDurS ?? a.durS;
+  if((a.stopMode||"fixed")!=="drawEnd") return full;
+  return clamp(selfPacedEstS(), a.floorS ?? 20, full);
+}
+let SELF_PACED_EST_S=20;
+const selfPacedEstS = () => SELF_PACED_EST_S;
+function onSelfPacedEstChange(){
+  SELF_PACED_EST_S=clamp(+$("spest").value||20,5,180);
+  $("spest").value=SELF_PACED_EST_S;
+  planSummary(); saveState();
+}
+
 function renderPlan(){
   renderStatus();
-  let h=`<tr><th></th><th>Condition</th><th>Repeats</th><th>Hands</th><th>Length (s)</th><th>Uses</th></tr>`;
+  let h=`<tr><th></th><th>Task</th><th>Repeats</th><th>Hands</th><th>Length</th><th>Uses</th></tr>`;
   CATALOGUE.slice().sort((a,b)=>a.order-b.order).forEach(c=>{
-    const s=PLAN[c.id];
-    h+=`<tr>
-      <td><input type="checkbox" ${s.include?"checked":""} onchange="planSet('${c.id}','include',this.checked)"></td>
-      <td><b>${c.id}</b><br><span class="note" style="margin:0">${c.label}</span></td>
-      <td><input type="number" min="1" max="20" value="${s.repeats}" onchange="planSet('${c.id}','repeats',+this.value)"></td>
-      <td><select onchange="planSet('${c.id}','hands',this.value)">
-            ${handsAllowed(c).map(h=>`<option value="${h}" ${s.hands===h?"selected":""}>${HAND_LABEL[h]}</option>`).join("")}
+    const s=PLAN[c.id], blocked=taskBlocked(c);
+    if(blocked && s.include) s.include=false;
+    h+=`<tr class="${blocked?"blocked":""}">
+      <td><input type="checkbox" ${s.include?"checked":""} ${blocked?"disabled":""}
+           onchange="planSet('${c.id}','include',this.checked)"></td>
+      <td><b>${c.id}</b><br><span class="note" style="margin:0">${c.label}</span>
+        ${c.verbal?`<br><select style="margin-top:5px" onchange="planSet('${c.id}','verbalType',this.value)">
+            ${Object.entries(VERBAL_PROMPTS).map(([k,v])=>
+              `<option value="${k}" ${s.verbalType===k?"selected":""}>${v.label}</option>`).join("")}
           </select>
-          ${s.hands==="one"?`<select style="margin-top:4px" onchange="planSet('${c.id}','oneHand',this.value)">
+          <div class="note" style="margin:4px 0 0;max-width:280px">${VERBAL_PROMPTS[s.verbalType||"count"].help}</div>`:""}
+        ${blocked?`<div class="note" style="margin:4px 0 0;color:var(--warm)">${blocked}</div>`:""}</td>
+      <td><input type="number" min="1" max="20" value="${s.repeats}" ${blocked?"disabled":""}
+           onchange="planSet('${c.id}','repeats',+this.value)"></td>
+      <td><select onchange="planSet('${c.id}','hands',this.value)" ${blocked?"disabled":""}>
+            ${handsAllowed(c).map(hh=>`<option value="${hh}" ${s.hands===hh?"selected":""}>${HAND_LABEL[hh]}</option>`).join("")}
+          </select>
+          ${s.hands==="one"?`<select style="margin-top:4px" ${blocked?"disabled":""} onchange="planSet('${c.id}','oneHand',this.value)">
             <option value="dominant" ${s.oneHand==="dominant"?"selected":""}>${c.spiral&&c.tap?"Dominant draws":"Dominant"}</option>
             <option value="nondominant" ${s.oneHand==="nondominant"?"selected":""}>${c.spiral&&c.tap?"Non-dominant draws":"Non-dominant"}</option></select>`:""}</td>
-      <td>${c.lengthS===null?`<span class="note" style="margin:0">self-paced</span>`
-            :`<input type="number" min="5" max="180" step="5" value="${s.lengthS}" onchange="planSet('${c.id}','lengthS',+this.value)">`}</td>
+      <td>${lengthCell(c,s,blocked)}</td>
       <td class="note" style="padding-top:10px">${[c.spiral?"drawing":null,c.tap?"tapping":null,
-          c.audio?"<b>tones</b>":null].filter(Boolean).join(" · ")}</td>
+          c.audio?"<b>tones</b>":null, c.count?(c.countMode==="aloud"?"count aloud":"silent count"):null,
+          c.verbal?"spoken task":null, c.voice?"<b>voice</b>":null].filter(Boolean).join(" · ")}</td>
     </tr>`;
   });
   $("planTable").innerHTML=h;
   planSummary();
 }
-function planSet(id,key,val){ PLAN[id][key]=val; renderPlan(); }
+
+// The Length column. A self-paceable task gets a choice; everything else keeps the
+// single control it always had.
+function lengthCell(c,s,blocked){
+  const dis=blocked?"disabled":"";
+  if(!c.selfPaceable){
+    return c.lengthS===null
+      ? `<span class="note" style="margin:0">self-paced</span>`
+      : `<input type="number" min="5" max="180" step="5" value="${s.lengthS}" ${dis}
+          onchange="planSet('${c.id}','lengthS',+this.value)"> s`;
+  }
+  const a=AUDIO_DEFAULTS[c.id];
+  const selfPaced = s.lengthS==null;
+  let sub="";
+  if(selfPaced){
+    sub = a
+      ? `<div class="note" style="margin:4px 0 0;max-width:230px">Stream generated to
+         ${a.selfPacedDurS ?? a.durS} s so it cannot run out, cut once drawing stops,
+         never before ${a.floorS ?? 20} s.</div>`
+      : `<div class="note" style="margin:4px 0 0;max-width:230px">Ends on END.</div>`;
+    if(c.verbal && s.verbalType==="fluency")
+      sub += `<div class="note" style="margin:4px 0 0;max-width:230px;color:var(--warm)">
+        Fluency is scored over a fixed <b>60 s</b> window inside the trial — the screen
+        says when it is up. Fluency output is front-loaded (~40–45% of words in the first
+        15 s), so words per second cannot be compared between windows of different length.</div>`;
+  } else {
+    sub = `<input type="number" style="margin-top:4px" min="5" max="180" step="5"
+            value="${s.lengthS}" ${dis} onchange="planSet('${c.id}','lengthS',+this.value)"> s`;
+  }
+  return `<select ${dis} onchange="planSetLength('${c.id}',this.value)">
+      <option value="self" ${selfPaced?"selected":""}>Self-paced</option>
+      <option value="fixed" ${selfPaced?"":"selected"}>Fixed length</option>
+    </select>${sub}`;
+}
+function planSetLength(id,mode){
+  PLAN[id].lengthS = mode==="self" ? null : fixedLengthFor(byId(id));
+  renderPlan(); saveState();
+}
+function planSet(id,key,val){ PLAN[id][key]=val; renderPlan(); saveState(); }
 
 // Consequences, not constraints: what this plan implies.
 function planSummary(){
-  let trials=0, secs=0, targetsByHand={dominant:0,nondominant:0};
+  let trials=0, secs=0, targetsByHand={dominant:0,nondominant:0}, anySelfPaced=false;
   CATALOGUE.forEach(c=>{
-    const s=PLAN[c.id]; if(!s.include) return;
+    const s=PLAN[c.id]; if(!s.include || taskBlocked(c)) return;
     const n = (s.hands==="each"||s.hands==="roles") ? s.repeats*2 : s.repeats;
     trials+=n;
-    const len = c.lengthS===null ? 20 : s.lengthS;      // self-paced assumed ~20 s
+    if(s.lengthS==null) anySelfPaced=true;
+    const len = s.lengthS!=null ? s.lengthS
+              : (c.audio ? expectedStreamS(c,s) : selfPacedEstS());
     secs += n*(len+OVERHEAD_S);
     const a=AUDIO_DEFAULTS[c.id];
     if(c.audio && a && a.ptg>0){
-      const tones=Math.floor((s.lengthS||a.durS)*1000/a.isi), t=Math.round(tones*a.ptg);
+      // Target count follows the duration the stream is EXPECTED to run, which for a
+      // self-paced trial is not its generated length. Reading s.lengthS alone here
+      // yields NaN once self-pacing is selectable, and the warning below then never
+      // fires -- on exactly the tasks where target count matters most.
+      const tones=Math.floor(expectedStreamS(c,s)*1000/a.isi), t=Math.round(tones*a.ptg);
       if(s.hands==="each"||s.hands==="roles"){ targetsByHand.dominant+=t*s.repeats; targetsByHand.nondominant+=t*s.repeats; }
       else targetsByHand[s.oneHand==="nondominant"?"nondominant":"dominant"]+=t*s.repeats;
     }
@@ -985,38 +1725,51 @@ function planSummary(){
   const needsAudio=CATALOGUE.some(c=>PLAN[c.id].include && c.audio);
   const soundOK=$("soundok") && $("soundok").checked;
   const low=Math.min(targetsByHand.dominant,targetsByHand.nondominant);
+  const est=selfPacedEstS();
   $("planSummary").innerHTML=
     `<div class="note"><b>${trials}</b> trials, roughly <b>${mins} min</b> including instruction
-     and transitions (${OVERHEAD_S} s allowed per trial; self-paced drawing assumed ~20 s).</div>` +
+     and transitions (${OVERHEAD_S} s allowed per trial${anySelfPaced
+       ? `; self-paced trials assumed <b>${est} s</b> each, never counted below a task's own
+          audio floor`:``}).</div>` +
+    (anySelfPaced?`<div class="note" style="margin-top:4px">The ${est} s assumption is an input
+       to this projection only. Change it above to see how sensitive the session length is to
+       how quickly this participant draws.</div>`:"") +
     (low>0 ? `<div class="${low<12?"warn":"good"}">Oddball target events per hand:
-       <b>${targetsByHand.dominant}</b> dominant, <b>${targetsByHand.nondominant}</b> non-dominant.
+       <b>${targetsByHand.dominant}</b> dominant, <b>${targetsByHand.nondominant}</b> non-dominant${
+       anySelfPaced?` <span class="note" style="margin:0">(self-paced streams counted at the
+       ${est} s assumption, not at their generated length)</span>`:""}.
        ${low<12?`Below about 12 per hand, hit rate and d-prime are too coarse to estimate per hand —
          raise repeats or trial length if those measures matter.`
               :`At this count per-hand accuracy is estimable.`}</div>`:"") +
-    (needsAudio&&!soundOK?`<div class="warn">This plan includes conditions with tones, but the
+    (needsAudio&&!soundOK?`<div class="warn">This plan includes tasks with tones, but the
        sound check on the Participant page has not been confirmed for this participant.</div>`:"") +
     (mins>60?`<div class="warn">Over an hour before consent, screening and cognitive testing.
-       BATTERY-001 allows omitting conditions for session length — plan which, rather than
+       BATTERY-001 allows omitting tasks for session length — plan which, rather than
        discovering it mid-session.</div>`:"");
 }
 
-// Build the ordered trial list. Hands alternate dominant-first within a condition,
+// Build the ordered trial list. Hands alternate dominant-first within a task,
 // which keeps hand from confounding with practice and fatigue.
 function buildQueue(){
   if(!$("pid").value.trim()){
     alert("Enter a participant ID before building the trial list.\n\nWithout one, trials save as \"unnamed\" and cannot be told apart later.");
     goPage(2); return;
   }
+  const omitted=[];
   QUEUE=[]; QPOS=0;
   CATALOGUE.slice().sort((a,b)=>a.order-b.order).forEach(c=>{
     const s=PLAN[c.id]; if(!s.include) return;
-    const push=(hand,role)=>QUEUE.push({ cond:c.id, hand, role, lengthS:s.lengthS,
+    const why=taskBlocked(c);
+    if(why){ omitted.push(`${c.id} — ${why}`); return; }
+    const push=(hand,role)=>QUEUE.push({ task:c.id, hand, role, lengthS:s.lengthS,
+      verbalType:c.verbal?(s.verbalType||"count"):null,
       status:"pending", skipReason:null });
     if(s.hands==="each"){ for(let r=0;r<s.repeats;r++){ push("dominant"); push("nondominant"); } }
     else if(s.hands==="roles"){ for(let r=0;r<s.repeats;r++){ push("dominant","A"); push("nondominant","B"); } }
     else if(s.hands==="both"){ for(let r=0;r<s.repeats;r++) push("both"); }
     else { for(let r=0;r<s.repeats;r++) push(s.oneHand); }
   });
+  if(omitted.length) alert("Left out of the trial list:\n\n"+omitted.join("\n"));
   $("queueBox").classList.remove("hidden");
   renderQueue(); saveState();
 }
@@ -1025,7 +1778,7 @@ function renderQueue(){
   if(QPOS<QUEUE.length){
     const q=QUEUE[QPOS];
     $("nextUp").classList.remove("hidden");
-    $("nextUpBody").innerHTML=`<div style="font-size:19px"><b>${q.cond}</b> —
+    $("nextUpBody").innerHTML=`<div style="font-size:19px"><b>${q.task}</b> —
       ${handWord(q.hand)}${q.role?" ("+q.role+")":""} · trial <b>${QPOS+1}</b> of ${QUEUE.length}
       · ${q.lengthS===null?"self-paced":q.lengthS+" s"}</div>`;
   } else {
@@ -1034,14 +1787,14 @@ function renderQueue(){
       skipped. Build a new session, or change the plan and build again.</div>`;
   }
   $("queueBox").classList.remove("hidden");
-  let h=`<tr><th>#</th><th>Condition</th><th>Hand</th><th>Length</th><th>Status</th><th>Move</th></tr>`;
+  let h=`<tr><th>#</th><th>Task</th><th>Hand</th><th>Length</th><th>Status</th><th>Move</th></tr>`;
   QUEUE.forEach((q,i)=>{
     const cls=i===QPOS?"now":(q.status!=="pending"?"done":"");
     const movable=q.status==="pending";
-    h+=`<tr><td class="${cls}">${i+1}</td><td class="${cls}">${q.cond}</td>
+    h+=`<tr><td class="${cls}">${i+1}</td><td class="${cls}">${q.task}</td>
         <td class="${cls}">${handWord(q.hand)}${q.role?" ("+q.role+")":""}</td>
         <td class="${cls}">${q.lengthS===null?"self-paced":q.lengthS+" s"}</td>
-        <td class="${cls}">${q.status}${q.skipReason?" — "+q.skipReason:""}</td>
+        <td class="${cls}">${q.status}${q.skipReason?" — "+esc(q.skipReason):""}</td>
         <td>${movable?`<button class="ghost sm" onclick="moveTrial(${i},-1)">↑</button>
              <button class="ghost sm" onclick="moveTrial(${i},1)">↓</button>
              <button class="ghost sm" onclick="dropTrial(${i})">✕</button>`:""}</td></tr>`;
@@ -1067,7 +1820,7 @@ function moveTrial(i,dir){
 }
 function dropTrial(i){
   if(i<QPOS || QUEUE[i].status!=="pending") return;
-  if(!confirm(`Remove ${QUEUE[i].cond} (${handWord(QUEUE[i].hand)}) from the list?`)) return;
+  if(!confirm(`Remove ${QUEUE[i].task} (${handWord(QUEUE[i].hand)}) from the list?`)) return;
   QUEUE.splice(i,1); renderQueue();
 }
 
@@ -1109,12 +1862,14 @@ function newParticipant(){
   ["pid","grp","byear","notes","sessnote"].forEach(id=>{ if($(id)) $(id).value=""; });
   ["sex","bmonth"].forEach(id=>{ if($(id)) $(id).value=""; });
   if($("domhand")) $("domhand").value="right";
-  // the pen and sound checks belong to the person, not the device
+  // the pen check, sound check, screening screens and consent belong to the person,
+  // not the device
   Object.keys(PENCHECK).forEach(k=>delete PENCHECK[k]);
   if($("soundok")) $("soundok").checked=false;
   if($("volstep")) $("volstep").value="0";
   if($("audioroute")) $("audioroute").value="speaker";
-  penPadClear(); renderAudioCheck();
+  if($("voiceconsent")) $("voiceconsent").checked=false;
+  penPadClear(); renderAudioCheck(); mtbReset(); dotReset(); onVoiceConsentChange();
   SERIES=0;
   Object.keys(REPEATS).forEach(k=>delete REPEATS[k]);
   QUEUE=[]; QPOS=0; LAST=null; INSTRUCTED.clear();
@@ -1124,39 +1879,55 @@ function newParticipant(){
   goPage(2);
   setTimeout(()=>{ const el=$("pid"); if(el) el.focus(); },60);
 }
-function nextIds(pid,cond,H){
-  const k=`${pid}|${cond}|${H}`; REPEATS[k]=(REPEATS[k]||0)+1; SERIES+=1;
+function nextIds(pid,task,H){
+  const k=`${pid}|${task}|${H}`; REPEATS[k]=(REPEATS[k]||0)+1; SERIES+=1;
   return {repeat:REPEATS[k],series:SERIES};
 }
 
 /* ------------------------------------------------------- audio defaults table */
+// The shortest response time that can still be attributed to the right event. Where
+// only targets are responded to and no two are adjacent, that is the target-to-target
+// gap; where every tone carries a response -- SP_SWT -- it is the interval itself.
+function bindingLimitMs(taskId,a){
+  const c=byId(taskId), minISI=a.isi*(1-a.jit/100);
+  const everyToneAnswered = a.ptg<=0 || (c && (c.respond==="both" || c.adjacentTargetsOK));
+  return everyToneAnswered ? minISI : 2*minISI;
+}
 function renderAudioTable(){
-  let h=`<tr><th>Condition</th><th>Mean ISI (ms)</th><th>Jitter (%)</th>
+  let h=`<tr><th>Task</th><th>Mean ISI (ms)</th><th>Jitter (%)</th>
          <th>Target prob.</th><th>Tone (ms)</th><th>Lead-in (ms)</th>
          <th>Usable window</th></tr>`;
   Object.entries(AUDIO_DEFAULTS).forEach(([k,a])=>{
-    const minISI=a.isi*(1-a.jit/100);
-    const limit=a.ptg>0 ? 2*minISI : minISI;
+    const limit=bindingLimitMs(k,a);
     h+=`<tr><td><b>${k}</b><br><span class="note" style="margin:0">${a.label}</span></td>
       <td><input type="number" value="${a.isi}" min="300" max="4000" step="50" onchange="audioSet('${k}','isi',+this.value)"></td>
-      <td><input type="number" value="${a.jit}" min="0" max="45" step="1" onchange="audioSet('${k}','jit',+this.value)"></td>
-      <td><input type="number" value="${a.ptg}" min="0" max="0.4" step="0.01" onchange="audioSet('${k}','ptg',+this.value)"></td>
+      <td><input type="number" value="${a.jit}" min="0" max="50" step="1" onchange="audioSet('${k}','jit',+this.value)"></td>
+      <td><input type="number" value="${a.ptg}" min="0" max="0.5" step="0.01" onchange="audioSet('${k}','ptg',+this.value)"></td>
       <td><input type="number" value="${a.tone}" min="30" max="200" step="10" onchange="audioSet('${k}','tone',+this.value)"></td>
       <td><input type="number" value="${a.lead}" min="0" max="3000" step="100" onchange="audioSet('${k}','lead',+this.value)"></td>
       <td class="num">${Math.round(limit)} ms</td></tr>`;
   });
   $("audioTable").innerHTML=h;
 
-  let notes=`<div class="note">Trial length is set once, per condition, in the session plan —
-    not here — because it belongs to the trial rather than the stream.</div>
+  let notes=`<div class="note">Trial length is set once, per task, in the session plan —
+    not here — because it belongs to the trial rather than the stream. A task set to
+    self-paced there uses its own <code>selfPacedDurS</code> instead, so the stream cannot
+    run out mid-drawing.</div>
     <div class="note"><b>Usable window</b> is the longest response time that can still
     be attributed to the right event. A tap slower than this arrives after the next event the
     participant could be responding to, so it cannot be told apart from a response to that one.
-    It is not a setting — it follows from the ISI and jitter above.</div>`;
+    It is not a setting — it follows from the ISI and jitter above.</div>
+    <div class="note">The rows for <b>SP_DEC</b>, <b>SP_ODC</b> and <b>SP_SWT</b> are
+    <b>unvalidated starting values</b>. Nothing about them has been piloted; they are here to
+    be changed.</div>`;
   Object.entries(AUDIO_DEFAULTS).forEach(([k,a])=>{
-    const minISI=a.isi*(1-a.jit/100), odd=a.ptg>0, limit=odd?2*minISI:minISI;
+    const c=byId(k), minISI=a.isi*(1-a.jit/100), odd=a.ptg>0, limit=bindingLimitMs(k,a);
+    const both = c && c.respond==="both";
     notes+=`<div class="${limit<950?"warn":"good"}"><b>${k}</b>: shortest interval
-      ${Math.round(minISI)} ms. ${odd
+      ${Math.round(minISI)} ms. ${both
+        ? `Every tone carries a response — the low tone is tapped, the high tone is spoken —
+           so the binding gap is the interval itself, ${Math.round(limit)} ms.`
+        : odd
         ? `Only targets need a response and no two are adjacent, so the binding gap is
            target-to-target — at worst ${Math.round(limit)} ms.`
         : `Every tone needs a response, so the binding gap is the interval itself,
@@ -1170,7 +1941,7 @@ function renderAudioTable(){
   const div=document.createElement("div"); div.dataset.audionotes="1"; div.innerHTML=notes;
   box.insertAdjacentElement("afterend",div);
 }
-function audioSet(k,f,v){ AUDIO_DEFAULTS[k][f]=v; renderAudioTable(); planSummary(); }
+function audioSet(k,f,v){ AUDIO_DEFAULTS[k][f]=v; renderAudioTable(); planSummary(); saveState(); }
 
 /* ------------------------------------------------------- geometry */
 function spiralPath(radius,turns,direction,endAngleDeg,nPts=3000){
@@ -1203,14 +1974,21 @@ function drawSeed(){
             : (Math.floor(Math.random()*2147483647)+1);
   return LAST_SEED;
 }
-function makeSequence(durationS,meanISI,jitter,pTarget,seed){
+// allowAdjacent: targets may sit next to each other. Only pass it where every tone type
+// carries a response, because the non-adjacency rule exists so that a slow tap can still
+// be bound to the target it answers. Where both tone types are answered, a tap binds by
+// the interval itself and the rule buys nothing -- while costing a hard ceiling of about
+// 50% targets, which is exactly the proportion a switching task wants.
+function makeSequence(durationS,meanISI,jitter,pTarget,seed,allowAdjacent){
   const det = pTarget<=0;
   const rng=mulberry32(seed>>>0), durMs=durationS*1000;
   const n=Math.floor(durMs/meanISI), t=det?0:Math.round(n*pTarget);
   const lo=meanISI*(1-jitter), hi=meanISI*(1+jitter);
   if(n<4) throw new Error(`Only ${n} tones at this ISI — lengthen the stream.`);
   if(!det&&t<1) throw new Error("Target probability yields no targets.");
-  if(!det&&t>Math.ceil((n-2)/2)) throw new Error(`Cannot place ${t} non-adjacent targets.`);
+  const ceiling = allowAdjacent ? (n-2) : Math.ceil((n-2)/2);
+  if(!det&&t>ceiling) throw new Error(
+    `Cannot place ${t} ${allowAdjacent?"":"non-adjacent "}targets in ${n} tones.`);
   let iv=null;
   for(let k=0;k<5000;k++){
     const c=Array.from({length:n},()=>lo+rng()*(hi-lo));
@@ -1219,12 +1997,22 @@ function makeSequence(durationS,meanISI,jitter,pTarget,seed){
   }
   if(!iv) throw new Error("Could not generate intervals — loosen the parameters.");
   let pos=[];
-  if(!det){ const m=n-2,pool=[]; for(let i=0;i<m-t+1;i++) pool.push(i);
-    for(let i=pool.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
-    pos=pool.slice(0,t).sort((a,b)=>a-b).map((b,i)=>b+i+2); }
+  if(!det){
+    if(allowAdjacent){
+      // Straight sample without replacement from position 2 onwards: the stream still
+      // never opens on a target, but nothing constrains the gaps after that.
+      const pool=[]; for(let i=2;i<n;i++) pool.push(i);
+      for(let i=pool.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
+      pos=pool.slice(0,t).sort((a,b)=>a-b);
+    } else {
+      const m=n-2,pool=[]; for(let i=0;i<m-t+1;i++) pool.push(i);
+      for(let i=pool.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
+      pos=pool.slice(0,t).sort((a,b)=>a-b).map((b,i)=>b+i+2);
+    }
+  }
   const onsets=[0]; for(let i=0;i<n-1;i++) onsets.push(onsets[i]+iv[i]);
   const isTarget=Array(n).fill(false); pos.forEach(p=>isTarget[p]=true);
-  return {n,t,onsets,intervals:iv,isTarget,positions:pos,det,
+  return {n,t,onsets,intervals:iv,isTarget,positions:pos,det,adjacent_allowed:!!allowAdjacent,
           minISI:Math.min(...iv),maxISI:Math.max(...iv),durationMs:durMs,seed};
 }
 
@@ -1252,6 +2040,92 @@ function demo(w){ const c=audio(), t0=c.currentTime+.08, lv=+$("lvl").value;
   if(w==="alt"){ for(let i=0;i<6;i++) tone(t0+i*0.55, i%2?ft:fs, 100, lv); }
   else tone(t0, w==="tgt"?ft:fs, 100, lv); }
 
+/* ===========================================================================
+   VOICE RECORDING
+
+   Clips go to IndexedDB and nowhere else. localStorage on iPadOS is about 5 MB
+   and holds strings only, so base64 audio would fill the quota and the app would
+   then fail to write TRIAL records -- losing the data the recording was meant to
+   accompany. The trial record carries an audio_id and the bytes live elsewhere.
+
+   Format: opus in webm where the browser supports it. iPadOS Safari does not
+   support webm for recording and produces mp4/AAC instead, so the recorder probes
+   and falls back, and writes the mime type it actually used into the record. A
+   file's format is never inferred from what was asked for.
+   =========================================================================== */
+const AUDIO_DB="motiq_audio", AUDIO_STORE="clips";
+const WANTED_MIMES=["audio/webm;codecs=opus","audio/webm","audio/mp4;codecs=mp4a.40.2","audio/mp4","audio/ogg;codecs=opus"];
+
+const RECORDER={
+  available: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder),
+  stream:null, rec:null, chunks:[], mime:"", startedAt:null,
+  // Bumped every time a stream is acquired. A stop() that settles after the next trial
+  // has already taken the microphone must not release that trial's stream.
+  gen:0,
+  pickMime(){
+    if(!window.MediaRecorder || !MediaRecorder.isTypeSupported) return "";
+    for(const m of WANTED_MIMES) if(MediaRecorder.isTypeSupported(m)) return m;
+    return "";                                   // let the browser choose its own
+  },
+  // Called inside the click that starts a trial: Safari only grants the microphone
+  // from a user gesture, and an await before this point throws the gesture away.
+  prepare(){
+    if(!this.available) return Promise.reject(new Error("MediaRecorder is not available in this browser"));
+    if(this.stream && this.stream.getAudioTracks().some(t=>t.readyState==="live")) return Promise.resolve(this.stream);
+    return navigator.mediaDevices.getUserMedia({ audio:{ channelCount:1,
+        echoCancellation:false, noiseSuppression:false, autoGainControl:false } })
+      .then(s=>{ this.stream=s; this.gen++; return s; });
+  },
+  begin(onStart){
+    if(!this.stream) throw new Error("no microphone stream");
+    this.mime=this.pickMime(); this.chunks=[];
+    this.rec = this.mime ? new MediaRecorder(this.stream,{mimeType:this.mime})
+                         : new MediaRecorder(this.stream);
+    if(!this.mime) this.mime=this.rec.mimeType||"";
+    this.rec.ondataavailable=e=>{ if(e.data && e.data.size) this.chunks.push(e.data); };
+    this.rec.onstart=()=>{ this.startedAt=performance.now(); if(onStart) onStart(this.startedAt); };
+    this.rec.start();
+    return this.rec;
+  },
+  stop(){
+    const r=this.rec;
+    if(!r || r.state==="inactive"){ this.rec=null; return Promise.resolve(null); }
+    return new Promise(res=>{
+      r.onstop=()=>{ const blob=new Blob(this.chunks,{type:this.mime||"audio/webm"});
+        this.rec=null; this.chunks=[]; res(blob); };
+      try{ r.stop(); }catch(e){ this.rec=null; res(null); }
+    });
+  },
+  release(gen){
+    if(gen!=null && gen!==this.gen) return;      // a later trial owns the microphone now
+    if(this.stream){ this.stream.getTracks().forEach(t=>{try{t.stop();}catch(e){}}); this.stream=null; }
+  }
+};
+const AUDIO_EXT = m => /webm/.test(m)?"webm" : /mp4|m4a|aac/.test(m)?"m4a" : /ogg/.test(m)?"ogg" : "bin";
+
+function idbOpen(){
+  return new Promise((res,rej)=>{
+    if(!window.indexedDB) return rej(new Error("IndexedDB unavailable"));
+    const r=indexedDB.open(AUDIO_DB,1);
+    r.onupgradeneeded=()=>{ const db=r.result;
+      if(!db.objectStoreNames.contains(AUDIO_STORE)) db.createObjectStore(AUDIO_STORE,{keyPath:"audio_id"}); };
+    r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error||new Error("IndexedDB open failed"));
+  });
+}
+function idbTx(mode,fn){
+  return idbOpen().then(db=>new Promise((res,rej)=>{
+    const tx=db.transaction(AUDIO_STORE,mode), st=tx.objectStore(AUDIO_STORE);
+    let out; try{ out=fn(st); }catch(e){ rej(e); return; }
+    tx.oncomplete=()=>res(out&&out.result!==undefined?out.result:out);
+    tx.onerror=()=>rej(tx.error); tx.onabort=()=>rej(tx.error);
+  }));
+}
+const idbPut  = rec => idbTx("readwrite", st=>st.put(rec));
+const idbGet  = id  => idbTx("readonly",  st=>st.get(id));
+const idbAll  = ()  => idbTx("readonly",  st=>st.getAll());
+const idbDel  = id  => idbTx("readwrite", st=>st.delete(id));
+const idbClear= ()  => idbTx("readwrite", st=>st.clear());
+
 /* ------------------------------------------------------- layout + draw */
 let L=null,SPIRAL=null,STROKES=[],TAPS=[],TAPFLASH=null;
 const FLASH_MS=260;
@@ -1268,7 +2142,7 @@ function layout(){
   const uw=W-ux0-Math.max(sa.right,2)*p, uh=H-uy0-Math.max(sa.bottom,2)*p;
   const topPad=100, cy=uy0+topPad+(uh-topPad)/2;
 
-  const c=byId(TRIAL.cond);
+  const c=byId(TRIAL.task);
   let dx0=ux0,dw=uw,tapCx=null,zones=null,splitX=null;
   const drawSide = TRIAL.drawHand==="left" ? "left" : "right";
 
@@ -1285,7 +2159,7 @@ function layout(){
   L={p,W,H,g,ux0,uy0,uw,uh,dw,dx0,tapCx,zones,splitX,spiralOn:!!c.spiral,
      cx:dx0+dw/2,cy,safeAreaMM:sa,topPad};
   buildZones(c);
-  $("hud").style.display = (c.tap||c.audio) ? "block" : "none";
+  $("hud").style.display = (c.tap||c.audio||c.verbal) ? "block" : "none";
   return L;
 }
 // One element per tap zone, positioned from the same geometry the canvas uses.
@@ -1322,7 +2196,7 @@ const toCanvas=(x,y)=>({x:L.cx+x*L.p,y:L.cy-y*L.p});
 const toMM=(x,y)=>({x:(x-L.cx)/L.p,y:(L.cy-y)/L.p});
 
 function drawScene(){
-  const g=L.g, c=byId(TRIAL.cond);
+  const g=L.g, c=byId(TRIAL.task);
   g.clearRect(0,0,L.W,L.H); g.fillStyle="#fff"; g.fillRect(0,0,L.W,L.H);
   g.textAlign="center";
   if(L.splitX!==null){ g.strokeStyle="#c9ced6"; g.lineWidth=1; g.setLineDash([5,5]);
@@ -1374,14 +2248,15 @@ function drawScene(){
 
 /* ------------------------------------------------------- trial engine */
 let RUN=null,RAF=null,LAST=null;
-const INSTRUCTED=new Set();      // conditions already explained this session
+const INSTRUCTED=new Set();      // tasks already explained this session
 
 function storageUsed(){
   const ts=listTrials();
   return { n:ts.length, bytes:ts.reduce((a,b)=>a+b.size,0) };
 }
 // A full battery fills browser storage. Warn before the next trial, not after a save
-// has already failed.
+// has already failed. Voice clips are NOT in this figure: they are in IndexedDB, which
+// is exactly why they are there.
 function storagePct(){ return 100*storageUsed().bytes/(5*1024*1024); }
 
 function storageGuard(){
@@ -1402,21 +2277,21 @@ function storageWarnBeforeSave(){
     `This save may fail. Export and clear first if you can.\n\nTry saving anyway?`);
 }
 
-let LAST_COND=null, LAST_HAND=null;      // what the participant was last shown
+let LAST_TASK=null, LAST_HAND=null;      // what the participant was last shown
 
 function runCurrent(){
   if(!storageGuard()){ goPage(6); return; }
   if(QPOS>=QUEUE.length){ sessionComplete(); return; }
-  const q=QUEUE[QPOS], c=byId(q.cond);
+  const q=QUEUE[QPOS], c=byId(q.task);
   TRIAL={ ...q, index:QPOS,
     drawHand: c.spiral ? physHand(q.hand) : null,
     tapHand:  c.zones===2 ? "both"
              : c.spiral&&c.tap ? (physHand(q.hand)==="right"?"left":"right")
              : physHand(q.hand),
     implement: c.implement || "pen" };
-  // The instruction page appears only when the condition changes. A hand swap inside a
-  // condition is not a change of condition; it is called out on the ready screen instead.
-  openTrial(TRIAL.cond !== LAST_COND);
+  // The instruction page appears only when the task changes. A hand swap inside a
+  // task is not a change of task; it is called out on the ready screen instead.
+  openTrial(TRIAL.task !== LAST_TASK);
 }
 
 // Every overlay goes through here: body scrolls, buttons stay pinned.
@@ -1451,33 +2326,145 @@ function sessionComplete(){
      {label:"Back to session", ghost:true, onClick:()=>{ stageOn(false); RUN=null; goPage(3); }}]);
 }
 
-function audioCfgFor(cond){
-  const c=byId(cond); if(!c.audio) return null;
-  const a=AUDIO_DEFAULTS[cond]; if(!a) return null;
-  return { ...a, key:cond, durS: TRIAL.lengthS ?? a.durS };
+// The stream a trial will actually use. durS follows the plan: a fixed-length trial
+// gets its length, a self-paced one gets selfPacedDurS -- long on purpose, because a
+// stream that runs out mid-drawing leaves the participant counting to silence.
+function audioCfgFor(task){
+  const c=byId(task); if(!c.audio) return null;
+  const a=AUDIO_DEFAULTS[task]; if(!a) return null;
+  const selfPaced = TRIAL.lengthS==null;
+  return { ...a, key:task,
+    durS: selfPaced ? (a.selfPacedDurS ?? a.durS) : TRIAL.lengthS,
+    stopMode: selfPaced ? "drawEnd" : (a.stopMode || "fixed"),
+    floorS: a.floorS ?? 20, tailS: a.tailS ?? 3,
+    self_paced: selfPaced };
 }
 
+// Two-digit start for serial subtraction, different every trial so there are unlimited
+// alternate forms and nothing carries across visits. Multiples of three are skipped:
+// starting on one makes the whole sequence land on round numbers and ends neatly at 0.
+function randomSubtractStart(){
+  let n; do { n=10+Math.floor(Math.random()*90); } while(n%3===0);
+  return n;
+}
+let VERBAL_SUGGEST=null;
+
 function openTrial(showInstruction){
-  const c=byId(TRIAL.cond);
+  const c=byId(TRIAL.task);
   let seq=null;
-  const cfg=audioCfgFor(TRIAL.cond);
+  const cfg=audioCfgFor(TRIAL.task);
   if(cfg){
-    try{ seq=makeSequence(cfg.durS,cfg.isi,cfg.jit/100,cfg.ptg,drawSeed()); }
+    try{ seq=makeSequence(cfg.durS,cfg.isi,cfg.jit/100,cfg.ptg,drawSeed(),!!c.adjacentTargetsOK); }
     catch(e){ alert("Cannot build the stream for this trial:\n\n"+e.message); return; }
     audio();
   }
   STROKES=[]; TAPS=[]; TAPFLASH=null;
+  TRIAL.voiceFailure=null;
   stageOn(true);
   layout(); drawScene();
 
-  if(!showInstruction){ readyTrial(seq,c); return; }
-  showInstructionScreen(seq,c);
+  const finishOpen=()=> showInstruction ? showInstructionScreen(seq,c) : readyTrial(seq,c);
+  const afterMic =()=> c.verbal ? showVerbalSetup(c,finishOpen) : finishOpen();
+
+  if(c.voice){
+    if(!voiceConsented()){
+      // Should be unreachable -- the plan blocks it -- but a queue built before consent
+      // was withdrawn could still contain one, and it must not record silently.
+      TRIAL.voiceFailure={ reason:"not_consented",
+        detail:"Voice recording consent is not ticked on the Participant page." };
+      micFailOverlay(TRIAL.voiceFailure.detail, afterMic); return;
+    }
+    // getUserMedia has to be reached inside the gesture that started this trial;
+    // Safari refuses the microphone otherwise. The permission sheet can also sit there
+    // unanswered forever, so this screen always offers a way out -- a trial that cannot
+    // be started is worse than one that is not recorded.
+    const gate={settled:false};
+    TRIAL.micGate=gate;
+    showOverlay(`<h3>Starting the microphone</h3>
+      <p>Allow microphone access if the iPad asks. This task is recorded.</p>
+      <p style="font-size:16px;color:#5d6570">If no prompt appears, or it has been
+      dismissed, carry on without recording — the trial record will say the audio is
+      missing.</p>`,
+      [{ label:"Continue without recording", ghost:true, onClick:()=>{
+           if(gate.settled) return; gate.settled=true;
+           TRIAL.voiceFailure={ reason:"microphone_not_granted",
+             detail:"Microphone access was not granted before the trial was started." };
+           hideOverlay(); afterMic(); } },
+       { label:"Abandon", ghost:true, onClick:()=>{
+           if(gate.settled) return; gate.settled=true;
+           hideOverlay(); stageOn(false); RUN=null; goPage(3); } }]);
+    let p; try{ p=RECORDER.prepare(); }catch(e){ p=Promise.reject(e); }
+    p.then(()=>{ if(gate.settled) return; gate.settled=true; hideOverlay(); afterMic(); })
+     .catch(err=>{
+        if(gate.settled) return; gate.settled=true;
+        TRIAL.voiceFailure={ reason:"microphone_unavailable",
+          detail:String((err&&(err.name+": "+err.message))||err) };
+        micFailOverlay(TRIAL.voiceFailure.detail, afterMic);
+     });
+  } else afterMic();
+}
+
+// The trial must never run as though it were being recorded when it is not.
+function micFailOverlay(detail, cont){
+  showOverlay(`<h3 style="color:#8c2020">No recording for this trial</h3>
+    <p><b>${esc(detail)}</b></p>
+    <p style="font-size:17px;color:#5d6570">The trial can still be run — the spoken responses
+    simply will not be captured, and the trial record will say so. Nothing else about the
+    trial changes.</p>`,
+    [{ label:"Run without recording", onClick:()=>{ hideOverlay(); cont(); } },
+     { label:"Try again", ghost:true, onClick:()=>{ hideOverlay(); openTrial(TRIAL.task!==LAST_TASK); } },
+     { label:"Abandon", ghost:true, onClick:()=>{ hideOverlay(); stageOn(false); RUN=null; goPage(3); } }]);
+}
+
+// SP_VRB only: which spoken task, and the exact words used. Both go into the record,
+// because "serial subtraction" without the start number is not a reproducible prompt.
+function showVerbalSetup(c, done){
+  VERBAL_SUGGEST=randomSubtractStart();
+  const planned=TRIAL.verbalType || (PLAN[c.id] && PLAN[c.id].verbalType) || "count";
+  showOverlay(`<h3>Spoken task for this trial</h3>
+    <div style="width:min(90vw,560px);text-align:left">
+      <label for="vbType" style="font-size:15px">Prompt type</label>
+      <select id="vbType" style="font-size:19px" onchange="verbalTypeChanged()">
+        ${Object.entries(VERBAL_PROMPTS).map(([k,v])=>
+          `<option value="${k}" ${planned===k?"selected":""}>${v.label}</option>`).join("")}
+      </select>
+      <label for="vbText" style="font-size:15px;margin-top:14px">Exact prompt used</label>
+      <input id="vbText" type="text" style="font-size:19px">
+      <div id="vbHelp" class="note" style="font-size:15px"></div>
+    </div>`,
+    [{ label:"Use this", onClick:()=>{
+        const type=$("vbType").value, text=($("vbText").value||"").trim();
+        const v={ type, prompt_type_label:VERBAL_PROMPTS[type].label, prompt_text:text,
+                  start_number: type==="subtract3" ? (parseInt(text,10) || null) : null,
+                  category:     type==="fluency"   ? (text||null) : null,
+                  fluency_window_s: type==="fluency" ? VERBAL_PROMPTS.fluency.windowS : null,
+                  suggested_start: type==="subtract3" ? VERBAL_SUGGEST : null };
+        TRIAL.verbal=v; TRIAL.verbalType=type;
+        hideOverlay(); done();
+      }}]);
+  verbalTypeChanged();
+}
+function verbalTypeChanged(){
+  const t=$("vbType").value, box=$("vbText"), help=$("vbHelp");
+  if(t==="subtract3"){ box.value=String(VERBAL_SUGGEST); box.placeholder="87";
+    help.innerHTML=`Suggested start for this trial: <b>${VERBAL_SUGGEST}</b>. A new one is drawn
+      every trial, so there are unlimited alternate forms and nothing carries over between
+      visits. Change it if you have a reason to; whatever is in the box is what gets recorded.`; }
+  else if(t==="fluency"){ box.value=""; box.placeholder="animals";
+    help.innerHTML=`Type the category exactly as you will say it. Scored over a fixed
+      <b>60 s</b> window — the admin bar says when it is up, and the trial itself carries on
+      until you press END. Fluency output is steeply front-loaded (roughly 40–45% of words
+      in the first 15 s), so words per second cannot be compared between windows of
+      different length.`; }
+  else { box.value="start at 1"; box.placeholder="start at 1";
+    help.innerHTML=`The articulation-only baseline: speaking aloud with almost no cognitive
+      load, self-paced. Record whatever you actually told them.`; }
 }
 
 // The instruction page, drawn from the same source as the Instructions tab.
 function showInstructionScreen(seq,c,returnToReady){
-  const ins=instructionFor(TRIAL.cond,{implement:TRIAL.implement});
-  const a=AUDIO_DEFAULTS[TRIAL.cond];
+  const ins=instructionFor(TRIAL.task,{implement:TRIAL.implement, verbal:TRIAL.verbal});
+  const a=AUDIO_DEFAULTS[TRIAL.task];
   // Let the participant hear the tones before the trial, not for the first time inside it.
   const soundBtns = c.audio ? `<div style="margin-top:14px">
       <button class="ghost" style="font-size:18px;padding:14px 26px;margin:4px"
@@ -1487,52 +2474,62 @@ function showInstructionScreen(seq,c,returnToReady){
       <button class="ghost" style="font-size:18px;padding:14px 26px;margin:4px"
         onclick="demo('alt')">Play both</button>` : ``) +
       `<div class="note" style="margin-top:6px">Play these before starting.</div></div>` : ``;
-  showOverlay(`<h3>${TRIAL.cond} — ${c.label}</h3>` + instructionHTML(ins) + soundBtns +
+  const voiceNote = c.voice ? (TRIAL.voiceFailure
+      ? `<p style="font-size:17px;color:#8c2020"><b>Not being recorded</b> — ${esc(TRIAL.voiceFailure.detail)}</p>`
+      : `<p style="font-size:17px;color:var(--ok)">Voice recording is on for this trial.</p>`) : ``;
+  showOverlay(`<h3>${TRIAL.task} — ${c.label}</h3>` + instructionHTML(ins) + soundBtns + voiceNote +
     `<p style="font-size:16px;color:#5d6570;margin-top:10px">${ins.length}</p>`,
-    [{label:"Ready", onClick:()=>{ hideOverlay(); LAST_COND=TRIAL.cond;
+    [{label:"Ready", onClick:()=>{ hideOverlay(); LAST_TASK=TRIAL.task;
         readyTrial(returnToReady?returnToReady.seq:seq, c); }}]);
 }
 
 function reminderText(){
-  const c=byId(TRIAL.cond), bits=[];
+  const c=byId(TRIAL.task), bits=[];
   if(c.spiral){ bits.push($("instr").value==="between"?"between the lines":"trace the line");
     bits.push(TRIAL.implement==="finger"?"index finger":"pen");
     bits.push(TRIAL.drawHand+" hand draws"); }
   if(c.zones===2) bits.push("both index fingers");
   else if(c.tap) bits.push(TRIAL.tapHand+" index finger taps");
-  const cfg=audioCfgFor(TRIAL.cond);
-  if(byId(TRIAL.cond).count) bits.push("silent count, no tapping");
+  const cfg=audioCfgFor(TRIAL.task);
+  if(c.respond==="both") bits.push("tap the low, say the number on the high");
+  else if(c.count) bits.push(c.countMode==="aloud"
+    ? (c.countOf==="all" ? "count every tone aloud" : "count high tones aloud")
+    : "silent count, no tapping");
   else if(cfg) bits.push(cfg.ptg>0?"high tones only":"every tone");
-  return `<b>${TRIAL.cond}</b> ${TRIAL.index+1}/${QUEUE.length} · ${bits.join(" · ")}`;
+  if(c.verbal && TRIAL.verbal) bits.push(TRIAL.verbal.prompt_type_label.toLowerCase() +
+    (TRIAL.verbal.prompt_text?` — “${esc(TRIAL.verbal.prompt_text)}”`:""));
+  return `<b>${TRIAL.task}</b> ${TRIAL.index+1}/${QUEUE.length} · ${bits.join(" · ")}`;
 }
 
 function readyTrial(seq,c){
-  $("hud").textContent = (c.lengthS===null && !c.audio) ? "" : (TRIAL.lengthS??"")+" s";
+  $("hud").classList.remove("cue");
+  $("hud").textContent = (TRIAL.lengthS===null && !c.audio) ? "" : (TRIAL.lengthS??"")+" s";
   $("reminder").innerHTML=reminderText();
   $("tapcount").textContent="";
+  $("recdot").textContent = c.voice ? (TRIAL.voiceFailure ? "no mic" : "mic ready") : "";
+  $("recdot").style.color = c.voice && TRIAL.voiceFailure ? "#8c2020" : "#5d6570";
   $("ctrl").innerHTML="";
 
   // What changed since the last trial is the thing that gets missed once the instruction
   // page stops appearing, so it is stated large on the screen itself.
   const handNow = TRIAL.drawHand || TRIAL.tapHand || "both";
-  const changed = LAST_HAND && handNow!==LAST_HAND && TRIAL.cond===LAST_COND;
-  const ov=$("overlay");
+  const changed = LAST_HAND && handNow!==LAST_HAND && TRIAL.task===LAST_TASK;
   if(changed){
     // Name the effector, not just the side: "the right hand" is ambiguous when the task
     // is drawn with a fingertip.
-    const cc=byId(TRIAL.cond);
+    const cc=byId(TRIAL.task);
     const what = cc.spiral
       ? (TRIAL.implement==="finger"
           ? `Now use the <b>index finger</b> of the <b>${handNow.toUpperCase()}</b> hand to draw`
           : `Now draw with the <b>${handNow.toUpperCase()}</b> hand`)
       : `Now tap with the <b>${handNow.toUpperCase()}</b> index finger`;
     showOverlay(`<h3 style="font-size:34px;line-height:1.3">${what}</h3>
-      <p style="font-size:19px;color:#5d6570">${TRIAL.cond} · trial ${TRIAL.index+1} of ${QUEUE.length}</p>`,
+      <p style="font-size:19px;color:#5d6570">${TRIAL.task} · trial ${TRIAL.index+1} of ${QUEUE.length}</p>`,
       [{label:"Ready", onClick:hideOverlay}]);
   } else hideOverlay();
 
   const start=document.createElement("button"); start.textContent="START";
-  start.onclick=()=>{ $("ctrl").innerHTML=""; LAST_COND=TRIAL.cond; LAST_HAND=handNow;
+  start.onclick=()=>{ $("ctrl").innerHTML=""; LAST_TASK=TRIAL.task; LAST_HAND=handNow;
                       runTrial(seq,c); };
   $("ctrl").appendChild(start);
 
@@ -1555,7 +2552,7 @@ function readyTrial(seq,c){
 function showQueueOverlay(seq,c){
   let rows=QUEUE.map((q,i)=>`<tr>
       <td style="padding:5px 9px">${i+1}</td>
-      <td style="padding:5px 9px"><b>${q.cond}</b></td>
+      <td style="padding:5px 9px"><b>${q.task}</b></td>
       <td style="padding:5px 9px">${handWord(q.hand)}</td>
       <td style="padding:5px 9px;color:#5d6570">${q.status}</td>
       <td style="padding:5px 9px">${q.status==="pending"&&i!==QPOS
@@ -1576,23 +2573,54 @@ function jumpTo(i){
 
 function runTrial(seq,c){
   const a=seq?audio():null;
-  const cfgL = audioCfgFor(TRIAL.cond);
+  const cfgL = audioCfgFor(TRIAL.task);
   const leadMs = seq ? (cfgL?.lead ?? 1000) : 200;
   const perf0=performance.now()+leadMs;
   const outLat=seq?(a.outputLatency||0)*1000:0, baseLat=seq?(a.baseLatency||0)*1000:0;
   if(seq){ newMaster(); const t0=a.currentTime+leadMs/1000;
     seq.onsets.forEach((on,i)=>tone(t0+on/1000,
       seq.isTarget[i]?+$("ftgt").value:+$("fstd").value,
-      audioCfgFor(TRIAL.cond).tone, +$("lvl").value)); }
+      cfgL.tone, +$("lvl").value)); }
 
-  // Drawing is never on the clock. Any condition with a spiral stays open until END,
+  // Drawing is never on the clock. Any task with a spiral stays open until END,
   // even after the tones have finished, because the drawing may not be.
-  const untimed = c.lengthS===null || !!c.spiral;
+  const untimed = TRIAL.lengthS===null || !!c.spiral;
   const durMs = seq ? seq.durationMs : (TRIAL.lengthS||10)*1000;
 
-  RUN={ seq,cond:TRIAL.cond,perf0,outLat,baseLat,durMs,leadMs,untimed,
+  RUN={ seq,task:TRIAL.task,perf0,outLat,baseLat,durMs,leadMs,untimed,cfg:cfgL,
         startedISO:new Date().toISOString(),firstContactMs:null,toneClockDone:false,
-        lastContact:null,saved:false,c };
+        lastContact:null,saved:false,c,voice:null,voicePending:null,fluencyCueMs:null };
+
+  // Voice capture window. Tone tasks: from the start of the tone stream (perf0) to the
+  // end of the trial. SP_VRB has no tones, so its origin is the trial start, which is
+  // the same instant on the same clock.
+  if(c.voice){
+    RUN.voice={ consented:voiceConsented(), attempted:false, recorded:false,
+      audio_id:null, mime_type:null, bytes:null, blob:null,
+      recorder_start_ms:null, recorder_stop_ms:null,
+      recorder_start_clock:"ms from START, the same origin as sequence.onsets_ms",
+      recorder_start_alignment:"uncharacterized",
+      recorder_start_alignment_note:"MediaRecorder start latency has NOT been measured on this device. recorder_start_ms is the moment the recorder reported it had started, on the trial clock; the true offset between the first audio sample in the file and that moment is unknown. Use it to align per-response latencies only after characterising that offset.",
+      failure: TRIAL.voiceFailure ? TRIAL.voiceFailure.reason : null,
+      failure_detail: TRIAL.voiceFailure ? TRIAL.voiceFailure.detail : null };
+    if(!TRIAL.voiceFailure){
+      RUN.recTimer=setTimeout(()=>{
+        if(!RUN) return;
+        try{
+          RUN.voice.attempted=true;
+          RECORDER.begin(()=>{
+            RUN.voice.recorder_start_ms=+(performance.now()-perf0).toFixed(2);
+            RUN.voice.mime_type=RECORDER.mime||null;
+            $("recdot").textContent="● REC"; $("recdot").style.color="#8c2020";
+          });
+        }catch(e){
+          RUN.voice.failure="recorder_start_failed";
+          RUN.voice.failure_detail=String((e&&(e.name+": "+e.message))||e);
+          $("recdot").textContent="REC FAILED"; $("recdot").style.color="#8c2020";
+        }
+      }, leadMs);
+    } else { $("recdot").textContent="no mic"; $("recdot").style.color="#8c2020"; }
+  } else $("recdot").textContent="";
 
   const cv=$("canvas");
   const drawOK = pt => TRIAL.implement==="pen" ? (pt==="pen"||pt==="mouse") : (pt==="touch"||pt==="mouse");
@@ -1631,7 +2659,9 @@ function runTrial(seq,c){
 
   cancelAnimationFrame(RAF);
   const idleMs=(+$("idle").value||5)*1000;
-  const cfgA=audioCfgFor(TRIAL.cond);
+  const cfgA=cfgL;
+  const fluencyWinMs = (c.verbal && TRIAL.verbal && TRIAL.verbal.fluency_window_s)
+    ? TRIAL.verbal.fluency_window_s*1000 : null;
   const loop=()=>{ drawScene();
     const now=performance.now();
     const left=(perf0+durMs-now)/1000;
@@ -1649,9 +2679,28 @@ function runTrial(seq,c){
         stopAudio();
       }
     }
-    if(c.tap||c.audio) $("hud").textContent = untimed
+
+    // Category fluency is scored over a fixed 60 s, because fluency output is steeply
+    // front-loaded and words per second is not comparable across windows of different
+    // length. The TRIAL is not stopped here -- the spiral is never on the clock -- the
+    // examiner is simply told the window is up.
+    if(fluencyWinMs && RUN.fluencyCueMs===null && now-perf0>=fluencyWinMs){
+      RUN.fluencyCueMs=+(now-perf0).toFixed(1);
+      $("hud").classList.add("cue");
+      $("reminder").innerHTML=`<span style="color:var(--warm)"><b>60 s FLUENCY WINDOW IS UP</b><br>
+        Tell them to stop naming. Let them finish the spiral, then press END.</span>`;
+    }
+
+    if(c.tap||c.audio||c.verbal) $("hud").textContent = fluencyWinMs
+      ? (RUN.fluencyCueMs===null
+          ? "naming "+Math.max(0,(fluencyWinMs-(now-perf0))/1000).toFixed(1)+" s"
+          : "naming done")
+      : !seq
+      ? ((now-perf0)/1000).toFixed(1)+" s"
+      : untimed
       ? (left>0?left.toFixed(1)+" s":"tones done")
       : Math.max(0,left).toFixed(1)+" s";
+
     if(untimed && RUN.firstContactMs!==null && (!RUN.seq||RUN.toneClockDone)
        && RUN.lastContact && performance.now()-RUN.lastContact>idleMs){
       RUN.idleEnded=true; stopTrial(true); return; }
@@ -1660,16 +2709,44 @@ function runTrial(seq,c){
   if(!untimed) RUN.timer=setTimeout(()=>stopTrial(true), leadMs+durMs+600);
 }
 
+// Ends the recorder and hands back a promise that settles once the blob exists, so a
+// SAVE pressed a fraction of a second later cannot write a record with no audio in it.
+function endRecording(){
+  if(!RUN || !RUN.voice) return;
+  clearTimeout(RUN.recTimer);
+  const gen=RECORDER.gen;
+  if(!RUN.voice.attempted){ RECORDER.release(gen); return; }
+  RUN.voice.recorder_stop_ms = RUN.perf0 ? +(performance.now()-RUN.perf0).toFixed(2) : null;
+  RUN.voicePending = RECORDER.stop().then(blob=>{
+    if(blob && blob.size){
+      RUN.voice.recorded=true; RUN.voice.blob=blob; RUN.voice.bytes=blob.size;
+      RUN.voice.mime_type=RUN.voice.mime_type||blob.type||null;
+    } else if(!RUN.voice.failure){
+      RUN.voice.failure="empty_recording";
+      RUN.voice.failure_detail="The recorder produced no audio data.";
+    }
+    RECORDER.release(gen);
+    $("recdot").textContent = RUN.voice.recorded ? "recorded" : "NOT RECORDED";
+    $("recdot").style.color = RUN.voice.recorded ? "#176b42" : "#8c2020";
+    return blob;
+  }).catch(e=>{
+    RUN.voice.failure=RUN.voice.failure||"recorder_stop_failed";
+    RUN.voice.failure_detail=RUN.voice.failure_detail||String((e&&(e.name+": "+e.message))||e);
+    RECORDER.release(gen); return null;
+  });
+}
+
 function resetTrial(){
   if(!RUN) return;
-  if(!confirm("Reset this trial?\n\nThe drawing and taps recorded so far are discarded and NOT saved. The trial restarts with the same settings.")) return;
+  if(!confirm("Reset this trial?\n\nThe drawing, taps and any recording made so far are discarded and NOT saved. The trial restarts with the same settings.")) return;
   clearTimeout(RUN.timer); cancelAnimationFrame(RAF); stopAudio();
+  endRecording();
+  if(RUN.voicePending) RUN.voicePending.then(()=>{ if(RUN&&RUN.voice) RUN.voice.blob=null; });
   if(RUN.teardown) RUN.teardown();
-  const c=byId(TRIAL.cond); STROKES=[]; TAPS=[]; TAPFLASH=null;
-  if(RUN) RUN.reportedCount=undefined;
-  let seq=null; const cfg=audioCfgFor(TRIAL.cond);
-  if(cfg){ try{ seq=makeSequence(cfg.durS,cfg.isi,cfg.jit/100,cfg.ptg,drawSeed()); }catch(e){ seq=null; } }
-  layout(); drawScene(); readyTrial(seq,c);
+  STROKES=[]; TAPS=[]; TAPFLASH=null;
+  // Re-open rather than rebuilding in place: a fresh stream, a fresh sequence, and the
+  // microphone acquired again inside this button press, which is where Safari allows it.
+  RUN=null; openTrial(false);
 }
 function stopTrial(auto){
   if(!RUN) { stageOn(false); return; }
@@ -1683,6 +2760,7 @@ function stopTrial(auto){
     RUN.streamCutMs=+(performance.now()-RUN.perf0).toFixed(1);
   }
   stopAudio();
+  endRecording();
   if(RUN.teardown) RUN.teardown();
   RUN.stoppedEarly=!auto; finish();
 }
@@ -1691,15 +2769,20 @@ function stopTrial(auto){
 function abandonTrial(){
   const unsaved = RUN && !RUN.ready && !RUN.saved;
   if(!confirm("Abandon this trial and return to the session page?\n\n"+
-     (unsaved?"It has NOT been saved and will be lost. ":"")+
+     (unsaved?"It has NOT been saved and will be lost, including any recording. ":"")+
      "The participant, the plan and all saved trials are kept.")) return;
-  if(RUN){ clearTimeout(RUN.timer); if(RUN.teardown) RUN.teardown(); }
+  if(RUN){ clearTimeout(RUN.timer); if(RUN.teardown) RUN.teardown(); endRecording(); }
+  else RECORDER.release();
   cancelAnimationFrame(RAF); stopAudio();
   stageOn(false); RUN=null; goPage(3);
 }
 
 /* ------------------------------------------------------- results */
-function attribute(seq,taps,outLat){
+// respondTo names the tone type the TAP answers. Every oddball task answers the target;
+// SP_SWT answers the standard, because its high tone is spoken rather than tapped.
+// Scoring the wrong class would report 0% caught on a perfectly performed trial.
+function attribute(seq,taps,outLat,respondTo){
+  const wants = i => respondTo==="standard" ? !seq.isTarget[i] : seq.isTarget[i];
   const firstLag=new Array(seq.n).fill(null),rows=[];
   taps.forEach((tapMs,ti)=>{
     let idx=-1; for(let i=0;i<seq.n;i++){ if(seq.onsets[i]<=tapMs) idx=i; else break; }
@@ -1709,20 +2792,17 @@ function attribute(seq,taps,outLat){
     rows.push({ti,tapMs,tone:idx+1,type:seq.isTarget[idx]?"target":"standard",lag,lagCorrected:lag-outLat});
   });
   const targetLags=[];
-  for(let i=0;i<seq.n;i++) if(seq.isTarget[i]&&firstLag[i]!==null) targetLags.push(firstLag[i]-outLat);
-  return {rows,firstLag,targetLags};
+  for(let i=0;i<seq.n;i++) if(wants(i)&&firstLag[i]!==null) targetLags.push(firstLag[i]-outLat);
+  return {rows,firstLag,targetLags,respond_to:respondTo||"target"};
 }
 
 function finish(){
   const seq=RUN.seq, c=RUN.c, pts=STROKES.flat();
   const dur=pts.length>1?(pts[pts.length-1].t-pts[0].t):0;
   const rate=dur>0?(pts.length-1)/(dur/1000):0;
-  let att=null; if(seq) att=attribute(seq,TAPS.map(t=>t.t),RUN.outLat);
+  let att=null; if(seq) att=attribute(seq,TAPS.map(t=>t.t),RUN.outLat,c.respondTo||"target");
   let tp=null;
   if(c.tap){
-    const mean=v=>v.length?v.reduce((a,b)=>a+b,0)/v.length:NaN;
-    const sd=v=>{ if(v.length<2) return NaN; const m=mean(v);
-      return Math.sqrt(v.reduce((a,b)=>a+(b-m)*(b-m),0)/(v.length-1)); };
     const iti=v=>v.length>1?v.slice(1).map((x,i)=>x-v[i]):[];
     const lt=TAPS.filter(t=>t.zone==="left").map(t=>t.t).sort((a,b)=>a-b);
     const rt=TAPS.filter(t=>t.zone==="right").map(t=>t.t).sort((a,b)=>a-b);
@@ -1730,19 +2810,22 @@ function finish(){
     const zs=TAPS.slice().sort((a,b)=>a.t-b.t).map(t=>t.zone);
     let alt=0; for(let i=1;i<zs.length;i++) if(zs[i]!==zs[i-1]) alt++;
     tp={ nL:lt.length,nR:rt.length,nS:sg.length,
-         itiL:mean(iti(lt)),itiR:mean(iti(rt)),itiS:mean(iti(sg)),
-         sdL:sd(iti(lt)),sdR:sd(iti(rt)),sdS:sd(iti(sg)),
+         itiL:meanOf(iti(lt)),itiR:meanOf(iti(rt)),itiS:meanOf(iti(sg)),
+         sdL:sdOf(iti(lt)),sdR:sdOf(iti(rt)),sdS:sdOf(iti(sg)),
          altPct: c.zones===2&&zs.length>1 ? 100*alt/(zs.length-1) : null };
   }
   LAST={RUN,STROKES,TAPS,att,SPIRAL,tp,layoutSafe:L.safeAreaMM,ppmm:L.p,trial:{...TRIAL}};
   RUN.saved=false;
 
   cancelAnimationFrame(RAF); drawScene();
+  $("hud").classList.remove("cue");
   $("hud").textContent = RUN.idleEnded?"finished":"";
   $("reminder").innerHTML=`<span style="color:var(--warm)">not saved yet</span>`;
   $("ctrl").innerHTML="";
 
-  // Counting conditions have no timestamped response, so the number is collected here.
+  // Counting tasks have no timestamped response for the counted class, so the number
+  // is collected here. SP_VRB has none: the app cannot know the right answer for
+  // serial subtraction or for a fluency category, so it does not pretend to.
   if(c.count && RUN.reportedCount===undefined){ askCount(seq); return; }
   showEndControls(seq,c,pts,rate,att,tp);
 }
@@ -1751,9 +2834,16 @@ function finish(){
 // overlay's innerHTML, destroying #ovBody / #ovFoot -- after which every later
 // showOverlay call threw, leaving this very prompt stranded back on screen.
 function askCount(seq){
-  showOverlay(`<h3>How many high beeps?</h3>
-    <p>Ask the participant for their count before showing anything else.</p>
-    <input id="countInput" type="number" min="0" max="200"
+  const c=RUN.c;
+  const what = c.respond==="both" ? "What number did they reach?"
+             : c.countOf==="all"  ? "How many beeps in total?"
+                                  : "How many high beeps?";
+  const sub  = c.respond==="both"
+    ? "The last number they said out loud, before anything else is shown."
+    : "Ask the participant for their count before showing anything else.";
+  showOverlay(`<h3>${what}</h3>
+    <p>${sub}</p>
+    <input id="countInput" type="number" min="0" max="500"
       style="max-width:200px;font-size:26px;text-align:center;margin-top:6px">
     <p style="font-size:15px;color:#5d6570;margin-top:14px">Leave blank if they did not give a number.</p>`,
     [{ label:"Record", onClick:()=>{
@@ -1786,23 +2876,33 @@ function okUnsaved(){ if(!RUN||RUN.saved) return true;
   // A failed write leaves the record in MEM: it still exports, but only until reload.
   // Saying "discard it" there would be wrong, and is how a recoverable trial gets binned.
   const inMem = LAST && LAST.rec && MEM[STORE_PREFIX+LAST.rec.trial_uid];
+  const rec = RUN.voice && RUN.voice.blob ? "\n\nThe recording made for this trial is discarded with it." : "";
   return confirm(inMem
     ? "This trial could not be written to storage and is held in memory only.\n\n" +
       "It is still included in an export, but leaving now and reloading loses it.\n\nContinue?"
-    : "This trial has not been saved.\n\nContinue and discard it?"); }
+    : "This trial has not been saved.\n\nContinue and discard it?"+rec); }
 
 function renderResult(seq,c,pts,rate,att,tp){
+  const heardScheduled = seq ? (c.countOf==="all" ? seq.n : seq.t) : null;
+  const V=RUN.voice;
   $("rsum").innerHTML=`<table>
-    <tr><th>Condition</th><td>${RUN.cond}${RUN.stoppedEarly?" (ended early)":""}</td>
+    <tr><th>Task</th><td>${RUN.task}${RUN.stoppedEarly?" (ended early)":""}</td>
         <th>Trial</th><td>${TRIAL.index+1} of ${QUEUE.length}</td></tr>
     ${c.spiral?`<tr><th>Pen samples</th><td class="num">${pts.length}</td>
         <th>Achieved rate</th><td class="num">${rate.toFixed(0)} Hz</td></tr>
     <tr><th>Strokes</th><td class="num">${STROKES.length}</td>
         <th>Drawing time</th><td class="num">${(pts.length>1?(pts[pts.length-1].t-pts[0].t)/1000:0).toFixed(1)} s</td></tr>`:""}
     ${c.count?`<tr><th>Counted</th><td class="num">${RUN.reportedCount??"–"}</td>
-        <th>Actually presented</th><td class="num">${seq?seq.t:"–"}</td></tr>`
+        <th>Actually presented</th><td class="num">${heardScheduled??"–"}</td></tr>`
       :`<tr><th>Taps</th><td class="num">${TAPS.length}</td>
         <th>First contact</th><td class="num">${RUN.firstContactMs??"–"} ms</td></tr>`}
+    ${c.verbal&&TRIAL.verbal?`<tr><th>Spoken task</th><td>${esc(TRIAL.verbal.prompt_type_label)}</td>
+        <th>Prompt used</th><td>${esc(TRIAL.verbal.prompt_text)||"–"}</td></tr>
+      ${TRIAL.verbal.fluency_window_s?`<tr><th>Fluency window</th>
+        <td class="num">${TRIAL.verbal.fluency_window_s} s</td>
+        <th>Window ended at</th><td class="num">${RUN.fluencyCueMs==null?"not reached":(RUN.fluencyCueMs/1000).toFixed(1)+" s"}</td></tr>`:""}`:""}
+    ${V?`<tr><th>Voice</th><td>${V.recorded?`recorded, ${(V.bytes/1024).toFixed(0)} KB`:"<b style='color:#8c2020'>not recorded</b>"}</td>
+        <th>Recorder start</th><td class="num">${V.recorder_start_ms==null?"–":V.recorder_start_ms+" ms"}</td></tr>`:""}
     ${seq?`<tr><th>Tones / targets</th><td class="num">${
         RUN.streamCutMs!=null
           ? `${seq.onsets.filter(o=>o<=RUN.streamCutMs).length} / ${seq.onsets.filter((o,i)=>o<=RUN.streamCutMs&&seq.isTarget[i]).length} played of ${seq.n} / ${seq.t}`
@@ -1815,12 +2915,19 @@ function renderResult(seq,c,pts,rate,att,tp){
   </table>
   ${c.spiral&&rate<55?`<div class="warn">Pen rate under 60 Hz — one point per frame. Browser
     kinematics will be coarse.</div>`:""}
+  ${V&&!V.recorded?`<div class="bad">No audio was captured for this trial${V.failure?` (${esc(V.failure)})`:""}.
+    ${V.failure_detail?esc(V.failure_detail)+" ":""}The trial record says so explicitly, so it will not be
+    mistaken for a recording that was made and then lost.</div>`:""}
+  ${V&&V.recorded?`<div class="note"><code>recorder_start_ms</code> is written on the same clock as
+    the tone onsets, but the alignment is marked <b>uncharacterized</b> in the record: MediaRecorder's
+    start latency on this device has not been measured, so the file's first sample is not known to
+    fall at that instant.</div>`:""}
   ${c.count&&seq?(RUN.reportedCount==null
     ? `<div class="warn">No count reported, so this trial has no validity check.</div>`
-    : (()=>{ const heard=targetsHeard(seq, RUN.streamCutMs);
+    : (()=>{ const heard=countedHeard(seq, RUN.streamCutMs, c.countOf);
         const err=RUN.reportedCount-heard;
         return `<div class="${Math.abs(err)<=2?"good":"warn"}">Count error <b>${err>0?"+":""}${err}</b>
-          (${RUN.reportedCount} reported, ${heard} actually played${heard!==seq.t?` of ${seq.t} scheduled`:""}).
+          (${RUN.reportedCount} reported, ${heard} actually played${heard!==heardScheduled?` of ${heardScheduled} scheduled`:""}).
           This is a validity criterion for the
           trial, not a measure — a large error means attention was not on the tones.</div>`; })())
     :""}`;
@@ -1835,20 +2942,27 @@ function renderResult(seq,c,pts,rate,att,tp){
       <b>${tp.altPct==null||isNaN(tp.altPct)?"–":tp.altPct.toFixed(0)+"%"}</b> of consecutive taps.
       Near 100% is antiphase; near 0% means the hands land together.</p>`;
     $("rq").innerHTML="";
-  } else if(att && seq && seq.t>0){
-    const limit=2*seq.minISI;
+  } else if(att && seq && c.tap && seq.t>0){
+    const respondsToStd = (c.respondTo||"target")==="standard";
+    const wants = i => respondsToStd ? !seq.isTarget[i] : seq.isTarget[i];
+    const nResp = respondsToStd ? seq.n-seq.t : seq.t;
+    const cls   = respondsToStd ? "low tones" : "high tones";
+    const limit = bindingLimitMs(RUN.task, RUN.cfg||AUDIO_DEFAULTS[RUN.task]||{isi:1000,jit:0,ptg:seq.t?0.25:0});
     const cands=[500,600,700,800,900,1000,1200,1500,2000].filter(w=>w<=limit);
     let h=`<h2>Response window</h2><table><tr><th class="num">Window (ms)</th>
-           <th class="num">Targets caught</th><th class="num">%</th><th class="num">False alarms</th></tr>`;
+           <th class="num">${cls} caught</th><th class="num">%</th><th class="num">False alarms</th></tr>`;
     cands.forEach(w=>{ let hit=0,fa=0;
       for(let i=0;i<seq.n;i++){ const lg=att.firstLag[i]; if(lg===null) continue;
-        const Lc=lg-RUN.outLat; if(Lc>=150&&Lc<=w){ seq.isTarget[i]?hit++:fa++; } }
-      h+=`<tr><td class="num">${w}</td><td class="num">${hit} of ${seq.t}</td>
-          <td class="num">${(100*hit/seq.t).toFixed(0)}%</td><td class="num">${fa}</td></tr>`; });
+        const Lc=lg-RUN.outLat; if(Lc>=150&&Lc<=w){ wants(i)?hit++:fa++; } }
+      h+=`<tr><td class="num">${w}</td><td class="num">${hit} of ${nResp}</td>
+          <td class="num">${nResp?(100*hit/nResp).toFixed(0):"–"}%</td><td class="num">${fa}</td></tr>`; });
     $("rwin").innerHTML=h+`</table><p class="note">Attribution stays unambiguous up to
-      ${Math.round(limit)} ms, the shortest possible target-to-target gap.</p>`;
+      ${Math.round(limit)} ms${respondsToStd
+        ? ", the shortest interval between any two tones — both tone types carry a response here,"+
+          " so the binding gap is the interval itself rather than the target-to-target gap."
+        : ", the shortest possible target-to-target gap."}</p>`;
     const Lg=att.targetLags;
-    $("rq").innerHTML=Lg.length?`<h2>Response times to targets</h2><table>
+    $("rq").innerHTML=Lg.length?`<h2>Response times to ${cls}</h2><table>
       <tr><th class="num">n</th><th class="num">min</th><th class="num">25th</th><th class="num">median</th>
       <th class="num">75th</th><th class="num">90th</th><th class="num">max</th></tr>
       <tr><td class="num">${Lg.length}</td><td class="num">${Math.round(Math.min(...Lg))}</td>
@@ -1872,10 +2986,11 @@ function hash36(s){ let h=5381; for(let i=0;i<s.length;i++) h=((h<<5)+h+s.charCo
 // Everything administered, verbatim. Also written to CSV as parameters_json so a
 // setting added later is still recorded in full for trials run today.
 function paramSet(){
-  const c=byId(TRIAL.cond), cfg=audioCfgFor(TRIAL.cond);
-  const p={ condition:TRIAL.cond, catalogue:{...c},
+  const c=byId(TRIAL.task), cfg=audioCfgFor(TRIAL.task);
+  const p={ task:TRIAL.task, catalogue:{...c},
             hand_role:TRIAL.hand, draw_hand:TRIAL.drawHand, tap_hand:TRIAL.tapHand,
-            implement:TRIAL.implement, length_s:TRIAL.lengthS };
+            implement:TRIAL.implement, length_s:TRIAL.lengthS,
+            self_paced:TRIAL.lengthS==null };
   if(c.spiral) p.spiral={ pitch_mm:+$("pitch").value, turns:+$("turns").value,
     end_angle_deg:+$("endang").value, instruction:$("instr").value,
     start_zone_mm:+$("startdia").value, split:+$("split").value,
@@ -1884,26 +2999,30 @@ function paramSet(){
   if(cfg) p.audio={ ...cfg, f_standard:+$("fstd").value, f_target:+$("ftgt").value,
     level:+$("lvl").value, lead_in_ms:cfg.lead,
     seed:LAST_SEED, seed_mode:$("seedmode").value };
+  if(c.count) p.counting={ mode:c.countMode||"silent", of:c.countOf||"targets" };
+  if(c.verbal) p.verbal=TRIAL.verbal||null;
   return p;
 }
 
 function buildRecord(){
   const R=LAST.RUN, params=paramSet(), sig=hash36(JSON.stringify(params));
   const pid=$("pid").value||"unnamed";
-  const H = TRIAL.hand==="both" ? "B" : (TRIAL.drawHand||TRIAL.tapHand)==="left" ? "L" : "R";
-  const tid=`${pid}_v${visitNo()}s${sessNo()}_${R.cond}_${H}${pad2(R.repeatN)}_${String(R.seriesN).padStart(3,"0")}`;
+  const c=R.c;
   const b=birthInfo();
+  const V=R.voice;
+  const heard = c.count ? countedHeard(R.seq, R.streamCutMs, c.countOf) : null;
+  const scheduled = R.seq ? (c.countOf==="all" ? R.seq.n : R.seq.t) : null;
   return {
-    schema:"motiq_prototype/6", build:BUILD,
+    schema:"motiq_prototype/7", build:BUILD, record_type:"trial",
     note:"PROTOTYPE. Browser mm and browser timing are approximations.",
-    trial_id:tid, trial_uid:R.startedISO.replace(/[:.]/g,"-")+"_"+tid,
+    trial_id:R.trialId, trial_uid:R.trialUid,
     session_key:SESSION_KEY,
     session_id:`${pid}-v${visitNo()}-s${sessNo()}`,
     visit_number:visitNo(), session_number:sessNo(), trial_number:R.seriesN,
     session_note:$("sessnote").value||null,
-    series_number:R.seriesN, repeat_number:R.repeatN, hand_label:H,
+    series_number:R.seriesN, repeat_number:R.repeatN, hand_label:R.handLabel,
     plan:{ position:TRIAL.index+1, planned_total:QUEUE.length,
-           queue:QUEUE.map(q=>({cond:q.cond,hand:q.hand,status:q.status,skip:q.skipReason})) },
+           queue:QUEUE.map(q=>({task:q.task,hand:q.hand,status:q.status,skip:q.skipReason})) },
     param_signature:sig, parameters:params,
     participant:{ id:$("pid").value, group:$("grp").value, sex:$("sex").value||null,
       birth_year:b.birth_year, birth_month:b.birth_month, age_years:b.age_years,
@@ -1916,14 +3035,17 @@ function buildRecord(){
     sound_check:{ confirmed:$("soundok").checked, route:$("audioroute").value,
                   volume_steps:$("volstep").value },
     trial:{ started_iso:R.startedISO, stopped_early:!!R.stoppedEarly, idle_ended:!!R.idleEnded,
-      untimed:!!R.untimed, length_s:R.durMs/1000, lead_in_ms:R.leadMs,
+      untimed:!!R.untimed, self_paced:TRIAL.lengthS==null,
+      length_s:R.durMs/1000, lead_in_ms:R.leadMs,
       first_contact_ms:R.firstContactMs,
-      t_zero:"START pressed; pen, tap and tone times share this origin" },
+      t_zero:"START pressed plus the lead-in; pen, tap, tone and recorder times share this origin" },
     audio_runtime: R.seq ? { output_latency_ms:R.outLat, base_latency_ms:R.baseLat,
       sample_rate:ctx?ctx.sampleRate:null } : null,
     sequence: R.seq ? { n_tones:R.seq.n, n_targets:R.seq.t, seed:R.seq.seed,
       stream_cut_ms: R.streamCutMs ?? null,
-      stop_mode: (AUDIO_DEFAULTS[R.cond]&&AUDIO_DEFAULTS[R.cond].stopMode)||"fixed",
+      stop_mode: (R.cfg && R.cfg.stopMode) || "fixed",
+      self_paced_stream: !!(R.cfg && R.cfg.self_paced),
+      adjacent_targets_allowed: !!R.seq.adjacent_allowed,
       n_tones_played: R.streamCutMs==null ? R.seq.n
         : R.seq.onsets.filter(o=>o<=R.streamCutMs).length,
       n_targets_played: R.streamCutMs==null ? R.seq.t
@@ -1931,33 +3053,77 @@ function buildRecord(){
       onsets_ms:R.seq.onsets, tone_type:R.seq.isTarget.map(x=>x?"target":"standard"),
       intervals_ms:R.seq.intervals, min_isi_ms:R.seq.minISI } : null,
     tapping:LAST.tp||null,
-    counting: RUN.c.count ? (()=>{
-      const heard = targetsHeard(R.seq, R.streamCutMs);
-      return { reported:RUN.reportedCount??null,
+    counting: c.count ? {
+        reported:R.reportedCount??null,
+        mode:c.countMode||"silent", of:c.countOf||"targets",
         presented: heard,
-        presented_scheduled: R.seq?R.seq.t:null,
-        error: (RUN.reportedCount!=null && heard!=null) ? RUN.reportedCount-heard : null,
-        note:"count error is a trial validity criterion, not a measure; presented counts targets that actually sounded" };
-    })() : null,
+        presented_scheduled: scheduled,
+        error: (R.reportedCount!=null && heard!=null) ? R.reportedCount-heard : null,
+        note:"count error is a trial validity criterion, not a measure; presented counts the tones of the counted class that actually sounded"
+      } : null,
+    verbal: c.verbal ? { ...(TRIAL.verbal||{}),
+        fluency_cue_ms: R.fluencyCueMs ?? null,
+        note:"prompt_text is the exact wording used with this participant on this trial. The app cannot score serial subtraction or fluency, so no count is collected."
+      } : null,
+    // Audio bytes are in IndexedDB under audio_id, never here: base64 in a ~5 MB string
+    // store would fill the quota and take the trial records down with it.
+    voice: V ? { consented:V.consented, attempted:V.attempted, recorded:V.recorded,
+        audio_id:V.audio_id, audio_store:V.audio_id?"indexeddb:motiq_audio/clips":null,
+        stored:V.stored??null, store_error:V.store_error??null,
+        mime_type:V.mime_type, bytes:V.bytes,
+        capture_window: c.audio ? "tone stream start to trial end" : "trial start to trial end",
+        recorder_start_ms:V.recorder_start_ms, recorder_stop_ms:V.recorder_stop_ms,
+        recorder_start_clock:V.recorder_start_clock,
+        recorder_start_alignment:V.recorder_start_alignment,
+        recorder_start_alignment_note:V.recorder_start_alignment_note,
+        failure:V.failure, failure_detail:V.failure_detail } : null,
     spiral_rendered:LAST.SPIRAL||null,
     strokes:LAST.STROKES,
     strokes_units:"x,y mm from spiral centre, y up; t ms from START; p pressure 0-1",
     taps:LAST.TAPS,
     attribution: LAST.att ? { rule:"nearest preceding onset, no upper bound",
+      respond_to:LAST.att.respond_to,
       rows:LAST.att.rows, target_lags_corrected_ms:LAST.att.targetLags } : null,
     device:{ user_agent:navigator.userAgent }
   };
 }
 
-function saveTrial(btn){
+async function saveTrial(btn){
   if(!RUN||RUN.saved||!LAST) return;
-  if(!storageWarnBeforeSave()) return;
+  if(btn){ btn.disabled=true; btn.textContent="SAVING…"; }
+  // A recording stopped a moment ago may still be assembling its blob. Waiting here is
+  // what stops a record being written that says "not recorded" about audio that exists.
+  if(RUN.voicePending){ try{ await RUN.voicePending; }catch(e){} }
+  const restore=()=>{ if(btn){ btn.disabled=false; btn.textContent="SAVE"; } };
+  if(!storageWarnBeforeSave()){ restore(); return; }
   const pid=$("pid").value||"unnamed";
   const H = TRIAL.hand==="both" ? "B" : (TRIAL.drawHand||TRIAL.tapHand)==="left" ? "L" : "R";
-  const ids=nextIds(pid,TRIAL.cond,H);
-  RUN.repeatN=ids.repeat; RUN.seriesN=ids.series;
+  const ids=nextIds(pid,TRIAL.task,H);
+  RUN.repeatN=ids.repeat; RUN.seriesN=ids.series; RUN.handLabel=H;
+  RUN.trialId=`${pid}_v${visitNo()}s${sessNo()}_${RUN.task}_${H}${pad2(RUN.repeatN)}_${String(RUN.seriesN).padStart(3,"0")}`;
+  RUN.trialUid=RUN.startedISO.replace(/[:.]/g,"-")+"_"+RUN.trialId;
+
+  let audioMsg="";
+  if(RUN.voice && RUN.voice.blob){
+    const id="aud_"+RUN.trialUid;
+    try{
+      await idbPut({ audio_id:id, trial_id:RUN.trialId, trial_uid:RUN.trialUid,
+        participant_id:pid, session_id:`${pid}-v${visitNo()}-s${sessNo()}`,
+        task:RUN.task, started_iso:RUN.startedISO,
+        mime_type:RUN.voice.mime_type, bytes:RUN.voice.bytes, blob:RUN.voice.blob });
+      RUN.voice.audio_id=id; RUN.voice.stored=true;
+      audioMsg=`<div class="note">Voice clip stored (${(RUN.voice.bytes/1024).toFixed(0)} KB,
+        ${esc(RUN.voice.mime_type||"unknown type")}) as <code>${esc(id)}</code>.</div>`;
+    }catch(e){
+      RUN.voice.stored=false; RUN.voice.store_error=String((e&&(e.name+": "+e.message))||e);
+      audioMsg=`<div class="bad">The trial saved but its <b>voice clip did not</b>
+        (${esc(RUN.voice.store_error)}). The trial record says so. Re-running the trial is the
+        only way to recover the audio.</div>`;
+    }
+  }
+
   const rec=buildRecord(); LAST.rec=rec;
-  const res=putTrial(rec); renderSaved();
+  const res=putTrial(rec); renderSaved(); renderAudioStore();
   if(res.ok){
     RUN.saved=true;
     if(btn){ btn.textContent="SAVED"; btn.disabled=true; }
@@ -1967,19 +3133,20 @@ function saveTrial(btn){
     if(nb) nb.className="";                            // NEXT becomes the primary action
     $("reminder").innerHTML=`<span style="color:var(--ok)">saved as ${rec.trial_id}</span>`;
     $("saveState").innerHTML=`<div class="good">Trial <b>${rec.trial_id}</b> saved
-      (${(res.bytes/1024).toFixed(0)} KB).</div>`;
+      (${(res.bytes/1024).toFixed(0)} KB).</div>` + audioMsg;
     // Saving does not advance. REPEAT stays available until the administrator chooses.
     $("saveState").innerHTML += `<div class="note">Press NEXT for the next trial, or REPEAT
       to run this one again.</div>`;
   } else {
-    const k=`${pid}|${TRIAL.cond}|${H}`;
+    restore();
+    const k=`${pid}|${TRIAL.task}|${H}`;
     REPEATS[k]=Math.max(0,(REPEATS[k]||1)-1); SERIES=Math.max(0,SERIES-1);
     // The record is held in memory and IS included in an export, so the trial is not
     // lost -- but it dies on reload. Recovery is offered here rather than on another
     // page, because leaving this screen is what loses it.
     $("saveState").innerHTML=`<div class="bad">Could not write to storage (${res.error}).
       <b>This trial is held in memory only</b> — it is included in an export, but a reload
-      loses it. Export now, clear space, then press SAVE again.</div>`;
+      loses it. Export now, clear space, then press SAVE again.</div>` + audioMsg;
     showRescueOverlay(res.error);
   }
 }
@@ -1995,6 +3162,8 @@ function showRescueOverlay(errName){
     and is included in an export — but a reload loses it.</p>
     <p style="font-size:16px;color:#5d6570">${u.n} trial${u.n===1?"":"s"} stored,
     ${(u.bytes/1024/1024).toFixed(1)} MB. Export, then clear, then retry.</p>
+    <p style="font-size:16px;color:#5d6570">Voice clips are not in this store and are not
+    affected by clearing it.</p>
     <div id="rescueNote" style="font-size:16px;margin-top:6px">${
       RESCUE_EXPORTED
         ? `<span style="color:var(--ok)">Exported. Now clear and retry.</span>`
@@ -2018,7 +3187,7 @@ function showRescueOverlay(errName){
     { label:"Clear and retry", ghost:true, onClick:()=>{
         if(!RESCUE_EXPORTED &&
            !confirm("You have not exported in this recovery.\n\nClearing destroys every saved trial on this device. Continue?")) return;
-        if(!confirm("Delete every saved trial on this device and retry the save?\n\nThe trial on screen is re-saved from memory straight afterwards.")) return;
+        if(!confirm("Delete every saved trial on this device and retry the save?\n\nThe trial on screen is re-saved from memory straight afterwards. Voice clips and screening records are NOT deleted.")) return;
         listTrials().forEach(t=>{ try{ localStorage.removeItem(t.key); }catch(e){} delete MEM[t.key]; });
         renderSaved(); RESCUE_EXPORTED=false; hideOverlay();
         const sb=[...$("ctrl").querySelectorAll("button")].find(b=>/^SAVE/.test(b.textContent));
@@ -2033,8 +3202,9 @@ const CSV_HEAD=[
   "session_number","trial_number","session_note","series_number",
   "repeat_number","hand_label","plan_position","plan_total",
   "participant_id","group","sex","birth_year","birth_month","age_years","dominant_hand",
-  "condition","hand_role","draw_hand","tap_hand","implement","instruction",
-  "notes","started_iso","stopped_early","idle_ended","untimed","trial_length_s","lead_in_ms",
+  "task","hand_role","draw_hand","tap_hand","implement","instruction",
+  "notes","started_iso","stopped_early","idle_ended","untimed","self_paced",
+  "trial_length_s","lead_in_ms",
   "first_contact_ms","css_px_per_mm","device_label","calibration_source","card_confirmed",
   "pen_check_rate_right_hz","pen_check_rate_left_hz",
   "sound_confirmed","audio_route","volume_steps",
@@ -2042,10 +3212,16 @@ const CSV_HEAD=[
   "audio_key","stream_duration_s","mean_isi_ms","jitter_pct","p_target","tone_ms",
   "f_standard_hz","f_target_hz","tone_level","seed","seed_mode",
   "n_tones","n_targets","n_tones_played","n_targets_played","stream_cut_ms","stop_mode",
+  "self_paced_stream","adjacent_targets_allowed",
   "min_isi_ms","output_latency_ms",
   "n_pen_samples","achieved_rate_hz","n_strokes",
   "n_taps_left","n_taps_right","n_taps_single","alternation_pct",
-  "count_reported","count_presented","count_error",
+  "count_reported","count_presented","count_error","count_mode","count_of",
+  "count_presented_scheduled",
+  "voice_consented","voice_recorded","voice_audio_id","voice_mime",
+  "voice_recorder_start_ms","voice_alignment","voice_failure",
+  "verbal_prompt_type","verbal_prompt_text","verbal_start_number","verbal_category",
+  "verbal_fluency_window_s","fluency_cue_ms",
   "param_signature","parameters_json",
   "row_type","stroke","t_ms","x_mm","y_mm","pressure","tilt_x","tilt_y",
   "pointer_type","coalesced","zone","tone_index","tone_type","lag_ms","lag_corrected_ms"
@@ -2060,23 +3236,32 @@ function mkRow(meta,o){
   if(unknown.length) throw new Error("unknown column: "+unknown.join());
   return [...meta,...TAIL_HEAD.map(k=>o[k]??"")];
 }
-// Targets that actually sounded. Conditions with stopMode "drawEnd" -- SPF_ODC among
-// them -- are meant to be cut short, so scoring a count against the whole scheduled
-// stream marks a valid trial wrong by however many tones were never played.
-function targetsHeard(seq, cutMs){
+// Tones of the counted class that actually sounded. Tasks with stopMode "drawEnd" are
+// meant to be cut short, so scoring a count against the whole scheduled stream marks a
+// valid trial wrong by however many tones were never played. countOf "all" counts every
+// tone -- SP_DEC has no targets at all, so counting targets there would score every
+// trial against zero.
+function countedHeard(seq, cutMs, countOf){
   if(!seq) return null;
-  return cutMs==null ? seq.t
-    : seq.onsets.filter((o,i)=>o<=cutMs && seq.isTarget[i]).length;
+  const all = countOf==="all";
+  let n=0;
+  for(let i=0;i<seq.n;i++){
+    if(cutMs!=null && seq.onsets[i]>cutMs) continue;
+    if(all || seq.isTarget[i]) n++;
+  }
+  return n;
 }
 
 function csvRows(rec){
   const P=rec.participant, pm=rec.parameters||{}, sp=pm.spiral||{}, tapp=pm.tap||{}, au=pm.audio||{};
   const S=rec.spiral_rendered||{}, seq=rec.sequence, tp=rec.tapping||{};
+  const ct=rec.counting||{}, V=rec.voice||{}, vb=rec.verbal||{};
   const pts=(rec.strokes||[]).flat();
   const dur=pts.length>1?(pts[pts.length-1].t-pts[0].t):0;
   const rate=dur>0?((pts.length-1)/(dur/1000)).toFixed(1):"";
   const pc=rec.pen_check||{};
   const num=v=>Number.isFinite(v)?v:"";
+  const bit=v=>v==null?"":(v?1:0);
   const meta=[
     rec.trial_id, rec.trial_uid, rec.build, rec.schema, rec.session_key??"", rec.session_id,
     rec.visit_number??"", rec.session_number??"", rec.trial_number??"", rec.session_note??"",
@@ -2084,13 +3269,14 @@ function csvRows(rec){
     rec.plan?.position??"", rec.plan?.planned_total??"",
     P.id||"unnamed", P.group??"", P.sex??"", P.birth_year??"", P.birth_month??"",
     P.age_years??"", P.dominant_hand??"",
-    rec.parameters?.condition??"", pm.hand_role??"", pm.draw_hand??"", pm.tap_hand??"",
+    pm.task??"", pm.hand_role??"", pm.draw_hand??"", pm.tap_hand??"",
     pm.implement??"", sp.instruction??"",
     rec.notes??"", rec.trial.started_iso, rec.trial.stopped_early?1:0, rec.trial.idle_ended?1:0,
-    rec.trial.untimed?1:0, rec.trial.length_s, rec.trial.lead_in_ms,
+    rec.trial.untimed?1:0, bit(rec.trial.self_paced),
+    rec.trial.length_s, rec.trial.lead_in_ms,
     rec.trial.first_contact_ms??"", rec.calibration.css_px_per_mm,
     rec.calibration.device_label??"", rec.calibration.source??"",
-    rec.calibration.card_confirmed==null?"":(rec.calibration.card_confirmed?1:0),
+    bit(rec.calibration.card_confirmed),
     pc.right?pc.right.rate:"", pc.left?pc.left.rate:"",
     rec.sound_check?(rec.sound_check.confirmed?1:0):"", rec.sound_check?rec.sound_check.route:"",
     rec.sound_check?rec.sound_check.volume_steps:"",
@@ -2101,13 +3287,21 @@ function csvRows(rec){
     seq?seq.n_tones:"", seq?seq.n_targets:"",
     seq?(seq.n_tones_played??""):"", seq?(seq.n_targets_played??""):"",
     seq?(seq.stream_cut_ms??""):"", seq?(seq.stop_mode??""):"",
+    seq?bit(seq.self_paced_stream):"", seq?bit(seq.adjacent_targets_allowed):"",
     seq?Math.round(seq.min_isi_ms):"",
     rec.audio_runtime?rec.audio_runtime.output_latency_ms.toFixed(2):"",
     pts.length, rate, (rec.strokes||[]).length,
     num(tp.nL), num(tp.nR), num(tp.nS),
     Number.isFinite(tp.altPct)?tp.altPct.toFixed(1):"",
-    rec.counting?(rec.counting.reported??""):"", rec.counting?(rec.counting.presented??""):"",
-    rec.counting?(rec.counting.error??""):"",
+    rec.counting?(ct.reported??""):"", rec.counting?(ct.presented??""):"",
+    rec.counting?(ct.error??""):"", rec.counting?(ct.mode??""):"", rec.counting?(ct.of??""):"",
+    rec.counting?(ct.presented_scheduled??""):"",
+    rec.voice?bit(V.consented):"", rec.voice?bit(V.recorded):"", rec.voice?(V.audio_id??""):"",
+    rec.voice?(V.mime_type??""):"", rec.voice?(V.recorder_start_ms??""):"",
+    rec.voice?(V.recorder_start_alignment??""):"", rec.voice?(V.failure??""):"",
+    rec.verbal?(vb.type??""):"", rec.verbal?(vb.prompt_text??""):"",
+    rec.verbal?(vb.start_number??""):"", rec.verbal?(vb.category??""):"",
+    rec.verbal?(vb.fluency_window_s??""):"", rec.verbal?(vb.fluency_cue_ms??""):"",
     rec.param_signature, JSON.stringify(rec.parameters)
   ];
   const out=[];
@@ -2122,6 +3316,9 @@ function csvRows(rec){
       lag_corrected_ms:a.lagCorrected!=null?(+a.lagCorrected).toFixed(2):""})); });
   if(seq) seq.onsets_ms.forEach((on,i)=>out.push(mkRow(meta,
     {row_type:"tone",t_ms:(+on).toFixed(2),tone_index:i+1,tone_type:seq.tone_type[i]})));
+  // A trial with no pen samples, no taps and no tones -- an abandoned SP_VRB, say --
+  // would otherwise vanish from the CSV entirely.
+  if(!out.length) out.push(mkRow(meta,{row_type:"trial"}));
   return out;
 }
 const qcsv=v=>{ const s=v===null||v===undefined?"":String(v);
@@ -2129,6 +3326,42 @@ const qcsv=v=>{ const s=v===null||v===undefined?"":String(v);
 function csvText(recs){ const lines=[CSV_HEAD.join(",")];
   recs.forEach(r=>csvRows(r).forEach(row=>lines.push(row.map(qcsv).join(","))));
   return lines.join("\n"); }
+
+// Screening rows have almost nothing in common with trial rows, so they get their own
+// file rather than a hundred empty columns on every pen sample.
+const SCREEN_HEAD=[
+  "screen_uid","schema","build","screen","started_iso","participant_id","group","sex",
+  "birth_year","birth_month","age_years","dominant_hand",
+  "session_key","session_id","visit_number","session_number",
+  "hand","implement","css_px_per_mm","measure_grade",
+  "mtb_completion_time_ms","mtb_errors","mtb_strokes","mtb_path_length_mm",
+  "mtb_mean_velocity_mm_s","mtb_samples","mtb_node_arrivals_json","mtb_error_log_json",
+  "dot_run_duration_ms","dot_lifetime_ms","dots_presented","dots_unscored_at_cutoff",
+  "dot_hits","dot_misses","dot_off_target_taps","dot_rt_mean_ms","dot_rt_sd_ms","dots_json",
+  "measure_grade_note","notes"
+];
+function screenRow(r){
+  const P=r.participant||{};
+  return [
+    r.screen_uid, r.schema, r.build, r.screen, r.started_iso, P.id??"", P.group??"", P.sex??"",
+    P.birth_year??"", P.birth_month??"", P.age_years??"", P.dominant_hand??"",
+    r.session_key??"", r.session_id??"", r.visit_number??"", r.session_number??"",
+    r.hand??"", r.implement??"", r.calibration?.css_px_per_mm??"", r.measure_grade??"",
+    r.completion_time_ms??"", r.errors??"", r.strokes??"", r.path_length_mm??"",
+    r.mean_velocity_mm_s??"", r.samples??"",
+    r.node_arrivals_ms?JSON.stringify(r.node_arrivals_ms):"",
+    r.error_log?JSON.stringify(r.error_log):"",
+    r.run_duration_ms??"", r.dot_lifetime_ms??"", r.dots_presented??"",
+    r.dots_unscored_at_cutoff??"", r.hits??"", r.misses??"", r.off_target_taps??"",
+    r.rt_mean_ms??"", r.rt_sd_ms??"", r.dots?JSON.stringify(r.dots):"",
+    r.measure_grade_note??"", r.notes??""
+  ];
+}
+function screenCSVText(recs){
+  const lines=[SCREEN_HEAD.join(",")];
+  recs.forEach(r=>lines.push(screenRow(r).map(qcsv).join(",")));
+  return lines.join("\n");
+}
 
 /* ------------------------------------------------------- storage + export */
 const STORE_PREFIX="motiq_trial:"; const MEM={}; let STORAGE_OK=true;
@@ -2154,7 +3387,7 @@ function getTrial(k){ try{ const v=localStorage.getItem(k); if(v) return JSON.pa
   return MEM[k]?JSON.parse(MEM[k]):null; }
 function delTrial(k){ try{ localStorage.removeItem(k); }catch(e){} delete MEM[k]; renderSaved(); }
 function delAllTrials(){
-  if(!confirm("Delete every saved trial on this device? Export first if you have not.")) return;
+  if(!confirm("Delete every saved trial on this device? Export first if you have not.\n\nVoice clips and screening records are kept — delete those with their own buttons.")) return;
   listTrials().forEach(t=>{ try{ localStorage.removeItem(t.key); }catch(e){} delete MEM[t.key]; });
   renderSaved();
 }
@@ -2171,13 +3404,18 @@ function renderSaved(){
   const pct=Math.min(100,100*total/(5*1024*1024));
   if(!ts.length) $("savedBody").innerHTML=`<p class="note" style="margin:0">No trials saved yet.</p>`;
   else{
-    let h=`<table><tr><th>Started (local)</th><th>Trial ID</th><th>Condition</th><th class="num">Pen</th>
-           <th class="num">Taps</th><th class="num">KB</th><th></th></tr>`;
+    let h=`<table><tr><th>Started (local)</th><th>Trial ID</th><th>Task</th><th class="num">Pen</th>
+           <th class="num">Taps</th><th>Voice</th><th class="num">KB</th><th></th></tr>`;
     ts.forEach(t=>{ const r=getTrial(t.key); if(!r) return;
       const pen=(r.strokes||[]).reduce((a,s)=>a+s.length,0);
+      const V=r.voice;
+      const vcell = !V ? "" : V.audio_id
+        ? `<button class="ghost sm" onclick="downloadAudio('${V.audio_id}')">download</button>`
+        : `<span style="color:#8c2020">none</span>`;
       h+=`<tr><td>${localClock(r.trial?.started_iso)}</td>
-          <td><code>${r.trial_id||"—"}</code></td><td>${r.parameters?.condition||""}</td>
+          <td><code>${esc(r.trial_id)||"—"}</code></td><td>${esc(r.parameters?.task)||""}</td>
           <td class="num">${pen}</td><td class="num">${(r.taps||[]).length}</td>
+          <td>${vcell}</td>
           <td class="num">${(t.size/1024).toFixed(0)}</td>
           <td><button class="ghost sm" onclick="delTrial('${t.key}')">delete</button></td></tr>`; });
     $("savedBody").innerHTML=h+`</table>`;
@@ -2190,6 +3428,73 @@ function renderSaved(){
      will be lost on refresh. This usually means the page was opened as a local file rather than
      served over http.</div>`);
 }
+
+/* ------------------------------------------------------- voice clip store */
+let AUDIO_INDEX=[];
+function renderAudioStore(){
+  if(!$("audioBody")) return;
+  idbAll().then(list=>{
+    AUDIO_INDEX=(list||[]).map(r=>({ audio_id:r.audio_id, trial_id:r.trial_id,
+      trial_uid:r.trial_uid, participant_id:r.participant_id, session_id:r.session_id,
+      task:r.task, started_iso:r.started_iso, mime_type:r.mime_type,
+      bytes:r.bytes ?? (r.blob?r.blob.size:null) }))
+      .sort((a,b)=>a.started_iso<b.started_iso?1:-1);
+    if(!AUDIO_INDEX.length){ $("audioBody").innerHTML=`<p class="note" style="margin:0">No
+      voice clips on this device.</p>`; return; }
+    const mb=AUDIO_INDEX.reduce((a,r)=>a+(r.bytes||0),0)/1024/1024;
+    let h=`<table><tr><th>Started (local)</th><th>Trial ID</th><th>Task</th><th>Type</th>
+           <th class="num">KB</th><th></th><th></th></tr>`;
+    AUDIO_INDEX.forEach(r=>{
+      h+=`<tr><td>${localClock(r.started_iso)}</td><td><code>${esc(r.trial_id)}</code></td>
+          <td>${esc(r.task)}</td><td>${esc(r.mime_type)}</td>
+          <td class="num">${r.bytes?(r.bytes/1024).toFixed(0):"–"}</td>
+          <td><button class="ghost sm" onclick="downloadAudio('${r.audio_id}')">download</button></td>
+          <td><button class="ghost sm" onclick="delAudio('${r.audio_id}')">delete</button></td></tr>`; });
+    $("audioBody").innerHTML=h+`</table><div class="note">${AUDIO_INDEX.length} clip${AUDIO_INDEX.length===1?"":"s"},
+      ${mb.toFixed(1)} MB in IndexedDB. This is a separate store from the ${'~'}5 MB the trial
+      records use, so audio can never crowd out a trial save.</div>`;
+  }).catch(e=>{
+    $("audioBody").innerHTML=`<div class="bad">Cannot read the voice clip store (${esc(String(e&&e.message||e))}).</div>`;
+  });
+}
+function saveBlob(name, blob){
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(blob); a.download=name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(a.href),4000);
+}
+function audioFileName(r){
+  return `${r.trial_id||r.audio_id}.${AUDIO_EXT(r.mime_type||"")}`;
+}
+function downloadAudio(id){
+  idbGet(id).then(r=>{
+    if(!r||!r.blob){ alert("That clip is not in the store any more."); return; }
+    saveBlob(audioFileName(r), r.blob);
+  }).catch(e=>alert("Could not read the clip: "+(e&&e.message||e)));
+}
+// Downloads are started one at a time with a gap. Safari asks before allowing multiple
+// downloads and refuses them outright if the page is not in the foreground, so this
+// reports what it managed rather than assuming it worked.
+function downloadAllAudio(){
+  idbAll().then(list=>{
+    const rs=(list||[]).filter(r=>r.blob);
+    if(!rs.length){ alert("No voice clips to download."); return; }
+    if(!confirm(`Download ${rs.length} clip${rs.length===1?"":"s"}?\n\nThey are saved one at a time. Safari may ask permission for multiple downloads — allow it, and keep this page in the foreground until they finish.`)) return;
+    let i=0;
+    const step=()=>{ if(i>=rs.length) return;
+      try{ saveBlob(audioFileName(rs[i]), rs[i].blob); }catch(e){}
+      i++; setTimeout(step,450); };
+    step();
+  }).catch(e=>alert("Could not read the clip store: "+(e&&e.message||e)));
+}
+function delAudio(id){
+  if(!confirm("Delete this voice clip? The trial record keeps its audio_id, which will then point at nothing.")) return;
+  idbDel(id).then(renderAudioStore).catch(e=>alert("Could not delete: "+(e&&e.message||e)));
+}
+function delAllAudio(){
+  if(!confirm("Delete every voice clip on this device?\n\nExport them first if you have not — they cannot be recovered, and the trial records will keep audio_ids that point at nothing.")) return;
+  idbClear().then(renderAudioStore).catch(e=>alert("Could not clear: "+(e&&e.message||e)));
+}
+
 function fileStem(){ const d=new Date(), z=n=>String(n).padStart(2,"0");
   const pid=($("pid").value||"unnamed").toLowerCase();
   return `motiq_${pid}_v${visitNo()}s${sessNo()}_${d.getFullYear()}_${z(d.getMonth()+1)}_${z(d.getDate())}`; }
@@ -2199,9 +3504,35 @@ function save(name,text,mime){ const b=new Blob([text],{type:mime}),a=document.c
 function exportAllCSV(){ const r=listTrials().map(t=>getTrial(t.key)).filter(Boolean);
   if(!r.length){ alert("Nothing saved to export."); return; }
   save(`${fileStem()}.csv`,csvText(r),"text/csv"); }
-function exportAllJSON(){ const r=listTrials().map(t=>getTrial(t.key)).filter(Boolean);
-  if(!r.length){ alert("Nothing saved to export."); return; }
-  save(`${fileStem()}.json`,JSON.stringify(r,null,2),"application/json"); }
+function exportScreenCSV(){ const r=listScreens().map(t=>getScreen(t.key)).filter(Boolean);
+  if(!r.length){ alert("No screening records to export."); return; }
+  save(`${fileStem()}_screening.csv`,screenCSVText(r),"text/csv"); }
+// One object with named sections rather than a bare array of trials: screening records
+// are participant-level and must not be mistaken for trials, and the audio index says
+// which clips a trial's audio_id should resolve to. The clips themselves are binary and
+// stay in IndexedDB -- use the audio buttons above to get the files.
+function exportAllJSON(){
+  const trials=listTrials().map(t=>getTrial(t.key)).filter(Boolean);
+  const screening=listScreens().map(t=>getScreen(t.key)).filter(Boolean);
+  if(!trials.length && !screening.length){ alert("Nothing saved to export."); return; }
+  idbAll().then(list=>{
+    const audio=(list||[]).map(r=>({ audio_id:r.audio_id, trial_id:r.trial_id,
+      trial_uid:r.trial_uid, participant_id:r.participant_id, task:r.task,
+      started_iso:r.started_iso, mime_type:r.mime_type,
+      bytes:r.bytes ?? (r.blob?r.blob.size:null) }));
+    save(`${fileStem()}.json`, JSON.stringify({
+      schema:"motiq_prototype/7", build:BUILD, exported_iso:new Date().toISOString(),
+      note:"trials are per trial; screening is per participant administration; audio_index lists the voice clips held in IndexedDB on the device that produced this file, and the clip bytes are downloaded separately.",
+      trials, screening, audio_index:audio
+    },null,2),"application/json");
+  }).catch(()=>{
+    save(`${fileStem()}.json`, JSON.stringify({
+      schema:"motiq_prototype/7", build:BUILD, exported_iso:new Date().toISOString(),
+      note:"the voice clip store could not be read, so audio_index is empty; the clips may still exist on the device.",
+      trials, screening, audio_index:[]
+    },null,2),"application/json");
+  });
+}
 function showCSVText(){ const r=listTrials().map(t=>getTrial(t.key)).filter(Boolean);
   if(!r.length){ alert("Nothing saved."); return; }
   const b=$("csvbox"); b.classList.remove("hidden"); b.value=csvText(r); b.focus(); b.select(); }
@@ -2238,13 +3569,14 @@ const STATE_KEY="motiq_state";
 const STATE_FIELDS=["pid","grp","sex","byear","bmonth","domhand","notes",
                     "visitno","sessnum","sessnote","instr","tmpl","implement",
                     "pitch","turns","startdia","endang","split","tapdia","zonegap",
-                    "fstd","ftgt","lvl","seedmode","idle","ppmm"];
+                    "fstd","ftgt","lvl","seedmode","idle","ppmm","spest"];
 function saveState(){
   try{
     const f={}; STATE_FIELDS.forEach(id=>{ if($(id)) f[id]=$(id).value; });
     localStorage.setItem(STATE_KEY, JSON.stringify({
       fields:f, sessionKey:SESSION_KEY, plan:PLAN, queue:QUEUE, qpos:QPOS,
-      series:SERIES, repeats:REPEATS, lastCond:LAST_COND, lastHand:LAST_HAND,
+      series:SERIES, repeats:REPEATS, lastTask:LAST_TASK, lastHand:LAST_HAND,
+      selfPacedEstS:SELF_PACED_EST_S,
       audio:AUDIO_DEFAULTS, savedAt:new Date().toISOString()
     }));
   }catch(e){}
@@ -2259,32 +3591,46 @@ function restoreState(){
   try{
     Object.entries(st.fields).forEach(([id,v])=>{ if($(id)) $(id).value=v; });
     if(st.sessionKey) SESSION_KEY=st.sessionKey;
+    SELF_PACED_EST_S=clamp(Number(st.selfPacedEstS)||Number(st.fields.spest)||20,5,180);
+    if($("spest")) $("spest").value=SELF_PACED_EST_S;
 
     // rebuild the plan from defaults, then overlay whatever the saved plan still fits
     const fresh=defaultPlan();
     if(st.plan && typeof st.plan==="object"){
       CATALOGUE.forEach(c=>{
-        const old=st.plan[c.id]; if(!old) return;                  // condition added since
+        const old=st.plan[c.id]; if(!old) return;                  // task added since
         const allowed=handsAllowed(c);
+        // A self-paceable task may legitimately hold null here, so "no length" is only
+        // repaired for tasks that cannot be self-paced.
+        const len = c.selfPaceable
+          ? (old.lengthS==null ? null : (Number(old.lengthS)||fixedLengthFor(c)))
+          : (c.lengthS===null ? null : (Number(old.lengthS)||c.lengthS));
         fresh[c.id]={ include:!!old.include,
           repeats:Number(old.repeats)>0?Number(old.repeats):c.repeats,
           hands:allowed.includes(old.hands)?old.hands:allowed[0],
-          lengthS:(c.lengthS===null?null:(Number(old.lengthS)||c.lengthS)),
-          oneHand:old.oneHand==="nondominant"?"nondominant":"dominant" };
+          lengthS:len,
+          oneHand:old.oneHand==="nondominant"?"nondominant":"dominant",
+          verbalType:c.verbal?(VERBAL_PROMPTS[old.verbalType]?old.verbalType:"count"):null };
       });
     }
     PLAN=fresh;
 
-    // drop queued trials whose condition no longer exists
-    QUEUE=Array.isArray(st.queue) ? st.queue.filter(q=>q&&byId(q.cond)) : [];
+    // Drop queued trials whose task no longer exists. State written before v10 named the
+    // field "cond"; it is migrated rather than discarded, so a session interrupted by a
+    // reload across the rename does not lose its trial list.
+    QUEUE=Array.isArray(st.queue)
+      ? st.queue.map(q=>(q && q.cond && !q.task) ? {...q, task:q.cond} : q)
+                .filter(q=>q&&byId(q.task))
+      : [];
     QPOS=Math.max(0, Math.min(Number(st.qpos)||0, QUEUE.length));
     SERIES=Number(st.series)||0;
     if(st.repeats && typeof st.repeats==="object") Object.assign(REPEATS, st.repeats);
-    LAST_COND=st.lastCond||null; LAST_HAND=st.lastHand||null;
+    LAST_TASK=st.lastTask||st.lastCond||null; LAST_HAND=st.lastHand||null;
     if(st.audio) Object.entries(st.audio).forEach(([k,v])=>{
       if(AUDIO_DEFAULTS[k] && v && typeof v==="object") Object.assign(AUDIO_DEFAULTS[k],v); });
 
-    applyCal(); updateAgeNote(); renderStatus(); renderPlan(); renderQueue(); renderAudioTable();
+    applyCal(); updateAgeNote(); onVoiceConsentChange();
+    renderStatus(); renderPlan(); renderQueue(); renderAudioTable();
     const done=QUEUE.filter(q=>q.status==="done").length;
     if($("statusbar")) $("statusbar").insertAdjacentHTML("beforeend",
       ` <span style="color:var(--ok)">· restored (${done} of ${QUEUE.length} done)</span>`);
@@ -2300,7 +3646,7 @@ function restoreState(){
   }
 }
 function hardReset(){
-  if(!confirm("Clear the saved session and calibration?\n\nSaved trials are kept. The page will reload.")) return;
+  if(!confirm("Clear the saved session and calibration?\n\nSaved trials, screening records and voice clips are kept. The page will reload.")) return;
   clearState();
   try{ localStorage.removeItem("motiq_ppmm"); }catch(e){}
   location.reload();
@@ -2310,12 +3656,16 @@ function clearState(){ try{ localStorage.removeItem(STATE_KEY); }catch(e){} }
 document.addEventListener("change", e=>{ if(STATE_FIELDS.includes(e.target.id)) saveState(); });
 document.addEventListener("input",  e=>{ if(STATE_FIELDS.includes(e.target.id)) saveState(); });
 
-window.addEventListener("resize",()=>{ if($("stage").classList.contains("on")){ layout(); drawScene(); }});
+window.addEventListener("resize",()=>{
+  if($("stage").classList.contains("on")){ layout(); drawScene(); }
+  else if(!$("pg2").classList.contains("hidden")){ mtbReset(); dotReset(); }
+});
 // ?reset in the address clears saved state before anything reads it -- the way back if
 // the app will not start.
 if(/[?&]reset\b/.test(location.search)){ clearState(); }
 
-renderPlan(); renderAudioTable(); renderSaved(); renderStatus();
+renderPlan(); renderAudioTable(); renderSaved(); renderScreens(); renderStatus();
+onVoiceConsentChange(); mtbReset(); dotReset(); renderAudioStore();
 
 // Nothing below start-up should be able to leave a blank page.
 try { if(restoreState()) goPage(3); }
