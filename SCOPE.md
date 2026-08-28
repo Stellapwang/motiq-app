@@ -1,4 +1,4 @@
-v001 | 2026-08-26 | 76 lines
+v002 | 2026-08-27 | 78 lines
 
 # SCOPE — motiq-app
 
@@ -20,6 +20,7 @@ the production instrument. The native iPadOS build is a separate future project.
 
 - CLAUDE.md
 - SCOPE.md
+- BACKLOG.md
 
 No governance file in this repo is publicly served. `index.html` is application code, not
 a governance doc, and carries no version stamp.
@@ -30,7 +31,7 @@ Because main deploys, CLAUDE.md Part B applies in full: never commit application
 directly to main. One feature branch per task, branched from an up-to-date main, commit
 locally, push the branch, PR only when asked, merge, then clean up.
 
-SCOPE.md and CLAUDE.md are governance docs and go direct to main.
+SCOPE.md, CLAUDE.md, and BACKLOG.md are governance docs and go direct to main.
 
 ## Releases and data provenance
 
@@ -53,10 +54,10 @@ Therefore:
 
 ## Version history before git
 
-Tags `v0.3` through `v8.02` were imported on the date in this file's stamp from files kept
-outside version control. Their commit dates are the import date, not the date the work was
-done; each commit message records the original build date. The history is reconstructed and
-is labeled as such — it is not a record of when the changes were made.
+Tags `v0.3` through `v8.02` were imported on 2026-08-26 from files kept outside version
+control. Their commit dates are the import date, not the date the work was done; each
+commit message records the original build date. The history is reconstructed and is
+labeled as such — it is not a record of when the changes were made.
 
 Only versions that were hardened and deployable were imported. Intermediate chat drafts
 (`motiq_webapp_*.html`) were deliberately left out of the repo and remain in iCloud.
@@ -67,7 +68,8 @@ deploy. This repo exists so that cannot happen again.
 
 ## Backlog
 
-Not adopted. The Part C backlog process is available if this project later wants it.
+Adopted. This project uses the Part C backlog process, with its own `BACKLOG.md` in this
+repo. Categories and status semantics are defined in that file's header.
 
 ## Data rules
 
