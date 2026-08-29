@@ -9,7 +9,7 @@
 <!--
   MotiQ prototype  v10
   ====================
-  PROTOTYPE. Browser millimetres and browser timing are approximations.
+  PROTOTYPE. Browser millimeters and browser timing are approximations.
 
   Built to be revised. Every task is one entry in CATALOGUE below: what it needs,
   how many repeats, which hands, where it sits in the administration order. Adding,
@@ -155,7 +155,7 @@
 
 <div class="wrap" id="app">
   <h1>MotiQ prototype</h1>
-  <p class="sub">Millimetres and timing are approximate.<br><span id="buildstamp"></span></p>
+  <p class="sub">Millimeters and timing are approximate.<br><span id="buildstamp"></span></p>
 
   <div id="statusbar" class="note" style="background:#eef4fb;border:1px solid #cfe0f2;
        border-radius:8px;padding:9px 13px;margin:0 0 12px;font-size:14px;color:var(--ink)"></div>
@@ -234,6 +234,7 @@
         <span><b>Voice recording consented.</b> The participant has agreed to be audio-recorded
         for the spoken tasks. Until this is ticked those tasks cannot be added to the plan.
         Recordings stay on this device.</span></label>
+      <div id="securenote"></div>
       <div id="voicenote"></div>
       <div class="btnrow">
         <button class="ghost" onclick="newParticipant()">Start a new participant</button>
@@ -245,19 +246,26 @@
     </fieldset>
     <fieldset>
       <legend>Pen check <span style="font-weight:400;color:var(--muted)">— per participant</span></legend>
-      <p class="note" style="margin-top:0">Ask the participant to draw a straight line from
-      <b>A</b> to <b>B</b>, once with each hand. This checks that the stylus registers, that
-      samples arrive at a usable rate, and that pressure varies. It is a device check, not a
-      trial — no trial record is written.</p>
-      <div class="r3">
+      <p class="note" style="margin-top:0">Ask the participant to draw the spiral below, once
+      with each hand. This checks that the stylus registers, that samples arrive at a usable
+      rate, and that pressure varies. A spiral rather than a straight line: the same four
+      numbers come out, but over a longer stroke, so the rate estimate does not depend on how
+      long a line somebody happened to draw — and it rehearses the instruction SP will use.
+      It is a device check, not a trial — no trial record is written.</p>
+      <div class="r4">
         <div><label for="pchand">Hand</label>
-          <select id="pchand"><option value="right">Right</option><option value="left">Left</option></select></div>
+          <select id="pchand" onchange="penPadClear()"><option value="right">Right</option><option value="left">Left</option></select></div>
         <div><label for="pcimpl">Implement</label>
           <select id="pcimpl"><option value="pen">Stylus</option><option value="finger">Index finger</option></select></div>
+        <div><label for="pcmode">Task</label>
+          <select id="pcmode" onchange="penPadClear()">
+            <option value="between" selected>Line</option>
+            <option value="trace">Trace</option></select></div>
         <div><label>&nbsp;</label><div class="btnrow" style="margin:0">
           <button class="ghost" onclick="penPadClear()">Clear</button></div></div>
       </div>
-      <canvas id="penpad" height="150"></canvas>
+      <canvas id="penpad" class="screenpad"></canvas>
+      <div id="pcinstr" class="note"></div>
       <div id="pcresult" class="note"></div>
     </fieldset>
 
@@ -269,17 +277,25 @@
       <legend>Mini Trail B <span style="font-weight:400;color:var(--muted)">— screening, per participant</span></legend>
       <p class="note" style="margin-top:0">Ask the participant to join the circles in order —
       <b>1, A, 2, B, 3, C, 4, D</b> — in one continuous movement, as quickly as they can without
-      lifting the stylus. The layout is the same every single time it is administered: a
-      covariate whose difficulty varied between administrations would not be comparable.
-      Expect roughly 15–20 seconds.</p>
-      <div class="r3">
+      lifting the stylus. Nothing on screen says which circle is next: finding it, and keeping
+      the two sequences in step, is what this screen measures. A move to the wrong circle does
+      not connect — tell them to go back to the last correct one and carry on. The layout is the
+      same every single time it is administered: a covariate whose difficulty varied between
+      administrations would not be comparable. Expect roughly 15–20 seconds.</p>
+      <p class="note" style="margin-top:6px"><b>Run the practice first.</b> It is four circles
+      with the same rules, untimed, and writes no record. Without it the first real
+      administration measures whether the instruction was understood rather than whether the
+      participant can do the task.</p>
+      <div class="r4">
         <div><label for="mtbhand">Hand</label>
           <select id="mtbhand"><option value="dominant">Dominant</option>
             <option value="nondominant">Non-dominant</option></select></div>
         <div><label for="mtbimpl">Implement</label>
           <select id="mtbimpl"><option value="pen">Stylus</option><option value="finger">Index finger</option></select></div>
         <div><label>&nbsp;</label><div class="btnrow" style="margin:0">
-          <button class="ghost" onclick="mtbReset()">Restart</button></div></div>
+          <button class="ghost" onclick="mtbPractice()">Practice</button></div></div>
+        <div><label>&nbsp;</label><div class="btnrow" style="margin:0">
+          <button class="ghost" onclick="mtbReset()">Start the real one</button></div></div>
       </div>
       <canvas id="mtbpad" class="screenpad"></canvas>
       <div id="mtbresult"></div>
@@ -431,9 +447,9 @@
         <div><label for="split">Split (drawing share)</label><input id="split" type="number" value="0.70" step="0.05" min="0.4" max="1"></div>
         <div><label for="tmpl">Template line</label>
           <select id="tmpl">
-            <option value="grey" selected>Grey, solid</option>
+            <option value="grey" selected>Gray, solid</option>
             <option value="black">Black, solid</option>
-            <option value="dotted">Grey, dotted</option>
+            <option value="dotted">Gray, dotted</option>
           </select></div>
       </div>
       <div class="r4">
@@ -611,7 +627,7 @@ const BUILD = "v9.02 2026-08-19";
    lengthS   trial length in seconds; null means self-paced (ends on END)
    implement default drawing implement where relevant
 
-   Fields added in v10 -- all optional, absent means the old behaviour:
+   Fields added in v10 -- all optional, absent means the old behavior:
 
    selfPaceable 1 = the Length column offers a choice between a fixed length and
              self-paced, instead of being fixed one way. Self-paced here means the
@@ -695,7 +711,7 @@ const CATALOGUE = [
 // values. Nothing below has been piloted; they are starting points, editable on the
 // Parameters page exactly like every other row here, and expected to change.
 // Jitter is 50% on all three deliberately: unpredictable onsets are the point of the
-// design, not an artefact of picking a round number.
+// design, not an artifact of picking a round number.
 const AUDIO_DEFAULTS = {
   DET:     { durS:20, isi:1000, jit:30, ptg:0,    tone:50, lead:500,
              label:"Tones only — respond to every tone" },
@@ -719,14 +735,31 @@ const AUDIO_DEFAULTS = {
 
 // The spoken secondary tasks offered by SP_VRB. One task with a prompt type, rather
 // than four near-identical catalogue entries, because they differ only in what is said.
+// step   how the number moves each time the participant speaks; absent for fluency
+// range  the inclusive range the start number is drawn from, fresh every trial. A new
+//        start each trial gives unlimited alternate forms and stops anything carrying
+//        over between repeat visits. The number actually used goes into the record.
+// windowS  fluency only: the naming window is fixed, even though the trial itself stays
+//        self-paced like every other spiral trial. Fluency output is steeply front-loaded,
+//        so words per second cannot be compared across windows of different length.
 const VERBAL_PROMPTS = {
-  count:     { label:"Count forward aloud at own pace", selfPaced:true,
-               help:"The articulation-only baseline: speaking without any cognitive load to speak of." },
-  subtract3: { label:"Serial subtraction by 3", selfPaced:true,
-               help:"A different two-digit start number every trial, so there are unlimited alternate forms and no contamination across visits." },
-  fluency:   { label:"Category fluency", selfPaced:true, windowS:60,
-               help:"Scored over a fixed 60 s window. Fluency output is steeply front-loaded — roughly 40–45% of words come in the first 15 s — so words per second is not comparable between windows of different length." }
+  up1:     { label:"Count forward by 1",       step:1,  range:[10,59],
+             help:"The articulation-only baseline: speaking aloud with next to no cognitive load." },
+  up2:     { label:"Count forward by 2",       step:2,  range:[10,59],
+             help:"The same articulation with a small arithmetic load on top." },
+  down1:   { label:"Count backward by 1",      step:-1, range:[60,99],
+             help:"Counting down cannot be run off automatically the way counting up can." },
+  down2:   { label:"Count backward by 2",      step:-2, range:[60,99],
+             help:"Between backward counting and serial subtraction." },
+  sub3:    { label:"Serial subtraction by 3",  step:-3, range:[60,99],
+             help:"The heaviest of the counting prompts." },
+  fluency: { label:"Category fluency", windowS:60,
+             help:"Scored over a fixed 60 s window. Fluency output is steeply front-loaded — roughly 40–45% of words come in the first 15 s — so words per second is not comparable between windows of different length." }
 };
+// Plans and saved sessions written before the menu was expanded used these two keys.
+const VERBAL_ALIAS = { count:"up1", subtract3:"sub3" };
+const VERBAL_KEY = k => VERBAL_PROMPTS[k] ? k : (VERBAL_ALIAS[k] || "up1");
+const verbalPrompt = k => VERBAL_PROMPTS[VERBAL_KEY(k)];
 
 // Posture and grip figure, shown on the instruction screen for drawing tasks.
 // Embedded so the app remains one file with nothing to fetch.
@@ -752,8 +785,8 @@ function instructionFor(taskId, opts){
     lines.push("Sit comfortably.");
     lines.push("Start in the middle.");
     lines.push(mode==="between"
-      ? "Follow the white path from the centre all the way out."
-      : "Trace the spiral line from the centre all the way out, as accurately as you can.");
+      ? "Follow the white path from the center all the way out."
+      : "Trace the spiral line from the center all the way out, as accurately as you can.");
     lines.push(`Keep your ${tool} on the screen the whole time. Do not lift it.`);
     lines.push("Do not rest your hand or arm on the table.");
   } else if(dualTask){
@@ -777,13 +810,15 @@ function instructionFor(taskId, opts){
   const a = AUDIO_DEFAULTS[taskId];
   if(c.audio){
     if(c.respond==="both"){
-      // Switching. Both tone types carry a response and they are different responses,
-      // so the two rules are stated as a pair and nothing is left implicit.
+      // Switching. Both tone types carry a response and they are DIFFERENT responses, so
+      // each mapping gets its own line with the tone first and the action second, and each
+      // line also says what NOT to do. A compound sentence holding both mappings at once
+      // is exactly what a 75-year-old hearing this once will not retain.
       lines.push("You will hear low beeps and high beeps.");
-      lines.push(`${also}tap the circle every time you hear a <b>low</b> beep.`);
-      lines.push("When you hear a <b>high</b> beep, do not tap.");
-      lines.push("Say the next number out loud instead — one, two, three, and so on.");
-      lines.push("Start at one, and go up by one for every high beep.");
+      lines.push("When you hear a <b>LOW</b> beep — tap the circle. Say nothing.");
+      lines.push("When you hear a <b>HIGH</b> beep — say the next number out loud. Do not tap.");
+      lines.push("Start at one and keep counting up: one, two, three.");
+      lines.push("Keep drawing the whole time.");
       lines.push("Tell me the number you reached when the trial ends.");
     } else if(c.count){
       const aloud = c.countMode==="aloud";
@@ -812,20 +847,25 @@ function instructionFor(taskId, opts){
   }
 
   if(c.verbal){
-    const type = (verbal&&verbal.type) || "count";
-    if(type==="subtract3"){
-      const from = (verbal&&verbal.start_number) || "the number I give you";
-      lines.push(`${also}start at <b>${from}</b> and count backwards, taking away three each time.`);
-      lines.push("Say every number out loud.");
-      lines.push("Keep going until I tell you to stop.");
-    } else if(type==="fluency"){
+    const type = VERBAL_KEY(verbal&&verbal.type);
+    const pr = VERBAL_PROMPTS[type];
+    if(type==="fluency"){
       const cat = (verbal&&verbal.category) ? `<b>${verbal.category}</b>` : "the category I give you";
       lines.push(`${also}name as many ${cat} as you can.`);
       lines.push("Say them out loud, one after another, as fast as they come to you.");
       lines.push("Keep going until I tell you to stop.");
     } else {
-      lines.push(`${also}count out loud — one, two, three — starting at one.`);
-      lines.push("Go at whatever pace is comfortable. There is no need to hurry.");
+      const start = (verbal && verbal.start_number!=null) ? verbal.start_number : null;
+      const from  = start!=null ? `<b>${start}</b>` : "the number I give you";
+      const by    = Math.abs(pr.step);
+      lines.push(type==="sub3"
+        ? `${also}start at ${from} and count backwards, taking away three each time.`
+        : by===1
+          ? `${also}start at ${from} and count ${pr.step>0?"up":"down"} out loud, one number at a time.`
+          : `${also}start at ${from} and count ${pr.step>0?"up":"down"} out loud in twos.`);
+      const ex=verbalExample(type,start);
+      if(ex) lines.push(`Like this: ${ex} — and keep going.`);
+      lines.push("Say every number out loud.");
       lines.push("Keep going until I tell you to stop.");
     }
   }
@@ -891,6 +931,7 @@ $("buildstamp").textContent = "Build " + BUILD;
 // still in its temporal dead zone at that point and throws.
 const PENCHECK={};                 // by hand: {samples, rate, pressure_varied, ...}
 let pcPts=null;
+const PC_TURNS=3;                  // rotations in the pen-check spiral; see penPadSetup()
 
 /* ------------------------------------------------------------------ pages */
 function goPage(n){
@@ -932,7 +973,7 @@ function autoDetect(){
   const hit=DEVICES.find(d=>Math.abs(d.px[0]-w)<=2&&Math.abs(d.px[1]-h)<=2);
   if(hit){ const ppmm=hit.ppi/25.4/dpr; $("ppmm").value=ppmm.toFixed(3);
     CAL.source="detected"; CAL.deviceLabel=hit.label;
-    $("detected").innerHTML=`Recognised <b>${hit.label}</b> — ${hit.ppi} ppi, ratio ${dpr}.
+    $("detected").innerHTML=`Recognized <b>${hit.label}</b> — ${hit.ppi} ppi, ratio ${dpr}.
       Starting value <b>${ppmm.toFixed(3)}</b> px/mm (${(ppmm*25.4).toFixed(1)} px/inch, not the
       nominal 96). Still confirm against a card.`;
   } else { CAL.source="fallback"; CAL.deviceLabel=null;
@@ -946,7 +987,7 @@ function nudge(d){ setManual(); $("ppmm").value=(parseFloat($("ppmm").value)+d).
 function renderCalWarn(){
   $("calwarn").innerHTML=(CAL.source==="fallback"&&!$("cardok").checked)
     ? `<div class="bad">No known device matched, so this is the nominal 96 px/inch guess. Every
-       millimetre value is <b>probably wrong</b> until you check against a card and tick the box.</div>`:"";
+       millimeter value is <b>probably wrong</b> until you check against a card and tick the box.</div>`:"";
 }
 $("cardok").addEventListener("change",renderCalWarn);
 function applyCal(){
@@ -997,23 +1038,63 @@ function safeAreaMM(){
 }
 
 /* ------------------------------------------------------- pen check */
+// A small spiral, not a straight line. The four things this check measures -- sample
+// count, sample rate, pressure range and pointer type -- do not depend on the path being
+// straight, and a spiral gives all four over a longer stroke, so the rate estimate stops
+// being hostage to how short a line somebody drew. It also rehearses the instruction SP
+// will use, which a straight line does not.
+//
+// The pad mirrors the trial's own template handling: the same spiralPath() geometry, the
+// same Template line styling from the Parameters page, and the same two instructions.
+// The Task dropdown selects between them exactly as `instr` does for SP -- the template
+// is drawn either way, because that is how SP is administered in both modes.
+// PC_TURNS is declared up with pcPts, not here: applyCal() reaches penPadSetup() during
+// start-up, before this point in the file has been evaluated.
 function penPadSetup(){
   const cv=$("penpad"), dpr=window.devicePixelRatio||1;
-  const w=cv.clientWidth||600;
-  cv.width=w*dpr; cv.height=150*dpr; cv.style.height="150px";
+  const w=cv.clientWidth||600, h=Math.round(clamp(w*0.42,220,340));
+  cv.width=w*dpr; cv.height=h*dpr; cv.style.height=h+"px";
   const g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0);
-  g.clearRect(0,0,w,150); g.fillStyle="#fff"; g.fillRect(0,0,w,150);
-  const ax=48, bx=w-48, y=75;
-  [["A",ax],["B",bx]].forEach(([lab,x])=>{
-    g.fillStyle="#D9EFD6"; g.strokeStyle="#4C8C4A"; g.lineWidth=1;
-    g.beginPath(); g.arc(x,y,15,0,7); g.fill(); g.stroke();
-    g.fillStyle="#2F6B2D"; g.font="15px system-ui"; g.textAlign="center"; g.fillText(lab,x,y+5);
-  });
-  g.strokeStyle="#e3e7ec"; g.setLineDash([4,5]); g.lineWidth=1;
-  g.beginPath(); g.moveTo(ax+18,y); g.lineTo(bx-18,y); g.stroke(); g.setLineDash([]);
-  return {g,w,ax,bx,y};
+  g.clearRect(0,0,w,h); g.fillStyle="#fff"; g.fillRect(0,0,w,h);
+  const cx=w/2, cy=h/2, R=Math.min(w,h)/2-30;
+  // Wound the way the trial winds it for this hand, so the movement rehearsed is the
+  // movement performed.
+  const dir = ($("pchand")&&$("pchand").value==="left") ? "ccw" : "cw";
+  const sp=spiralPath(R,PC_TURNS,dir,90,1200);          // radius in px here, not mm
+  const pt=q=>({x:cx+q.x, y:cy-q.y});
+  const sd=Math.max(9,R*0.11);
+  g.fillStyle="#D9EFD6"; g.strokeStyle="#4C8C4A"; g.lineWidth=1;
+  g.beginPath(); g.arc(cx,cy,sd,0,7); g.fill(); g.stroke();
+
+  const style=$("tmpl")?$("tmpl").value:"grey";
+  g.strokeStyle = style==="black" ? "#16191d" : "#737a85";
+  g.lineWidth   = style==="black" ? 1.6 : 1.8;
+  if(style==="dotted"){ g.setLineDash([0.1, 4.2]); g.lineCap="round"; g.lineWidth=2.2; }
+  else g.lineCap="butt";
+  g.beginPath(); sp.pts.forEach((q,i)=>{const t=pt(q); i?g.lineTo(t.x,t.y):g.moveTo(t.x,t.y);});
+  g.stroke(); g.setLineDash([]); g.lineCap="butt";
+
+  const last=sp.pts[sp.pts.length-1], ec=pt(last);
+  g.strokeStyle="#b4531f"; g.lineWidth=2; g.fillStyle="#fff";
+  g.beginPath(); g.arc(ec.x,ec.y,7,0,7); g.fill(); g.stroke();
+  g.fillStyle="#b4531f"; g.font="600 12px system-ui"; g.textAlign="center";
+  g.fillText("End", ec.x+Math.cos(last.a)*22, ec.y-Math.sin(last.a)*22+4);
+  g.fillStyle="#2F6B2D"; g.font="12px system-ui"; g.fillText("start",cx,cy+sd+14);
+  return {g,w,h,radius_px:R,turns:PC_TURNS,direction:dir};
 }
-function penPadClear(){ pcPts=null; penPadSetup(); $("pcresult").innerHTML=""; }
+// The wording the examiner reads out, taken from the same two instructions SP uses.
+function renderPenCheckMode(){
+  if(!$("pcinstr")) return;
+  const mode=$("pcmode")?$("pcmode").value:"between";
+  const tool=($("pcimpl")&&$("pcimpl").value==="finger")?"finger":"pen";
+  $("pcinstr").innerHTML = mode==="trace"
+    ? `Say: <b>“Start in the middle and trace the line all the way out, as accurately as you
+       can. Keep your ${tool} on the screen.”</b>`
+    : `Say: <b>“Start in the middle and follow the path all the way out, staying between the
+       lines. Keep your ${tool} on the screen.”</b>`;
+}
+function penPadClear(){ pcPts=null; penPadSetup(); renderPenCheckMode();
+  $("pcresult").innerHTML=""; }
 (function initPenPad(){
   const cv=$("penpad");
   let drawing=false, view=null;
@@ -1037,16 +1118,23 @@ function penPadClear(){ pcPts=null; penPadSetup(); $("pcresult").innerHTML=""; }
   const finish=()=>{
     if(!drawing) return; drawing=false;
     if(!pcPts||pcPts.length<5){ $("pcresult").innerHTML=`<div class="bad">Too few samples —
-      the line was very short, or this implement is not registering.</div>`; return; }
+      the stroke was very short, or this implement is not registering.</div>`; return; }
     const dur=(pcPts[pcPts.length-1].t-pcPts[0].t)/1000;
     const rate=dur>0?(pcPts.length-1)/dur:0;
     const prs=pcPts.map(p=>p.pr), pmin=Math.min(...prs), pmax=Math.max(...prs);
     const varied=(pmax-pmin)>0.02;
     const kinds=[...new Set(pcPts.map(p=>p.k))].join(", ");
     const hand=$("pchand").value;
+    const ppmm=parseFloat($("ppmm").value)||3.78;
     PENCHECK[hand]={ samples:pcPts.length, rate:+rate.toFixed(1), pressure_min:+pmin.toFixed(3),
                      pressure_max:+pmax.toFixed(3), pressure_varied:varied, pointer_types:kinds,
-                     implement:$("pcimpl").value, checked_iso:new Date().toISOString() };
+                     implement:$("pcimpl").value,
+                     task:"spiral", mode:$("pcmode")?$("pcmode").value:"between",
+                     template_style:$("tmpl")?$("tmpl").value:null,
+                     turns:view?view.turns:null, direction:view?view.direction:null,
+                     radius_mm: view ? +(view.radius_px/ppmm).toFixed(1) : null,
+                     duration_s:+dur.toFixed(2),
+                     checked_iso:new Date().toISOString() };
     $("pcresult").innerHTML=`<div class="${rate<55?"warn":"good"}">
       <b>${hand} hand</b> — ${pcPts.length} samples over ${dur.toFixed(2)} s,
       about <b>${rate.toFixed(0)} Hz</b>. Pointer: ${kinds}.
@@ -1060,7 +1148,7 @@ function penPadClear(){ pcPts=null; penPadSetup(); $("pcresult").innerHTML=""; }
   cv.addEventListener("pointerleave",finish);
   penPadClear();
 })();
-window.addEventListener("resize",()=>{ if(!$("pg1").classList.contains("hidden")) penPadClear(); });
+window.addEventListener("resize",()=>{ if(!$("pg2").classList.contains("hidden")) penPadClear(); });
 
 /* ===========================================================================
    SCREENING SCREENS — per participant, not per trial.
@@ -1074,7 +1162,7 @@ window.addEventListener("resize",()=>{ if(!$("pg1").classList.contains("hidden")
    =========================================================================== */
 const SCREEN_PREFIX="motiq_screen:";
 
-// Fixed Mini Trail B layout. Normalised to the box, so it scales with the canvas but
+// Fixed Mini Trail B layout. Normalized to the box, so it scales with the canvas but
 // the ARRANGEMENT never varies -- the sequence, the angles between hops and the
 // crossings are identical at every administration on every device. A covariate whose
 // difficulty is randomised is not a covariate.
@@ -1098,7 +1186,20 @@ const MTB_NODES=[
   { label:"4", x:0.551, y:0.714 },
   { label:"D", x:0.115, y:0.106 }
 ];
+// The practice: four circles, 1-A-2-B, same rules, untimed, no record. Deliberately a
+// DIFFERENT arrangement from the test, the way TMT-B's sample form is. Practising on the
+// real positions would teach half the test layout before the timed administration, and a
+// covariate is not comparable across participants if some of them have seen it.
+// Checked to the same constraint: a correct hop clears every other circle by at least
+// 4.6 hit radii at every canvas size, and the path crosses itself once.
+const MTB_PRACTICE_NODES=[
+  { label:"1", x:0.140, y:0.700 },
+  { label:"A", x:0.860, y:0.360 },
+  { label:"2", x:0.140, y:0.140 },
+  { label:"B", x:0.820, y:0.890 }
+];
 const MTB={};
+const mtbNodes = () => MTB.practice ? MTB_PRACTICE_NODES : MTB_NODES;
 
 function mtbGeom(){
   const cv=$("mtbpad"), dpr=window.devicePixelRatio||1;
@@ -1106,7 +1207,7 @@ function mtbGeom(){
   cv.width=w*dpr; cv.height=h*dpr; cv.style.height=h+"px";
   const g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0);
   const r=clamp(Math.min(w,h)*0.062,17,34), pad=r+10;
-  const pos=MTB_NODES.map(n=>({ label:n.label,
+  const pos=mtbNodes().map(n=>({ label:n.label,
     x:pad+n.x*(w-2*pad), y:pad+n.y*(h-2*pad) }));
   return {g,w,h,r,pos};
 }
@@ -1117,25 +1218,45 @@ function mtbDraw(){
   g.strokeStyle="#1d5fa8"; g.lineWidth=2.4; g.lineCap="round"; g.lineJoin="round";
   MTB.strokes.forEach(st=>{ if(st.length<2) return;
     g.beginPath(); st.forEach((p,i)=>i?g.lineTo(p.x,p.y):g.moveTo(p.x,p.y)); g.stroke(); });
+  // The next circle is NOT indicated. Searching the display for it, and alternating
+  // between the number and letter sequences, is the entire cognitive content of Trail B;
+  // cue it and what is left is a visuomotor pointing task, which the dot screen already
+  // measures. Circles already reached stay marked, because that is a record of what has
+  // happened rather than a hint about what comes next.
   pos.forEach((n,i)=>{
-    const done=i<MTB.next, isNext=i===MTB.next && MTB.state!=="done";
-    g.fillStyle = done?"#D9EFD6" : isNext?"#fff8f2" : "#f2f5f8";
-    g.strokeStyle = done?"#4C8C4A" : isNext?"#b4531f" : "#8a929c";
-    g.lineWidth = isNext?3:1.5;
+    const done=i<MTB.next, bad=MTB.flash===i;
+    g.fillStyle   = bad?"#fdecec" : done?"#D9EFD6" : "#f2f5f8";
+    g.strokeStyle = bad?"#8c2020" : done?"#4C8C4A" : "#8a929c";
+    g.lineWidth   = bad?3:1.5;
     g.beginPath(); g.arc(n.x,n.y,r,0,7); g.fill(); g.stroke();
-    g.fillStyle = done?"#2F6B2D" : isNext?"#b4531f" : "#5d6570";
+    g.fillStyle   = bad?"#8c2020" : done?"#2F6B2D" : "#5d6570";
     g.font=`600 ${Math.round(r*1.05)}px system-ui`; g.textAlign="center";
     g.fillText(n.label,n.x,n.y+r*0.37);
   });
 }
-function mtbReset(){
+// A rejected move is shown, briefly, on the circle that was refused -- never on the one
+// that was wanted, which would give the answer away.
+function mtbFlash(i){
+  MTB.flash=i; mtbDraw();
+  clearTimeout(MTB.flashTimer);
+  MTB.flashTimer=setTimeout(()=>{ MTB.flash=null; if(MTB.geom) mtbDraw(); },420);
+}
+function mtbReset(){ mtbBegin(false); }
+function mtbPractice(){ mtbBegin(true); }
+function mtbBegin(practice){
   if(!$("mtbpad")) return;
+  clearTimeout(MTB.flashTimer);
+  MTB.practice=!!practice; MTB.flash=null;
   MTB.geom=mtbGeom(); MTB.state="idle"; MTB.next=0; MTB.arrivals=[]; MTB.errors=0;
   MTB.errorLog=[]; MTB.strokes=[]; MTB.inside=null; MTB.t0=null; MTB.drawing=false;
   MTB.saved=false;
   mtbDraw();
-  $("mtbresult").innerHTML=`<div class="note" style="margin-top:10px">Not started. The first
-    touch on <b>1</b> starts the clock.</div>`;
+  $("mtbresult").innerHTML = MTB.practice
+    ? `<div class="note" style="margin-top:10px"><b>Practice</b> — four circles,
+       <b>1, A, 2, B</b>. Same rules, not timed, and nothing is saved. Press
+       <b>Start the real one</b> when they have the idea.</div>`
+    : `<div class="note" style="margin-top:10px">Not started. The first touch on <b>1</b>
+       starts the clock. Run the practice first if you have not.</div>`;
 }
 function mtbNodeAt(x,y){
   const {r,pos}=MTB.geom, hit=r*1.35;
@@ -1156,19 +1277,30 @@ function mtbNodeAt(x,y){
     if(idx===MTB.inside) return;
     MTB.inside=idx;
     if(idx===null || MTB.state==="done") return;
+    const NODES=mtbNodes();
     if(idx===MTB.next){
-      MTB.arrivals.push({ label:MTB_NODES[idx].label, order:idx+1, t_ms:+(t-MTB.t0).toFixed(1) });
+      MTB.arrivals.push({ label:NODES[idx].label, order:idx+1, t_ms:+(t-MTB.t0).toFixed(1) });
       MTB.next++;
-      if(MTB.next>=MTB_NODES.length){ MTB.state="done"; mtbDraw(); mtbFinish(); return; }
+      if(MTB.next>=NODES.length){ MTB.state="done"; mtbDraw(); mtbFinish(); return; }
       mtbDraw();
+    } else if(idx<MTB.next){
+      // A circle already joined. Passing back over one, or lifting the stylus and putting
+      // it down again on the one they are working from, is not an error -- that connection
+      // has already been made. Counting it would inflate the error score of anybody who
+      // lifts the pen, which is most older adults, on a measure whose whole point is the
+      // error count.
     } else {
-      // Moving into any circle that is not the one due next is an error. The target
-      // does not advance: the participant carries on from where they are, as in the
-      // pen-and-paper task where the examiner points back to the last correct circle.
+      // The connection does not take. The target stays where it is, so the participant
+      // has to come back to the last correct circle and go on from there -- the same
+      // redirection the examiner performs on paper, and the time it costs is the penalty.
+      // The ink is kept: path_length_mm and mean_velocity_mm_s are measures of what the
+      // hand actually did, and erasing the excursion would misreport both.
       MTB.errors++;
       MTB.errorLog.push({ t_ms:+(t-MTB.t0).toFixed(1),
-        expected:MTB_NODES[MTB.next].label, entered:MTB_NODES[idx].label });
-      mtbDraw();
+        attempted:NODES[idx].label,
+        expected:NODES[MTB.next].label,
+        from_node: MTB.next>0 ? NODES[MTB.next-1].label : null });
+      mtbFlash(idx);
     }
   };
   cv.addEventListener("pointerdown",e=>{
@@ -1203,6 +1335,16 @@ function mtbNodeAt(x,y){
 
 function mtbFinish(){
   MTB.drawing=false;
+  if(MTB.practice){
+    // A practice is not a measurement. It is untimed and writes nothing, so there is no
+    // chance of a practice row reaching the screening file and being analysed as one.
+    $("mtbresult").innerHTML=`<div class="good">Practice complete — all four circles joined
+      in order${MTB.errors?`, after ${MTB.errors} wrong move${MTB.errors===1?"":"s"}`:""}.
+      Nothing was saved.</div>
+      <div class="note">Press <b>Start the real one</b> when they are ready. Repeat the
+      practice as many times as it takes.</div>`;
+    return;
+  }
   const p=parseFloat($("ppmm").value)||3.78;
   let pathPx=0;
   MTB.strokes.forEach(st=>{ for(let i=1;i<st.length;i++)
@@ -1217,6 +1359,9 @@ function mtbFinish(){
     hand:$("mtbhand").value, implement:$("mtbimpl").value,
     layout:"fixed 1-A-2-B-3-C-4-D; identical at every administration",
     layout_nodes:MTB_NODES.map(n=>({label:n.label,x_norm:n.x,y_norm:n.y})),
+    next_node_cued:false,
+    wrong_moves_blocked:true,
+    administration_note:"the next circle is never indicated on screen, and a move to a circle other than the one due does not connect; errors counts those refused moves and the time they cost is carried by completion_time_ms. Re-entering a circle already joined -- including putting the stylus down again on the one being worked from -- is not counted, because that connection has already been made.",
     completion_time_ms:completionMs,
     completion_time_clock:"ms from first pen contact to arrival at D",
     time_first_to_last_node_ms:+(lastT-firstT).toFixed(1),
@@ -1461,7 +1606,24 @@ $("pid").addEventListener("input",()=>{ deriveNumbers(); });
 /* ------------------------------------------------------- voice consent */
 const voiceConsented = () => !!($("voiceconsent") && $("voiceconsent").checked);
 const VOICE_TASKS = () => CATALOGUE.filter(c=>c.voice).map(c=>c.id);
+// Shown next to the consent tick, whether or not consent is given, because the cause is
+// the address and has nothing to do with whether anyone consented.
+function renderSecureNote(){
+  const el=$("securenote"); if(!el) return;
+  if(secureOrigin()){ el.innerHTML=""; return; }
+  el.innerHTML=`<div class="bad"><b>Voice recording cannot work from this address.</b>
+    This page was opened from <code>${esc(location.origin)}</code>, which is not a secure
+    origin. Browsers expose the microphone only over <b>https</b>, or from
+    <code>localhost</code> / <code>127.0.0.1</code> — so <code>getUserMedia</code> is not
+    available here at all.
+    <br><br>Nothing is wrong with the iPad, the microphone, or the app: an
+    <code>http://</code> address on the local network simply cannot reach a microphone.
+    Open the app over <b>https</b> to record. The spoken tasks will still run from here,
+    but they will capture no audio, and every trial record will say so.
+    <br><br>Every task that does not record is unaffected.</div>`;
+}
 function onVoiceConsentChange(){
+  renderSecureNote();
   if(!$("voicenote")) return;
   const ok=voiceConsented(), ids=VOICE_TASKS().join(", ");
   if(!ok){
@@ -1477,7 +1639,8 @@ function onVoiceConsentChange(){
   } else {
     $("voicenote").innerHTML=`<div class="good">Consented. ${ids} can be planned. Recordings are
       written to this device only and are never uploaded.
-      ${RECORDER.available?"":"<b>This browser reports no microphone recording support</b> — those tasks will run, but will record nothing and will say so in the record."}</div>`;
+      ${!secureOrigin()?"<b>They will not record from this address</b> — see above.":
+        RECORDER.available?"":"<b>This browser reports no microphone recording support</b> — those tasks will run, but will record nothing and will say so in the record."}</div>`;
   }
   if(!$("pg3").classList.contains("hidden")) renderPlan();
 }
@@ -1532,7 +1695,7 @@ function renderInstrPage(){
   const c=byId(id);
   // The verbal task's wording is chosen per trial, so the rehearsal page shows the
   // prompt type currently set in the plan with the wording left as a placeholder.
-  const vb = c.verbal ? { type:(PLAN&&PLAN[id]?PLAN[id].verbalType:"count") } : null;
+  const vb = c.verbal ? { type:VERBAL_KEY(PLAN&&PLAN[id]?PLAN[id].verbalType:null) } : null;
   const ins=instructionFor(id,{mode:$("insMode").value, verbal:vb});
   $("insTitle").textContent=`${id} — ${c.label}`;
   $("insBody").innerHTML=instructionHTML(ins,{big:false});
@@ -1571,10 +1734,12 @@ const fixedLengthFor = c => c.lengthS ?? c.fixedS ?? 45;
 function defaultPlan(){
   const p={};
   CATALOGUE.forEach(c=>{ const allowed=handsAllowed(c);
-    p[c.id]={ include:["SP","TAP","BMIN","BMANT","DET","ODT","SP_ODT"].includes(c.id),
+    // Nothing is preselected. The examiner ticks every task deliberately for this
+    // session; a default battery is a battery nobody chose.
+    p[c.id]={ include:false,
       repeats:c.repeats, hands:allowed.includes(c.hands)?c.hands:allowed[0],
       lengthS:c.lengthS, oneHand:"dominant",
-      verbalType:c.verbal?"count":null }; });
+      verbalType:c.verbal?"up1":null }; });
   return p;
 }
 function resetPlan(){ PLAN=defaultPlan(); QUEUE=[]; QPOS=0; renderPlan(); renderQueue(); saveState(); }
@@ -1640,7 +1805,7 @@ function renderPlan(){
             ${Object.entries(VERBAL_PROMPTS).map(([k,v])=>
               `<option value="${k}" ${s.verbalType===k?"selected":""}>${v.label}</option>`).join("")}
           </select>
-          <div class="note" style="margin:4px 0 0;max-width:280px">${VERBAL_PROMPTS[s.verbalType||"count"].help}</div>`:""}
+          <div class="note" style="margin:4px 0 0;max-width:280px">${verbalPrompt(s.verbalType).help}</div>`:""}
         ${blocked?`<div class="note" style="margin:4px 0 0;color:var(--warm)">${blocked}</div>`:""}</td>
       <td><input type="number" min="1" max="20" value="${s.repeats}" ${blocked?"disabled":""}
            onchange="planSet('${c.id}','repeats',+this.value)"></td>
@@ -1762,7 +1927,7 @@ function buildQueue(){
     const why=taskBlocked(c);
     if(why){ omitted.push(`${c.id} — ${why}`); return; }
     const push=(hand,role)=>QUEUE.push({ task:c.id, hand, role, lengthS:s.lengthS,
-      verbalType:c.verbal?(s.verbalType||"count"):null,
+      verbalType:c.verbal?VERBAL_KEY(s.verbalType):null,
       status:"pending", skipReason:null });
     if(s.hands==="each"){ for(let r=0;r<s.repeats;r++){ push("dominant"); push("nondominant"); } }
     else if(s.hands==="roles"){ for(let r=0;r<s.repeats;r++){ push("dominant","A"); push("nondominant","B"); } }
@@ -2039,6 +2204,14 @@ function demo(w){ const c=audio(), t0=c.currentTime+.08, lv=+$("lvl").value;
   const fs=+$("fstd").value, ft=+$("ftgt").value;
   if(w==="alt"){ for(let i=0;i<6;i++) tone(t0+i*0.55, i%2?ft:fs, 100, lv); }
   else tone(t0, w==="tgt"?ft:fs, 100, lv); }
+// Four tones, low high low high, at SP_SWT's own tone length and spacing -- a rehearsal
+// paced faster or slower than the trial rehearses the wrong thing.
+function rehearseSwitch(){
+  const c=audio(), lv=+$("lvl").value, fs=+$("fstd").value, ft=+$("ftgt").value;
+  const a=AUDIO_DEFAULTS.SP_SWT, gap=(a?a.isi:1500)/1000, dur=a?a.tone:50;
+  const t0=c.currentTime+0.15;
+  [fs,ft,fs,ft].forEach((f,i)=>tone(t0+i*gap, f, dur, lv));
+}
 
 /* ===========================================================================
    VOICE RECORDING
@@ -2056,6 +2229,13 @@ function demo(w){ const c=audio(), t0=c.currentTime+.08, lv=+$("lvl").value;
 const AUDIO_DB="motiq_audio", AUDIO_STORE="clips";
 const WANTED_MIMES=["audio/webm;codecs=opus","audio/webm","audio/mp4;codecs=mp4a.40.2","audio/mp4","audio/ogg;codecs=opus"];
 
+// getUserMedia is exposed only on a secure origin: https, or localhost / 127.0.0.1.
+// Opening the app on an iPad against a Mac's LAN address over plain http gives a page
+// that looks entirely normal and then records nothing, with no visible cause. That is a
+// property of the ADDRESS the page was opened from -- not of the iPad, the microphone,
+// the browser or the app -- so it is said in those words wherever it is surfaced.
+const secureOrigin = () => window.isSecureContext === true;
+const INSECURE_DETAIL = "The page is not on a secure origin, so the browser does not expose the microphone at all. This is a property of the address the app was opened from, not of the iPad, the microphone or the app.";
 const RECORDER={
   available: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder),
   stream:null, rec:null, chunks:[], mime:"", startedAt:null,
@@ -2070,6 +2250,7 @@ const RECORDER={
   // Called inside the click that starts a trial: Safari only grants the microphone
   // from a user gesture, and an await before this point throws the gesture away.
   prepare(){
+    if(!secureOrigin()) return Promise.reject(new Error("Not a secure origin — "+INSECURE_DETAIL));
     if(!this.available) return Promise.reject(new Error("MediaRecorder is not available in this browser"));
     if(this.stream && this.stream.getAudioTracks().some(t=>t.readyState==="live")) return Promise.resolve(this.stream);
     return navigator.mediaDevices.getUserMedia({ audio:{ channelCount:1,
@@ -2213,7 +2394,7 @@ function drawScene(){
     g.fillStyle="#D9EFD6"; g.strokeStyle="#4C8C4A"; g.lineWidth=1;
     g.beginPath(); g.arc(c0.x,c0.y,mm2px(sd/2),0,7); g.fill(); g.stroke();
 
-    // Template line. Grey by default: continuous, so the guide is unbroken and the
+    // Template line. Gray by default: continuous, so the guide is unbroken and the
     // participant's own ink still stands out against it. Dashes are offered for
     // comparison but are not uniform across the spiral -- at fixed dash length the
     // apparent density differs between the tight inner turns and the outer ones.
@@ -2340,12 +2521,21 @@ function audioCfgFor(task){
     self_paced: selfPaced };
 }
 
-// Two-digit start for serial subtraction, different every trial so there are unlimited
-// alternate forms and nothing carries across visits. Multiples of three are skipped:
-// starting on one makes the whole sequence land on round numbers and ends neatly at 0.
-function randomSubtractStart(){
-  let n; do { n=10+Math.floor(Math.random()*90); } while(n%3===0);
-  return n;
+// A fresh start number every trial, drawn uniformly inside the range the prompt declares.
+// Different every trial means unlimited alternate forms and nothing carried over between
+// repeat visits; the number actually used is written into the trial record, because
+// "serial subtraction" without a start number is not a reproducible prompt.
+function randomVerbalStart(type){
+  const pr=VERBAL_PROMPTS[VERBAL_KEY(type)];
+  if(!pr || !pr.range) return null;
+  const [lo,hi]=pr.range;
+  return lo+Math.floor(Math.random()*(hi-lo+1));
+}
+// The first three numbers, so the examiner reads out a concrete example rather than a rule.
+function verbalExample(type,start){
+  const pr=VERBAL_PROMPTS[VERBAL_KEY(type)];
+  if(!pr || !pr.step || start==null) return null;
+  return [0,1,2].map(i=>start+pr.step*i).join(", ");
 }
 let VERBAL_SUGGEST=null;
 
@@ -2372,6 +2562,13 @@ function openTrial(showInstruction){
       // was withdrawn could still contain one, and it must not record silently.
       TRIAL.voiceFailure={ reason:"not_consented",
         detail:"Voice recording consent is not ticked on the Participant page." };
+      micFailOverlay(TRIAL.voiceFailure.detail, afterMic); return;
+    }
+    if(!secureOrigin()){
+      // Named as its own reason rather than folded into a generic microphone failure, so
+      // the record says WHY and nobody has to work it out from the address afterwards.
+      TRIAL.voiceFailure={ reason:"insecure_origin",
+        detail:`This page was opened from ${location.origin}. `+INSECURE_DETAIL };
       micFailOverlay(TRIAL.voiceFailure.detail, afterMic); return;
     }
     // getUserMedia has to be reached inside the gesture that started this trial;
@@ -2419,8 +2616,8 @@ function micFailOverlay(detail, cont){
 // SP_VRB only: which spoken task, and the exact words used. Both go into the record,
 // because "serial subtraction" without the start number is not a reproducible prompt.
 function showVerbalSetup(c, done){
-  VERBAL_SUGGEST=randomSubtractStart();
-  const planned=TRIAL.verbalType || (PLAN[c.id] && PLAN[c.id].verbalType) || "count";
+  const planned=VERBAL_KEY(TRIAL.verbalType || (PLAN[c.id] && PLAN[c.id].verbalType));
+  VERBAL_SUGGEST=randomVerbalStart(planned);
   showOverlay(`<h3>Spoken task for this trial</h3>
     <div style="width:min(90vw,560px);text-align:left">
       <label for="vbType" style="font-size:15px">Prompt type</label>
@@ -2434,11 +2631,14 @@ function showVerbalSetup(c, done){
     </div>`,
     [{ label:"Use this", onClick:()=>{
         const type=$("vbType").value, text=($("vbText").value||"").trim();
-        const v={ type, prompt_type_label:VERBAL_PROMPTS[type].label, prompt_text:text,
-                  start_number: type==="subtract3" ? (parseInt(text,10) || null) : null,
-                  category:     type==="fluency"   ? (text||null) : null,
-                  fluency_window_s: type==="fluency" ? VERBAL_PROMPTS.fluency.windowS : null,
-                  suggested_start: type==="subtract3" ? VERBAL_SUGGEST : null };
+        const pr=VERBAL_PROMPTS[type];
+        const v={ type, prompt_type_label:pr.label, prompt_text:text,
+                  start_number: pr.range ? (parseInt(text,10) || null) : null,
+                  step:  pr.step  ?? null,
+                  range: pr.range ?? null,
+                  category:     type==="fluency" ? (text||null) : null,
+                  fluency_window_s: type==="fluency" ? pr.windowS : null,
+                  suggested_start: pr.range ? VERBAL_SUGGEST : null };
         TRIAL.verbal=v; TRIAL.verbalType=type;
         hideOverlay(); done();
       }}]);
@@ -2446,19 +2646,26 @@ function showVerbalSetup(c, done){
 }
 function verbalTypeChanged(){
   const t=$("vbType").value, box=$("vbText"), help=$("vbHelp");
-  if(t==="subtract3"){ box.value=String(VERBAL_SUGGEST); box.placeholder="87";
-    help.innerHTML=`Suggested start for this trial: <b>${VERBAL_SUGGEST}</b>. A new one is drawn
-      every trial, so there are unlimited alternate forms and nothing carries over between
-      visits. Change it if you have a reason to; whatever is in the box is what gets recorded.`; }
-  else if(t==="fluency"){ box.value=""; box.placeholder="animals";
+  const pr=VERBAL_PROMPTS[t];
+  if(t==="fluency"){
+    VERBAL_SUGGEST=null; box.value=""; box.placeholder="animals";
     help.innerHTML=`Type the category exactly as you will say it. Scored over a fixed
       <b>60 s</b> window — the admin bar says when it is up, and the trial itself carries on
       until you press END. Fluency output is steeply front-loaded (roughly 40–45% of words
       in the first 15 s), so words per second cannot be compared between windows of
-      different length.`; }
-  else { box.value="start at 1"; box.placeholder="start at 1";
-    help.innerHTML=`The articulation-only baseline: speaking aloud with almost no cognitive
-      load, self-paced. Record whatever you actually told them.`; }
+      different length.`;
+  } else {
+    // A new number is drawn each time the prompt changes, and once per trial, so no two
+    // administrations share a start.
+    VERBAL_SUGGEST=randomVerbalStart(t);
+    box.value=String(VERBAL_SUGGEST); box.placeholder=String(pr.range[0]);
+    help.innerHTML=`Suggested start for this trial: <b>${VERBAL_SUGGEST}</b>
+      (drawn from ${pr.range[0]}–${pr.range[1]}). Reads as
+      <b>${verbalExample(t,VERBAL_SUGGEST)} …</b>
+      A new one is drawn every trial, so there are unlimited alternate forms and nothing
+      carries over between visits. Change it if you have a reason to; whatever is in the
+      box is what gets recorded.`;
+  }
 }
 
 // The instruction page, drawn from the same source as the Instructions tab.
@@ -2474,10 +2681,24 @@ function showInstructionScreen(seq,c,returnToReady){
       <button class="ghost" style="font-size:18px;padding:14px 26px;margin:4px"
         onclick="demo('alt')">Play both</button>` : ``) +
       `<div class="note" style="margin-top:6px">Play these before starting.</div></div>` : ``;
+  // Switching is the one task where the mapping has to be confirmed before any data is
+  // collected: it is the only task with two different responses to two different tones.
+  // Reuses the sound check's tone generator rather than a second audio path.
+  const rehearsal = c.respond==="both" ? `<div style="margin-top:16px;padding:14px 18px;
+      border:1px solid var(--line);border-radius:9px;background:#f7f9fb;
+      max-width:660px;text-align:left">
+      <div style="font-size:19px;font-weight:600;margin-bottom:8px">Rehearse before starting</div>
+      <div style="font-size:20px;line-height:1.75">
+        <div><b>LOW</b> beep &rarr; tap the circle, say nothing</div>
+        <div><b>HIGH</b> beep &rarr; say the next number, do not tap</div></div>
+      <button class="ghost" style="font-size:18px;padding:14px 26px;margin-top:12px"
+        onclick="rehearseSwitch()">Play low – high – low – high</button>
+      <div class="note" style="margin-top:6px">Play it and have them tap and speak along.
+      Do not start the trial until they have it.</div></div>` : ``;
   const voiceNote = c.voice ? (TRIAL.voiceFailure
       ? `<p style="font-size:17px;color:#8c2020"><b>Not being recorded</b> — ${esc(TRIAL.voiceFailure.detail)}</p>`
       : `<p style="font-size:17px;color:var(--ok)">Voice recording is on for this trial.</p>`) : ``;
-  showOverlay(`<h3>${TRIAL.task} — ${c.label}</h3>` + instructionHTML(ins) + soundBtns + voiceNote +
+  showOverlay(`<h3>${TRIAL.task} — ${c.label}</h3>` + instructionHTML(ins) + soundBtns + rehearsal + voiceNote +
     `<p style="font-size:16px;color:#5d6570;margin-top:10px">${ins.length}</p>`,
     [{label:"Ready", onClick:()=>{ hideOverlay(); LAST_TASK=TRIAL.task;
         readyTrial(returnToReady?returnToReady.seq:seq, c); }}]);
@@ -2600,7 +2821,7 @@ function runTrial(seq,c){
       recorder_start_ms:null, recorder_stop_ms:null,
       recorder_start_clock:"ms from START, the same origin as sequence.onsets_ms",
       recorder_start_alignment:"uncharacterized",
-      recorder_start_alignment_note:"MediaRecorder start latency has NOT been measured on this device. recorder_start_ms is the moment the recorder reported it had started, on the trial clock; the true offset between the first audio sample in the file and that moment is unknown. Use it to align per-response latencies only after characterising that offset.",
+      recorder_start_alignment_note:"MediaRecorder start latency has NOT been measured on this device. recorder_start_ms is the moment the recorder reported it had started, on the trial clock; the true offset between the first audio sample in the file and that moment is unknown. Use it to align per-response latencies only after characterizing that offset.",
       failure: TRIAL.voiceFailure ? TRIAL.voiceFailure.reason : null,
       failure_detail: TRIAL.voiceFailure ? TRIAL.voiceFailure.detail : null };
     if(!TRIAL.voiceFailure){
@@ -3079,7 +3300,7 @@ function buildRecord(){
         failure:V.failure, failure_detail:V.failure_detail } : null,
     spiral_rendered:LAST.SPIRAL||null,
     strokes:LAST.STROKES,
-    strokes_units:"x,y mm from spiral centre, y up; t ms from START; p pressure 0-1",
+    strokes_units:"x,y mm from spiral center, y up; t ms from START; p pressure 0-1",
     taps:LAST.TAPS,
     attribution: LAST.att ? { rule:"nearest preceding onset, no upper bound",
       respond_to:LAST.att.respond_to,
@@ -3610,7 +3831,7 @@ function restoreState(){
           hands:allowed.includes(old.hands)?old.hands:allowed[0],
           lengthS:len,
           oneHand:old.oneHand==="nondominant"?"nondominant":"dominant",
-          verbalType:c.verbal?(VERBAL_PROMPTS[old.verbalType]?old.verbalType:"count"):null };
+          verbalType:c.verbal?VERBAL_KEY(old.verbalType):null };
       });
     }
     PLAN=fresh;
@@ -3629,7 +3850,7 @@ function restoreState(){
     if(st.audio) Object.entries(st.audio).forEach(([k,v])=>{
       if(AUDIO_DEFAULTS[k] && v && typeof v==="object") Object.assign(AUDIO_DEFAULTS[k],v); });
 
-    applyCal(); updateAgeNote(); onVoiceConsentChange();
+    applyCal(); updateAgeNote(); renderSecureNote(); onVoiceConsentChange();
     renderStatus(); renderPlan(); renderQueue(); renderAudioTable();
     const done=QUEUE.filter(q=>q.status==="done").length;
     if($("statusbar")) $("statusbar").insertAdjacentHTML("beforeend",
@@ -3658,14 +3879,14 @@ document.addEventListener("input",  e=>{ if(STATE_FIELDS.includes(e.target.id)) 
 
 window.addEventListener("resize",()=>{
   if($("stage").classList.contains("on")){ layout(); drawScene(); }
-  else if(!$("pg2").classList.contains("hidden")){ mtbReset(); dotReset(); }
+  else if(!$("pg2").classList.contains("hidden")){ mtbBegin(!!MTB.practice); dotReset(); }
 });
 // ?reset in the address clears saved state before anything reads it -- the way back if
 // the app will not start.
 if(/[?&]reset\b/.test(location.search)){ clearState(); }
 
 renderPlan(); renderAudioTable(); renderSaved(); renderScreens(); renderStatus();
-onVoiceConsentChange(); mtbReset(); dotReset(); renderAudioStore();
+renderSecureNote(); onVoiceConsentChange(); mtbReset(); dotReset(); renderAudioStore();
 
 // Nothing below start-up should be able to leave a blank page.
 try { if(restoreState()) goPage(3); }
