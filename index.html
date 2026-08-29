@@ -149,6 +149,23 @@
   /* The recording indicator has to be legible from the examiner's side of the iPad
      without competing with the trial itself. */
   #recdot { font-size:14px; font-weight:600; color:#8c2020; min-width:78px; }
+  /* Examiner-facing, in the admin bar at the top of the stage. Small and monochrome so it
+     reads at a glance without pulling the participant's eye off the drawing area. */
+  #levelmeter { display:none; align-items:center; gap:6px; min-width:132px; font-size:12px;
+                color:var(--muted); font-variant-numeric:tabular-nums; }
+  #levelmeter.on { display:flex; }
+  #levelbar { position:relative; width:86px; height:10px; border-radius:5px;
+              background:#e3e7ec; overflow:hidden; }
+  #levelbar i { position:absolute; left:0; top:0; bottom:0; width:0%;
+                background:#176b42; transition:width .06s linear; }
+  #levelbar.low i { background:#b4531f; }
+  #levelbar.quiet i { background:#8c2020; }
+  /* Sits above the stage (z-index 60) so it is reachable during a trial. */
+  #zoombanner { position:fixed; left:0; right:0; top:0; z-index:200;
+                background:#fdecec; border-bottom:2px solid #8c2020; color:#8c2020;
+                padding:10px 14px; font-size:14px; line-height:1.45;
+                display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  #zoombanner button { margin:0; }
   #quit { font-size:13px !important; padding:9px 14px !important; min-width:0 !important;
           background:#fff; color:var(--muted); border:1px solid var(--line); }
 </style>
@@ -257,10 +274,10 @@
           <select id="pchand" onchange="penPadClear()"><option value="right">Right</option><option value="left">Left</option></select></div>
         <div><label for="pcimpl">Implement</label>
           <select id="pcimpl"><option value="pen">Stylus</option><option value="finger">Index finger</option></select></div>
-        <div><label for="pcmode">Task</label>
+        <div><label for="pcmode">Instruction</label>
           <select id="pcmode" onchange="penPadClear()">
-            <option value="between" selected>Line</option>
-            <option value="trace">Trace</option></select></div>
+            <option value="between" selected>Draw between the lines</option>
+            <option value="trace">Trace on the line</option></select></div>
         <div><label>&nbsp;</label><div class="btnrow" style="margin:0">
           <button class="ghost" onclick="penPadClear()">Clear</button></div></div>
       </div>
@@ -348,6 +365,21 @@
         <input id="soundok" type="checkbox" style="width:auto;flex:0 0 auto;margin:3px 0 0" onchange="renderAudioCheck()">
         <span>The participant confirms both tones are clearly audible.</span></label>
       <div id="soundnote"></div>
+
+      <div style="border-top:1px solid var(--line);margin-top:16px;padding-top:12px">
+        <b style="font-size:14px">Room check</b>
+        <p class="note" style="margin-top:4px">Five seconds of silence, once per session, with
+        nobody speaking. It measures the background noise floor, which is what makes a voice
+        recording scoreable or not: speech has to sit far enough above the room. The published
+        minimum is 30 dB of signal-to-noise, with over 42 dB recommended
+        (Deliyski et al. 2005, J Voice 19:15). Without a noise floor there is no way to tell a
+        quiet participant from a noisy room — and that distinction matters, because recording
+        geometry moves the level far more than the voice disorder does.</p>
+        <div class="btnrow" style="margin-top:6px">
+          <button class="ghost" id="roomBtn" onclick="runRoomCheck()">Run room check (5 s)</button>
+        </div>
+        <div id="roomresult"></div>
+      </div>
     </fieldset>
 
     <div class="navrow">
@@ -369,6 +401,13 @@
         <div><label for="sessnote">Session note</label>
           <input id="sessnote" type="text" placeholder="baseline, retest…"></div>
       </div>
+      <label class="checkrow" for="paramexplore">
+        <input id="paramexplore" type="checkbox" onchange="onParamExploreChange()">
+        <span><b>Parameter exploration session.</b> Tick this when parameters are being varied
+        between trials. Trials in such a session are not comparable with one another, and the
+        marker is written into every trial record so the data says so rather than being taken
+        later for a fixed-protocol run.</span></label>
+      <div id="exploreNote"></div>
       <div class="btnrow">
         <button class="ghost" onclick="newVisit()">New visit for this participant</button>
         <button class="ghost" onclick="newSession()">Another session in this visit</button>
@@ -594,6 +633,7 @@
     <div id="ctrl" style="display:flex;gap:12px"></div>
     <div id="hud"></div>
     <div id="recdot"></div>
+    <div id="levelmeter"><div id="levelbar"><i></i></div><span id="leveltxt"></span></div>
     <div class="spacer"></div>
     <div id="tapcount" style="font-size:14px;color:var(--muted);min-width:70px"></div>
     <div id="reminder"></div>
@@ -693,6 +733,39 @@ const CATALOGUE = [
                    selfPaceable:1, fixedS:60, verbal:1, respond:"speak", voice:1 }
 ];
 
+/* ---------------------------------------------------------------------------
+   PALM REJECTION -- a platform limit, not a defect in this app
+
+   Confirmed on device (iPadOS Safari): while an Apple Pencil is in contact with
+   the glass, the system suppresses concurrent finger touches as presumed palm
+   contact. A finger tap registers while the pen HOVERS, and registers normally the
+   instant the pen lifts -- but not while the pen is down.
+
+   This happens below the browser, in the system's touch classification. There is no
+   web API that turns it off: not touch-action, not pointer events, not any
+   permission. It cannot be worked around from a web page, and attempting to would
+   only produce something that looks like it works and loses taps.
+
+   Consequence: a task needing pen drawing AND finger tapping AT THE SAME TIME
+   cannot function as a genuine dual task in this prototype. Tap responses are lost
+   for as long as the pen is down. SP_TAP, SP_DET, SP_ODT and SP_SWT are affected.
+   SPF_ODT is NOT: it draws with the finger, so no Pencil is on the glass.
+
+   The tasks are kept and labeled rather than removed -- they are being tried out
+   deliberately, and the data records which trials were affected so this is
+   recoverable afterwards.
+
+   For the native iPadOS build: UIKit delivers pencil and touch as separate,
+   simultaneous streams, so the native instrument can run these tasks properly.
+   This limit is one of the concrete reasons the native build exists.
+   --------------------------------------------------------------------------- */
+const palmRejectionAffected = c =>
+  !!(c && c.spiral && c.tap && (c.implement||"pen")==="pen");
+const PALM_WARNING = "Pen and finger do not work at the same time in Safari on iPadOS: "+
+  "while the Pencil is touching the glass the system treats finger touches as palm contact "+
+  "and discards them. Tap responses are lost for as long as the pen is down, so this does "+
+  "not run as a true dual task here. The trials are still recorded, and flagged.";
+
 // Per-task auditory defaults. Also editable; add a key and point a catalogue entry at
 // it to introduce a new stream type.
 // Keyed by task, not by stream type: the lead-in that a dual task needs is not the
@@ -747,17 +820,22 @@ const VERBAL_PROMPTS = {
              help:"The articulation-only baseline: speaking aloud with next to no cognitive load." },
   up2:     { label:"Count forward by 2",       step:2,  range:[10,59],
              help:"The same articulation with a small arithmetic load on top." },
+  up3:     { label:"Count forward by 3",       step:3,  range:[10,59],
+             help:"Counting up in threes: the arithmetic of serial threes without the backward direction." },
   down1:   { label:"Count backward by 1",      step:-1, range:[60,99],
              help:"Counting down cannot be run off automatically the way counting up can." },
   down2:   { label:"Count backward by 2",      step:-2, range:[60,99],
-             help:"Between backward counting and serial subtraction." },
-  sub3:    { label:"Serial subtraction by 3",  step:-3, range:[60,99],
-             help:"The heaviest of the counting prompts." },
+             help:"Between backward counting and counting backward by three." },
+  // Named for what the participant does, so the six counting prompts read as one family.
+  // This IS serial subtraction by 3 -- the standard task in the literature -- and the
+  // rename must not lose that link.
+  down3:   { label:"Count backward by 3",      step:-3, range:[60,99],
+             help:"This is the standard <b>serial subtraction by 3</b> task under a uniform name. The heaviest of the counting prompts." },
   fluency: { label:"Category fluency", windowS:60,
              help:"Scored over a fixed 60 s window. Fluency output is steeply front-loaded — roughly 40–45% of words come in the first 15 s — so words per second is not comparable between windows of different length." }
 };
 // Plans and saved sessions written before the menu was expanded used these two keys.
-const VERBAL_ALIAS = { count:"up1", subtract3:"sub3" };
+const VERBAL_ALIAS = { count:"up1", subtract3:"down3", sub3:"down3" };
 const VERBAL_KEY = k => VERBAL_PROMPTS[k] ? k : (VERBAL_ALIAS[k] || "up1");
 const verbalPrompt = k => VERBAL_PROMPTS[VERBAL_KEY(k)];
 
@@ -858,11 +936,11 @@ function instructionFor(taskId, opts){
       const start = (verbal && verbal.start_number!=null) ? verbal.start_number : null;
       const from  = start!=null ? `<b>${start}</b>` : "the number I give you";
       const by    = Math.abs(pr.step);
-      lines.push(type==="sub3"
+      lines.push(type==="down3"
         ? `${also}start at ${from} and count backwards, taking away three each time.`
         : by===1
           ? `${also}start at ${from} and count ${pr.step>0?"up":"down"} out loud, one number at a time.`
-          : `${also}start at ${from} and count ${pr.step>0?"up":"down"} out loud in twos.`);
+          : `${also}start at ${from} and count ${pr.step>0?"up":"down"} out loud in ${by===2?"twos":"threes"}.`);
       const ex=verbalExample(type,start);
       if(ex) lines.push(`Like this: ${ex} — and keep going.`);
       lines.push("Say every number out loud.");
@@ -870,7 +948,17 @@ function instructionFor(taskId, opts){
     }
   }
 
-  if(c.voice) lines.push("Your voice is recorded for this task, as you agreed.");
+  // Identical wording on every spoken task and every participant, because loudness that
+  // varies with how it was asked for is loudness that cannot be compared. Explicit cueing
+  // is the evidence-based route: Parkinson's disrupts implicit loudness regulation but
+  // responds to an explicit instruction (Ho et al. 1999, Neuropsychologia 37:1453), and a
+  // loud speaking style survives concurrent visuomotor load where habitual style does not
+  // (Whitfield et al. 2021, JSLHR).
+  if(c.voice){
+    lines.push("Use a <b>strong voice</b> — loud enough for someone across the room to hear you.");
+    lines.push("Keep your voice up all the way through, even while you are drawing.");
+    lines.push("Your voice is recorded for this task, as you agreed.");
+  }
 
   return { id:taskId, title:c.label, lines,
            figure: !!c.spiral && !dualTask, mode, implement:impl,
@@ -1337,7 +1425,7 @@ function mtbFinish(){
   MTB.drawing=false;
   if(MTB.practice){
     // A practice is not a measurement. It is untimed and writes nothing, so there is no
-    // chance of a practice row reaching the screening file and being analysed as one.
+    // chance of a practice row reaching the screening file and being analyzed as one.
     $("mtbresult").innerHTML=`<div class="good">Practice complete — all four circles joined
       in order${MTB.errors?`, after ${MTB.errors} wrong move${MTB.errors===1?"":"s"}`:""}.
       Nothing was saved.</div>
@@ -1720,7 +1808,8 @@ function renderStatus(){
   if(!$("statusbar")) return;
   $("statusbar").innerHTML = pid
     ? `Participant <b>${pid}</b> · visit <b>${visitNo()}</b> · session <b>${sessNo()}</b>` +
-      ` <span style="color:var(--muted)">(key ${SESSION_KEY})</span>${qtxt}`
+      ` <span style="color:var(--muted)">(key ${SESSION_KEY})</span>${qtxt}` +
+      (paramExploring()?` · <span style="color:var(--warm)"><b>parameter exploration</b></span>`:"")
     : `<span style="color:var(--warm)">No participant ID yet</span>${qtxt}`;
   if($("nestnote")) $("nestnote").innerHTML =
     `Trial numbers run within a session. Both numbers default from what is already saved on
@@ -1806,6 +1895,9 @@ function renderPlan(){
               `<option value="${k}" ${s.verbalType===k?"selected":""}>${v.label}</option>`).join("")}
           </select>
           <div class="note" style="margin:4px 0 0;max-width:280px">${verbalPrompt(s.verbalType).help}</div>`:""}
+        ${palmRejectionAffected(c)?`<div class="note" style="margin:4px 0 0;max-width:280px;color:#8c2020">
+            <b>Pen + finger not simultaneous on iPadOS.</b> Taps are lost while the pen is
+            down — see the instruction screen.</div>`:""}
         ${blocked?`<div class="note" style="margin:4px 0 0;color:var(--warm)">${blocked}</div>`:""}</td>
       <td><input type="number" min="1" max="20" value="${s.repeats}" ${blocked?"disabled":""}
            onchange="planSet('${c.id}','repeats',+this.value)"></td>
@@ -1813,8 +1905,8 @@ function renderPlan(){
             ${handsAllowed(c).map(hh=>`<option value="${hh}" ${s.hands===hh?"selected":""}>${HAND_LABEL[hh]}</option>`).join("")}
           </select>
           ${s.hands==="one"?`<select style="margin-top:4px" ${blocked?"disabled":""} onchange="planSet('${c.id}','oneHand',this.value)">
-            <option value="dominant" ${s.oneHand==="dominant"?"selected":""}>${c.spiral&&c.tap?"Dominant draws":"Dominant"}</option>
-            <option value="nondominant" ${s.oneHand==="nondominant"?"selected":""}>${c.spiral&&c.tap?"Non-dominant draws":"Non-dominant"}</option></select>`:""}</td>
+            <option value="dominant" ${s.oneHand==="dominant"?"selected":""}>${c.spiral?"Dominant hand draws":"Dominant"}</option>
+            <option value="nondominant" ${s.oneHand==="nondominant"?"selected":""}>${c.spiral?"Non-dominant hand draws":"Non-dominant"}</option></select>`:""}</td>
       <td>${lengthCell(c,s,blocked)}</td>
       <td class="note" style="padding-top:10px">${[c.spiral?"drawing":null,c.tap?"tapping":null,
           c.audio?"<b>tones</b>":null, c.count?(c.countMode==="aloud"?"count aloud":"silent count"):null,
@@ -1945,7 +2037,10 @@ function renderQueue(){
     $("nextUp").classList.remove("hidden");
     $("nextUpBody").innerHTML=`<div style="font-size:19px"><b>${q.task}</b> —
       ${handWord(q.hand)}${q.role?" ("+q.role+")":""} · trial <b>${QPOS+1}</b> of ${QUEUE.length}
-      · ${q.lengthS===null?"self-paced":q.lengthS+" s"}</div>`;
+      · ${q.lengthS===null?"self-paced":q.lengthS+" s"}
+      ${paramExploring()?`<span class="note" style="margin:0;color:var(--warm)">· parameter exploration</span>`:""}
+      </div><div id="nextUpParams"></div>`;
+    renderNextUpParams();
   } else {
     $("nextUp").classList.remove("hidden");
     $("nextUpBody").innerHTML=`<div class="good">All ${QUEUE.length} planned trials are done or
@@ -1966,6 +2061,88 @@ function renderQueue(){
   });
   $("queueTable").innerHTML=h;
   renderStatus();
+}
+/* ---------------------------------------------------------------------------
+   Parameters on the Session page.
+
+   A second route to the SAME controls the Parameters page owns -- these inputs
+   write straight into those elements rather than keeping a copy. paramSet()
+   already reads them live at trial time, so a value changed here reaches the next
+   trial, and its param_signature, with no change at all to how the data flows.
+   Two routes, one set of values; there is never a second copy to disagree.
+
+   The point is to vary a parameter between trials without abandoning a trial and
+   rebuilding the session.
+   --------------------------------------------------------------------------- */
+const paramExploring = () => !!($("paramexplore") && $("paramexplore").checked);
+function onParamExploreChange(){
+  const on=paramExploring();
+  if($("exploreNote")) $("exploreNote").innerHTML = on
+    ? `<div class="warn">Every trial saved from now on is marked
+       <code>parameter_exploration</code>. Turn it off for a fixed-protocol run.</div>` : "";
+  renderStatus(); renderQueue(); saveState();
+}
+function setParam(id,val){
+  const el=$(id); if(!el) return;
+  el.value=val;
+  // Fire the events the Parameters page listens for, so geometry notes, saved state and
+  // the projection all update exactly as if the value had been typed there.
+  el.dispatchEvent(new Event("input",{bubbles:true}));
+  el.dispatchEvent(new Event("change",{bubbles:true}));
+  renderNextUpParams();
+}
+function setAudioParam(task,field,val){ audioSet(task,field,val); renderNextUpParams(); }
+let NEXTUP_PARAMS_OPEN=true;
+function toggleNextUpParams(el){ NEXTUP_PARAMS_OPEN=el.open; }
+
+const pNum=(id,label,step,min,max)=>`<div><label for="np_${id}">${label}</label>
+  <input id="np_${id}" type="number" value="${$(id)?$(id).value:""}" step="${step}"
+   ${min!=null?`min="${min}"`:""} ${max!=null?`max="${max}"`:""}
+   onchange="setParam('${id}',this.value)"></div>`;
+const pSel=(id,label)=>{
+  const src=$(id); if(!src) return "";
+  const opts=[...src.options].map(o=>`<option value="${o.value}" ${src.value===o.value?"selected":""}>${o.textContent}</option>`).join("");
+  return `<div><label for="np_${id}">${label}</label>
+    <select id="np_${id}" onchange="setParam('${id}',this.value)">${opts}</select></div>`;
+};
+const pAudio=(task,field,label,step,min,max)=>{
+  const a=AUDIO_DEFAULTS[task]; if(!a) return "";
+  return `<div><label for="na_${field}">${label}</label>
+    <input id="na_${field}" type="number" value="${a[field]}" step="${step}"
+     ${min!=null?`min="${min}"`:""} ${max!=null?`max="${max}"`:""}
+     onchange="setAudioParam('${task}','${field}',+this.value)"></div>`;
+};
+
+function renderNextUpParams(){
+  const host=$("nextUpParams"); if(!host) return;
+  if(QPOS>=QUEUE.length){ host.innerHTML=""; return; }
+  const c=byId(QUEUE[QPOS].task); if(!c){ host.innerHTML=""; return; }
+  const groups=[];
+  if(c.spiral) groups.push(`<div><b>Spiral</b>
+    <div class="r4">${pNum("pitch","Pitch (mm)",0.5,6,25)}${pNum("turns","Turns",1,2,8)}
+      ${pSel("instr","Instruction")}${pNum("startdia","Start zone (mm)",1,4,20)}</div>
+    <div class="r4">${pNum("endang","End angle (deg)",15)}${pNum("split","Split (drawing share)",0.05,0.4,1)}
+      ${pSel("tmpl","Template line")}${pNum("idle","Idle auto-stop (s)",1,2,30)}</div></div>`);
+  if(c.tap) groups.push(`<div style="margin-top:10px"><b>Tapping</b>
+    <div class="r4">${pNum("tapdia","Zone size (mm)",5,20,90)}
+      ${c.zones===2?pNum("zonegap","Bimanual spacing (mm)",5,60,200):""}</div></div>`);
+  if(c.audio && AUDIO_DEFAULTS[c.id]) groups.push(`<div style="margin-top:10px"><b>Auditory stream — ${c.id}</b>
+    <div class="r4">${pAudio(c.id,"isi","Mean ISI (ms)",50,300,4000)}${pAudio(c.id,"jit","Jitter (%)",1,0,50)}
+      ${pAudio(c.id,"ptg","Target prob.",0.01,0,0.5)}${pAudio(c.id,"tone","Tone (ms)",10,30,200)}</div>
+    <div class="r4">${pAudio(c.id,"lead","Lead-in (ms)",100,0,3000)}${pNum("fstd","Standard (Hz)",50)}
+      ${pNum("ftgt","Target (Hz)",50)}${pNum("lvl","Tone level (0–1)",0.05,0.05,1)}</div></div>`);
+  if(!groups.length){ host.innerHTML=`<div class="note">This task uses no adjustable
+    parameters.</div>`; return; }
+  host.innerHTML=`<details ${NEXTUP_PARAMS_OPEN?"open":""} ontoggle="toggleNextUpParams(this)"
+      style="margin-top:12px;border:1px solid var(--line);border-radius:8px;padding:8px 12px">
+    <summary style="cursor:pointer;font-size:14px;font-weight:600">Parameters for this task</summary>
+    ${groups.join("")}
+    <div class="note">These are the same values as the Parameters page — changing one here
+    changes it there, and it applies to the next trial you start. Every trial records the
+    full parameter set it ran under, so a change between trials is never lost.
+    ${paramExploring()?"":`<b>If you are varying parameters between trials, tick
+    “Parameter exploration session” above.</b>`}</div>
+  </details>`;
 }
 const handWord=h=> h==="both"?"both":h==="dominant"?"dominant":"non-dominant";
 // dominant/non-dominant resolve to a physical side only at run time
@@ -2034,7 +2211,14 @@ function newParticipant(){
   if($("volstep")) $("volstep").value="0";
   if($("audioroute")) $("audioroute").value="speaker";
   if($("voiceconsent")) $("voiceconsent").checked=false;
+  if($("paramexplore")) $("paramexplore").checked=false;
+  // The room belongs to the session, not the person, but a new participant is a new
+  // session -- and a stale floor is worse than none, because it looks measured.
+  Object.keys(ROOMCHECK).forEach(k=>delete ROOMCHECK[k]); ROOMCHECK.floor_dbfs=null;
+  if($("roomresult")) $("roomresult").innerHTML="";
+  if($("roomBtn")){ $("roomBtn").disabled=false; $("roomBtn").textContent="Run room check (5 s)"; }
   penPadClear(); renderAudioCheck(); mtbReset(); dotReset(); onVoiceConsentChange();
+  onParamExploreChange();
   SERIES=0;
   Object.keys(REPEATS).forEach(k=>delete REPEATS[k]);
   QUEUE=[]; QPOS=0; LAST=null; INSTRUCTED.clear();
@@ -2238,7 +2422,7 @@ const secureOrigin = () => window.isSecureContext === true;
 const INSECURE_DETAIL = "The page is not on a secure origin, so the browser does not expose the microphone at all. This is a property of the address the app was opened from, not of the iPad, the microphone or the app.";
 const RECORDER={
   available: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia && window.MediaRecorder),
-  stream:null, rec:null, chunks:[], mime:"", startedAt:null,
+  stream:null, rec:null, chunks:[], mime:"", startedAt:null, settings:null,
   // Bumped every time a stream is acquired. A stop() that settles after the next trial
   // has already taken the microphone must not release that trial's stream.
   gen:0,
@@ -2255,7 +2439,14 @@ const RECORDER={
     if(this.stream && this.stream.getAudioTracks().some(t=>t.readyState==="live")) return Promise.resolve(this.stream);
     return navigator.mediaDevices.getUserMedia({ audio:{ channelCount:1,
         echoCancellation:false, noiseSuppression:false, autoGainControl:false } })
-      .then(s=>{ this.stream=s; this.gen++; return s; });
+      .then(s=>{
+        this.stream=s; this.gen++;
+        // Safari honours some constraints and quietly ignores others, so what was asked
+        // for is not evidence of what is happening. Read back what the track actually has.
+        const tr=s.getAudioTracks()[0];
+        this.settings = (tr && tr.getSettings) ? tr.getSettings() : {};
+        return s;
+      });
   },
   begin(onStart){
     if(!this.stream) throw new Error("no microphone stream");
@@ -2282,6 +2473,142 @@ const RECORDER={
     if(this.stream){ this.stream.getTracks().forEach(t=>{try{t.stop();}catch(e){}}); this.stream=null; }
   }
 };
+/* ---------------------------------------------------------------------------
+   LEVEL METERING
+
+   Why this exists. Vocal loudness in Parkinson's runs only 2-4 dB below controls
+   (Fox & Ramig 1997, AJSLP 6:85), while mouth-to-microphone distance varying
+   between participants moves the recorded level by 15-20 dB. Recording geometry,
+   not pathology, is the dominant effect. The failure to avoid is recording quality
+   correlating with diagnostic group -- DLB carries parkinsonism, AD does not --
+   which would let a classifier look like it works while it is measuring the
+   microphone. So the chain measures itself: the noise floor once per session, the
+   level on every trial, and the constraints the browser actually applied.
+
+   Levels are RMS per frame expressed in dBFS. 0 dBFS is full scale, so every value
+   is negative and quieter is more negative.
+   --------------------------------------------------------------------------- */
+const LEVEL_FFT=2048;
+const LEVEL_FLOOR_DBFS=-120;              // reported for a digitally silent frame
+const ROOM_CHECK_MS=5000;
+const SNR_MIN_DB=30;                      // Deliyski et al. 2005: minimum usable
+const SNR_GOOD_DB=42;                     // recommended
+const USABLE_FALLBACK_DBFS=-45;           // used when no room check has been run
+const ROOM_WARN_FLOOR_DBFS=-50;           // above this, 30 dB SNR needs near-clipping speech
+
+function makeLevelMeter(stream){
+  const ac=audio();
+  const src=ac.createMediaStreamSource(stream);
+  const an=ac.createAnalyser(); an.fftSize=LEVEL_FFT; an.smoothingTimeConstant=0;
+  src.connect(an);                        // measured only -- never routed to the speakers
+  const buf=new Float32Array(an.fftSize);
+  return {
+    read(){
+      an.getFloatTimeDomainData(buf);
+      let sum=0; for(let i=0;i<buf.length;i++) sum+=buf[i]*buf[i];
+      const rms=Math.sqrt(sum/buf.length);
+      return rms>0 ? Math.max(LEVEL_FLOOR_DBFS, 20*Math.log10(rms)) : LEVEL_FLOOR_DBFS;
+    },
+    stop(){ try{src.disconnect();}catch(e){} try{an.disconnect();}catch(e){} }
+  };
+}
+// Summary of a run of frame levels. p90 stands in for "the level of the speech" -- a
+// straight mean is dragged down by the pauses every recording contains.
+function levelStats(dbfs){
+  if(!dbfs || !dbfs.length) return null;
+  const lin=dbfs.map(d=>Math.pow(10,d/20));
+  const meanLin=lin.reduce((a,b)=>a+b,0)/lin.length;
+  const sorted=[...dbfs].sort((a,b)=>a-b);
+  const q=f=>sorted[Math.min(sorted.length-1,Math.max(0,Math.round((sorted.length-1)*f)))];
+  return { frames:dbfs.length,
+    mean_dbfs:+(meanLin>0?20*Math.log10(meanLin):LEVEL_FLOOR_DBFS).toFixed(1),
+    min_dbfs:+q(0).toFixed(1), median_dbfs:+q(0.5).toFixed(1),
+    p90_dbfs:+q(0.9).toFixed(1), max_dbfs:+q(1).toFixed(1) };
+}
+// The level speech has to reach to be scoreable. Anchored to the measured room floor when
+// there is one, because "loud enough" only means anything relative to the noise it has to
+// sit above.
+function usableThresholdDbfs(){
+  if(ROOMCHECK.floor_dbfs!=null) return +(ROOMCHECK.floor_dbfs+SNR_MIN_DB).toFixed(1);
+  return USABLE_FALLBACK_DBFS;
+}
+
+/* ------------------------------------------------------- room check */
+const ROOMCHECK={ floor_dbfs:null };
+function runRoomCheck(){
+  const btn=$("roomBtn");
+  if(!secureOrigin()){
+    $("roomresult").innerHTML=`<div class="bad">Cannot run: the microphone is unavailable
+      from this address — see the note beside the voice consent tick above.</div>`; return;
+  }
+  if(!RECORDER.available){
+    $("roomresult").innerHTML=`<div class="bad">This browser reports no microphone support.</div>`; return;
+  }
+  btn.disabled=true; btn.textContent="Listening…";
+  $("roomresult").innerHTML=`<div class="note">Listening for 5 seconds. Ask everyone to stay
+    quiet — do not speak, and do not move the iPad.</div>`;
+  navigator.mediaDevices.getUserMedia({ audio:{ channelCount:1,
+      echoCancellation:false, noiseSuppression:false, autoGainControl:false } })
+    .then(stream=>{
+      const track=stream.getAudioTracks()[0];
+      const settings=track.getSettings?track.getSettings():{};
+      const meter=makeLevelMeter(stream);
+      const frames=[], t0=performance.now();
+      const tick=setInterval(()=>{
+        frames.push(meter.read());
+        const left=Math.max(0,(ROOM_CHECK_MS-(performance.now()-t0))/1000);
+        btn.textContent=`Listening… ${left.toFixed(1)} s`;
+        if(performance.now()-t0>=ROOM_CHECK_MS){
+          clearInterval(tick); meter.stop();
+          stream.getTracks().forEach(t=>{try{t.stop();}catch(e){}});
+          const st=levelStats(frames);
+          Object.assign(ROOMCHECK,{
+            floor_dbfs:st.median_dbfs, quiet_dbfs:st.min_dbfs, peak_dbfs:st.max_dbfs,
+            p90_dbfs:st.p90_dbfs, frames:st.frames, duration_ms:ROOM_CHECK_MS,
+            sample_rate: ctx?ctx.sampleRate:null,
+            constraints_applied:{ autoGainControl:settings.autoGainControl??null,
+              noiseSuppression:settings.noiseSuppression??null,
+              echoCancellation:settings.echoCancellation??null,
+              channelCount:settings.channelCount??null },
+            usable_threshold_dbfs: +(st.median_dbfs+SNR_MIN_DB).toFixed(1),
+            snr_min_db:SNR_MIN_DB, snr_recommended_db:SNR_GOOD_DB,
+            checked_iso:new Date().toISOString(),
+            note:"floor_dbfs is the median frame level over 5 s of intended silence. usable_threshold_dbfs is that floor plus the 30 dB minimum SNR from Deliyski et al. 2005." });
+          renderRoomCheck();
+          btn.disabled=false; btn.textContent="Run room check again";
+        }
+      },50);
+    })
+    .catch(err=>{
+      btn.disabled=false; btn.textContent="Run room check (5 s)";
+      $("roomresult").innerHTML=`<div class="bad">Could not open the microphone
+        (${esc(String(err&&err.name||err))}). The room check is not recorded.</div>`;
+    });
+}
+function renderRoomCheck(){
+  if(!$("roomresult")) return;
+  if(ROOMCHECK.floor_dbfs==null){ $("roomresult").innerHTML=""; return; }
+  const floor=ROOMCHECK.floor_dbfs, need=ROOMCHECK.usable_threshold_dbfs;
+  const noisy=floor>ROOM_WARN_FLOOR_DBFS;
+  const cs=ROOMCHECK.constraints_applied||{};
+  const agc=cs.autoGainControl===true, ns=cs.noiseSuppression===true;
+  $("roomresult").innerHTML=
+    `<div class="${noisy?"warn":"good"}">Noise floor <b>${floor.toFixed(1)} dBFS</b>.
+      For the 30 dB minimum, speech has to reach about <b>${need.toFixed(1)} dBFS</b>;
+      for the recommended 42 dB, about ${(floor+SNR_GOOD_DB).toFixed(1)} dBFS.
+      ${noisy?`This room is <b>noisy</b> — at this floor, usable speech would have to be
+        recorded close to clipping. Turn off fans and air conditioning, close the door,
+        move away from corridors, and run it again.`
+             :`Quiet enough to record in.`}</div>` +
+    ((agc||ns)?`<div class="bad"><b>The browser overrode the recording settings.</b>
+      ${agc?"Automatic gain control is ON. ":""}${ns?"Noise suppression is ON. ":""}
+      Automatic gain control lifts a quiet speaker to the same level as a loud one, which
+      erases exactly the differences these recordings exist to measure. Levels from this
+      device are not comparable between participants. This is recorded on every trial.</div>`:"") +
+    `<div class="note">Recorded once per session and written into every trial record.
+      Every voice recording also carries its own level statistics, so quiet stretches are
+      visible without listening to the files.</div>`;
+}
 const AUDIO_EXT = m => /webm/.test(m)?"webm" : /mp4|m4a|aac/.test(m)?"m4a" : /ogg/.test(m)?"ogg" : "bin";
 
 function idbOpen(){
@@ -2695,10 +3022,14 @@ function showInstructionScreen(seq,c,returnToReady){
         onclick="rehearseSwitch()">Play low – high – low – high</button>
       <div class="note" style="margin-top:6px">Play it and have them tap and speak along.
       Do not start the trial until they have it.</div></div>` : ``;
+  const palmNote = palmRejectionAffected(c) ? `<div style="margin-top:16px;padding:14px 18px;
+      border:1px solid #e9b7b7;border-radius:9px;background:#fdecec;color:#8c2020;
+      max-width:660px;text-align:left;font-size:17px;line-height:1.55">
+      <b>Platform limit — read before running this task.</b><br>${PALM_WARNING}</div>` : ``;
   const voiceNote = c.voice ? (TRIAL.voiceFailure
       ? `<p style="font-size:17px;color:#8c2020"><b>Not being recorded</b> — ${esc(TRIAL.voiceFailure.detail)}</p>`
       : `<p style="font-size:17px;color:var(--ok)">Voice recording is on for this trial.</p>`) : ``;
-  showOverlay(`<h3>${TRIAL.task} — ${c.label}</h3>` + instructionHTML(ins) + soundBtns + rehearsal + voiceNote +
+  showOverlay(`<h3>${TRIAL.task} — ${c.label}</h3>` + instructionHTML(ins) + soundBtns + rehearsal + palmNote + voiceNote +
     `<p style="font-size:16px;color:#5d6570;margin-top:10px">${ins.length}</p>`,
     [{label:"Ready", onClick:()=>{ hideOverlay(); LAST_TASK=TRIAL.task;
         readyTrial(returnToReady?returnToReady.seq:seq, c); }}]);
@@ -2808,9 +3139,12 @@ function runTrial(seq,c){
   const untimed = TRIAL.lengthS===null || !!c.spiral;
   const durMs = seq ? seq.durationMs : (TRIAL.lengthS||10)*1000;
 
+  const scale0=viewportScale();
   RUN={ seq,task:TRIAL.task,perf0,outLat,baseLat,durMs,leadMs,untimed,cfg:cfgL,
         startedISO:new Date().toISOString(),firstContactMs:null,toneClockDone:false,
-        lastContact:null,saved:false,c,voice:null,voicePending:null,fluencyCueMs:null };
+        lastContact:null,saved:false,c,voice:null,voicePending:null,fluencyCueMs:null,
+        viewport:{ scale_at_start:scale0, scale_at_end:null,
+                   scale_max:scale0, scale_min:scale0 } };
 
   // Voice capture window. Tone tasks: from the start of the tone stream (perf0) to the
   // end of the trial. SP_VRB has no tones, so its origin is the trial start, which is
@@ -2834,6 +3168,12 @@ function runTrial(seq,c){
             RUN.voice.mime_type=RECORDER.mime||null;
             $("recdot").textContent="● REC"; $("recdot").style.color="#8c2020";
           });
+          // Level metering over exactly the recorded window, so the statistics describe
+          // the file rather than the trial.
+          try{
+            RUN.levels=[]; RUN.meter=makeLevelMeter(RECORDER.stream);
+            $("levelmeter").classList.add("on");
+          }catch(e){ RUN.meter=null; }
         }catch(e){
           RUN.voice.failure="recorder_start_failed";
           RUN.voice.failure_detail=String((e&&(e.name+": "+e.message))||e);
@@ -2884,6 +3224,8 @@ function runTrial(seq,c){
   const fluencyWinMs = (c.verbal && TRIAL.verbal && TRIAL.verbal.fluency_window_s)
     ? TRIAL.verbal.fluency_window_s*1000 : null;
   const loop=()=>{ drawScene();
+    noteTrialScale();
+    if(RUN.meter){ const db=RUN.meter.read(); RUN.levels.push(db); updateLevelMeter(db); }
     const now=performance.now();
     const left=(perf0+durMs-now)/1000;
     if(left<=0&&!RUN.toneClockDone){ RUN.toneClockDone=true; if(untimed) stopAudio(); }
@@ -2930,6 +3272,18 @@ function runTrial(seq,c){
   if(!untimed) RUN.timer=setTimeout(()=>stopTrial(true), leadMs+durMs+600);
 }
 
+// The examiner can see a participant going inaudible while there is still time to prompt
+// them, instead of finding out when the file is played back.
+function updateLevelMeter(db){
+  const bar=$("levelbar"), txt=$("leveltxt"); if(!bar) return;
+  const need=usableThresholdDbfs();
+  // -60..0 dBFS mapped across the bar
+  const pct=clamp((db+60)/60*100,0,100);
+  bar.firstElementChild.style.width=pct.toFixed(0)+"%";
+  bar.classList.toggle("quiet", db < need-10);
+  bar.classList.toggle("low",  db >= need-10 && db < need);
+  txt.textContent=db<=LEVEL_FLOOR_DBFS+1 ? "silent" : db.toFixed(0)+" dB";
+}
 // Ends the recorder and hands back a promise that settles once the blob exists, so a
 // SAVE pressed a fraction of a second later cannot write a record with no audio in it.
 function endRecording(){
@@ -2938,6 +3292,20 @@ function endRecording(){
   const gen=RECORDER.gen;
   if(!RUN.voice.attempted){ RECORDER.release(gen); return; }
   RUN.voice.recorder_stop_ms = RUN.perf0 ? +(performance.now()-RUN.perf0).toFixed(2) : null;
+  if(RUN.meter){ try{ RUN.meter.stop(); }catch(e){} RUN.meter=null; }
+  $("levelmeter").classList.remove("on");
+  if(RUN.levels && RUN.levels.length){
+    const st=levelStats(RUN.levels), need=usableThresholdDbfs();
+    const below=RUN.levels.filter(d=>d<need).length/RUN.levels.length;
+    RUN.voice.level={ ...st,
+      usable_threshold_dbfs:need,
+      threshold_source: ROOMCHECK.floor_dbfs!=null
+        ? `room noise floor ${ROOMCHECK.floor_dbfs} dBFS + ${SNR_MIN_DB} dB minimum SNR`
+        : `fixed fallback (${USABLE_FALLBACK_DBFS} dBFS) -- no room check was run this session`,
+      frac_below_usable:+below.toFixed(3),
+      too_low_to_score: st.p90_dbfs < need,
+      note:"levels are RMS per frame in dBFS. p90_dbfs stands in for the level of the speech itself; mean and median are pulled down by the pauses every recording contains. frac_below_usable therefore includes normal silences and is not on its own a fault." };
+  }
   RUN.voicePending = RECORDER.stop().then(blob=>{
     if(blob && blob.size){
       RUN.voice.recorded=true; RUN.voice.blob=blob; RUN.voice.bytes=blob.size;
@@ -2983,6 +3351,7 @@ function stopTrial(auto){
   stopAudio();
   endRecording();
   if(RUN.teardown) RUN.teardown();
+  if(RUN.viewport){ noteTrialScale(); RUN.viewport.scale_at_end=viewportScale(); }
   RUN.stoppedEarly=!auto; finish();
 }
 // Abandons the trial on screen only. Participant details, the plan and every saved
@@ -3134,11 +3503,36 @@ function renderResult(seq,c,pts,rate,att,tp){
     <tr><th>Output latency</th><td class="num">${RUN.outLat.toFixed(1)} ms</td>
         <th>Lead-in</th><td class="num">${RUN.leadMs} ms</td></tr>`:""}
   </table>
+  ${(RUN.viewport && (RUN.viewport.scale_max>1+ZOOM_TOL || RUN.viewport.scale_min<1-ZOOM_TOL))
+    ? `<div class="bad"><b>This trial is invalid — the page was zoomed while it ran</b>
+       (scale reached ${RUN.viewport.scale_max.toFixed(2)}×). The spiral is sized in millimeters
+       from the calibration, so at that zoom it was drawn at the wrong physical size and the
+       millimeter measures cannot be compared with other trials. The record is flagged
+       <code>geometry_valid: false</code>. Clear the zoom and run it again.</div>`:""}
   ${c.spiral&&rate<55?`<div class="warn">Pen rate under 60 Hz — one point per frame. Browser
     kinematics will be coarse.</div>`:""}
   ${V&&!V.recorded?`<div class="bad">No audio was captured for this trial${V.failure?` (${esc(V.failure)})`:""}.
     ${V.failure_detail?esc(V.failure_detail)+" ":""}The trial record says so explicitly, so it will not be
     mistaken for a recording that was made and then lost.</div>`:""}
+  ${V&&V.recorded&&V.level?(()=>{
+      const L=V.level;
+      return L.too_low_to_score
+        ? `<div class="bad"><b>This recording is too quiet to score.</b> Speech level
+           (p90) was ${L.p90_dbfs} dBFS against a usable threshold of
+           ${L.usable_threshold_dbfs} dBFS — ${esc(L.threshold_source)}.
+           Move the iPad closer, or prompt a stronger voice, and run it again.</div>`
+        : `<div class="good">Level ${L.p90_dbfs} dBFS against a
+           ${L.usable_threshold_dbfs} dBFS threshold${L.frac_below_usable>0.7
+             ? `. ${Math.round(L.frac_below_usable*100)}% of frames sit below it, which is
+                expected if there were long pauses — check the clip if that seems wrong`:``}.</div>`;
+    })():""}
+  ${V&&V.recorded&&V.constraints_overridden?`<div class="bad"><b>The browser overrode the
+    recording settings on this trial</b> — automatic gain control or noise suppression came
+    back enabled. Gain control lifts a quiet speaker to the level of a loud one, so levels
+    from this device cannot be compared between participants. Recorded on the trial.</div>`:""}
+  ${V&&V.recorded&&ROOMCHECK.floor_dbfs==null?`<div class="warn">No room check was run this
+    session, so the level threshold is a fixed fallback rather than this room's noise floor.
+    Run it from the Sound check panel on the Participant page.</div>`:""}
   ${V&&V.recorded?`<div class="note"><code>recorder_start_ms</code> is written on the same clock as
     the tone onsets, but the alignment is marked <b>uncharacterized</b> in the record: MediaRecorder's
     start latency on this device has not been measured, so the file's first sample is not known to
@@ -3241,6 +3635,11 @@ function buildRecord(){
     session_id:`${pid}-v${visitNo()}-s${sessNo()}`,
     visit_number:visitNo(), session_number:sessNo(), trial_number:R.seriesN,
     session_note:$("sessnote").value||null,
+    // Set by the examiner on the Session page. Trials from an exploration session vary in
+    // their parameters by design and are not comparable with one another; without this the
+    // only way to tell would be to diff param_signature across trials afterwards and guess.
+    session_mode:{ parameter_exploration:paramExploring(),
+      note:"parameter_exploration true means parameters were being varied deliberately between trials in this session, so these trials are not a fixed-protocol run and must not be pooled as one" },
     series_number:R.seriesN, repeat_number:R.repeatN, hand_label:R.handLabel,
     plan:{ position:TRIAL.index+1, planned_total:QUEUE.length,
            queue:QUEUE.map(q=>({task:q.task,hand:q.hand,status:q.status,skip:q.skipReason})) },
@@ -3255,11 +3654,21 @@ function buildRecord(){
     pen_check:PENCHECK,
     sound_check:{ confirmed:$("soundok").checked, route:$("audioroute").value,
                   volume_steps:$("volstep").value },
+    // Once per session, from the Sound check panel. A voice level means nothing without
+    // the noise floor it has to sit above, so the floor travels with every trial.
+    room_check: ROOMCHECK.floor_dbfs!=null ? {...ROOMCHECK} : null,
     trial:{ started_iso:R.startedISO, stopped_early:!!R.stoppedEarly, idle_ended:!!R.idleEnded,
       untimed:!!R.untimed, self_paced:TRIAL.lengthS==null,
       length_s:R.durMs/1000, lead_in_ms:R.leadMs,
       first_contact_ms:R.firstContactMs,
       t_zero:"START pressed plus the lead-in; pen, tap, tone and recorder times share this origin" },
+    // A zoomed page renders the spiral at the wrong physical size, so millimeters in this
+    // record would not be the millimeters the participant drew. Recorded rather than
+    // guessed at, and flagged rather than left for someone to notice later.
+    viewport: R.viewport ? { ...R.viewport,
+      zoomed_during_trial: !!(R.viewport.scale_max>1+ZOOM_TOL || R.viewport.scale_min<1-ZOOM_TOL),
+      geometry_valid: !(R.viewport.scale_max>1+ZOOM_TOL || R.viewport.scale_min<1-ZOOM_TOL),
+      note:"scale 1.0 means the page was not zoomed. Anything else means the spiral was rendered at the wrong physical size, so the millimeter measures on this trial are not comparable with other trials." } : null,
     audio_runtime: R.seq ? { output_latency_ms:R.outLat, base_latency_ms:R.baseLat,
       sample_rate:ctx?ctx.sampleRate:null } : null,
     sequence: R.seq ? { n_tones:R.seq.n, n_targets:R.seq.t, seed:R.seq.seed,
@@ -3273,6 +3682,15 @@ function buildRecord(){
         : R.seq.onsets.filter((o,i)=>o<=R.streamCutMs && R.seq.isTarget[i]).length,
       onsets_ms:R.seq.onsets, tone_type:R.seq.isTarget.map(x=>x?"target":"standard"),
       intervals_ms:R.seq.intervals, min_isi_ms:R.seq.minISI } : null,
+    // Recoverable from the data later: which trials were run under a platform limit that
+    // makes the dual task not a dual task.
+    input_limits: palmRejectionAffected(c) ? {
+        palm_rejection:true,
+        detail:PALM_WARNING,
+        effect:"finger taps are suppressed by the operating system while the pen is in contact with the glass, so tap responses on this trial are missing rather than absent",
+        applies_to:"pen-drawn tasks that also require finger tapping",
+        platform:"iPadOS Safari; not present in a native UIKit build"
+      } : { palm_rejection:false },
     tapping:LAST.tp||null,
     counting: c.count ? {
         reported:R.reportedCount??null,
@@ -3289,6 +3707,14 @@ function buildRecord(){
     // Audio bytes are in IndexedDB under audio_id, never here: base64 in a ~5 MB string
     // store would fill the quota and take the trial records down with it.
     voice: V ? { consented:V.consented, attempted:V.attempted, recorded:V.recorded,
+        level:V.level??null,
+        // What was REQUESTED is in the code; this is what the browser reported applying.
+        // Automatic gain control is the one that matters: it lifts a quiet speaker to the
+        // same level as a loud one, erasing the differences these recordings exist to hold.
+        constraints_requested:{ echoCancellation:false, noiseSuppression:false, autoGainControl:false, channelCount:1 },
+        constraints_applied: RECORDER.settings || null,
+        constraints_overridden: !!(RECORDER.settings &&
+          (RECORDER.settings.autoGainControl===true || RECORDER.settings.noiseSuppression===true)),
         audio_id:V.audio_id, audio_store:V.audio_id?"indexeddb:motiq_audio/clips":null,
         stored:V.stored??null, store_error:V.store_error??null,
         mime_type:V.mime_type, bytes:V.bytes,
@@ -3420,11 +3846,12 @@ function showRescueOverlay(errName){
 /* ------------------------------------------------------- CSV */
 const CSV_HEAD=[
   "trial_id","trial_uid","build","schema","session_key","session_id","visit_number",
-  "session_number","trial_number","session_note","series_number",
+  "session_number","trial_number","session_note","parameter_exploration","series_number",
   "repeat_number","hand_label","plan_position","plan_total",
   "participant_id","group","sex","birth_year","birth_month","age_years","dominant_hand",
   "task","hand_role","draw_hand","tap_hand","implement","instruction",
   "notes","started_iso","stopped_early","idle_ended","untimed","self_paced",
+  "viewport_scale_start","viewport_scale_max","zoomed_during_trial","geometry_valid",
   "trial_length_s","lead_in_ms",
   "first_contact_ms","css_px_per_mm","device_label","calibration_source","card_confirmed",
   "pen_check_rate_right_hz","pen_check_rate_left_hz",
@@ -3437,10 +3864,15 @@ const CSV_HEAD=[
   "min_isi_ms","output_latency_ms",
   "n_pen_samples","achieved_rate_hz","n_strokes",
   "n_taps_left","n_taps_right","n_taps_single","alternation_pct",
+  "palm_rejection_affected",
   "count_reported","count_presented","count_error","count_mode","count_of",
   "count_presented_scheduled",
   "voice_consented","voice_recorded","voice_audio_id","voice_mime",
   "voice_recorder_start_ms","voice_alignment","voice_failure",
+  "voice_level_p90_dbfs","voice_level_mean_dbfs","voice_level_min_dbfs",
+  "voice_usable_threshold_dbfs","voice_frac_below_usable","voice_too_low_to_score",
+  "voice_agc_applied","voice_ns_applied","voice_constraints_overridden",
+  "room_floor_dbfs","room_usable_threshold_dbfs",
   "verbal_prompt_type","verbal_prompt_text","verbal_start_number","verbal_category",
   "verbal_fluency_window_s","fluency_cue_ms",
   "param_signature","parameters_json",
@@ -3477,6 +3909,7 @@ function csvRows(rec){
   const P=rec.participant, pm=rec.parameters||{}, sp=pm.spiral||{}, tapp=pm.tap||{}, au=pm.audio||{};
   const S=rec.spiral_rendered||{}, seq=rec.sequence, tp=rec.tapping||{};
   const ct=rec.counting||{}, V=rec.voice||{}, vb=rec.verbal||{};
+  const VL=V.level||{}, VC=V.constraints_applied||{};
   const pts=(rec.strokes||[]).flat();
   const dur=pts.length>1?(pts[pts.length-1].t-pts[0].t):0;
   const rate=dur>0?((pts.length-1)/(dur/1000)).toFixed(1):"";
@@ -3486,6 +3919,7 @@ function csvRows(rec){
   const meta=[
     rec.trial_id, rec.trial_uid, rec.build, rec.schema, rec.session_key??"", rec.session_id,
     rec.visit_number??"", rec.session_number??"", rec.trial_number??"", rec.session_note??"",
+    bit(rec.session_mode?rec.session_mode.parameter_exploration:false),
     rec.series_number, rec.repeat_number, rec.hand_label,
     rec.plan?.position??"", rec.plan?.planned_total??"",
     P.id||"unnamed", P.group??"", P.sex??"", P.birth_year??"", P.birth_month??"",
@@ -3494,6 +3928,9 @@ function csvRows(rec){
     pm.implement??"", sp.instruction??"",
     rec.notes??"", rec.trial.started_iso, rec.trial.stopped_early?1:0, rec.trial.idle_ended?1:0,
     rec.trial.untimed?1:0, bit(rec.trial.self_paced),
+    rec.viewport?rec.viewport.scale_at_start:"", rec.viewport?rec.viewport.scale_max:"",
+    rec.viewport?bit(rec.viewport.zoomed_during_trial):"",
+    rec.viewport?bit(rec.viewport.geometry_valid):"",
     rec.trial.length_s, rec.trial.lead_in_ms,
     rec.trial.first_contact_ms??"", rec.calibration.css_px_per_mm,
     rec.calibration.device_label??"", rec.calibration.source??"",
@@ -3514,12 +3951,20 @@ function csvRows(rec){
     pts.length, rate, (rec.strokes||[]).length,
     num(tp.nL), num(tp.nR), num(tp.nS),
     Number.isFinite(tp.altPct)?tp.altPct.toFixed(1):"",
+    bit(rec.input_limits?rec.input_limits.palm_rejection:false),
     rec.counting?(ct.reported??""):"", rec.counting?(ct.presented??""):"",
     rec.counting?(ct.error??""):"", rec.counting?(ct.mode??""):"", rec.counting?(ct.of??""):"",
     rec.counting?(ct.presented_scheduled??""):"",
     rec.voice?bit(V.consented):"", rec.voice?bit(V.recorded):"", rec.voice?(V.audio_id??""):"",
     rec.voice?(V.mime_type??""):"", rec.voice?(V.recorder_start_ms??""):"",
     rec.voice?(V.recorder_start_alignment??""):"", rec.voice?(V.failure??""):"",
+    VL.p90_dbfs??"", VL.mean_dbfs??"", VL.min_dbfs??"",
+    VL.usable_threshold_dbfs??"", VL.frac_below_usable??"",
+    (rec.voice&&V.level)?bit(V.level.too_low_to_score):"",
+    VC.autoGainControl==null?"":bit(VC.autoGainControl),
+    VC.noiseSuppression==null?"":bit(VC.noiseSuppression),
+    rec.voice?bit(V.constraints_overridden):"",
+    rec.room_check?rec.room_check.floor_dbfs:"", rec.room_check?rec.room_check.usable_threshold_dbfs:"",
     rec.verbal?(vb.type??""):"", rec.verbal?(vb.prompt_text??""):"",
     rec.verbal?(vb.start_number??""):"", rec.verbal?(vb.category??""):"",
     rec.verbal?(vb.fluency_window_s??""):"", rec.verbal?(vb.fluency_cue_ms??""):"",
@@ -3766,11 +4211,32 @@ document.addEventListener("touchmove", e=>{
 ["gesturestart","gesturechange","gestureend"].forEach(ev=>
   document.addEventListener(ev, e=>{ if($("stage").classList.contains("on")) e.preventDefault(); },
     {passive:false}));
-// A second finger anywhere outside a tap zone starts a pinch, and once zoomed there is no
-// way back without a reload.
-document.addEventListener("touchstart", e=>{
-  if($("stage").classList.contains("on") && e.touches.length>2) e.preventDefault();
-}, {passive:false});
+// A second finger outside a tap zone starts a pinch, and once zoomed there is no way back
+// without a reload.
+//
+// The old guard counted touches and fired at >2, so an ordinary two-finger pinch went
+// straight through -- two is not more than two. Counting is the wrong test anyway: what
+// makes a gesture legitimate is WHERE the fingers are. Bimanual tapping puts two fingers
+// on two tap zones and has to keep working, and a finger drawing the spiral is one
+// legitimate touch off-zone. Two touches off-zone is a pinch.
+//
+// One off-zone touch is allowed so that SPF_ODT still works -- a finger drawing while the
+// other hand taps a zone. That leaves a pinch with exactly one finger on a zone able to
+// get through; the viewport scale monitor below catches it, marks the trial invalid and
+// says so, so it cannot pass silently.
+function offZoneTouchCount(e){
+  let n=0;
+  for(let i=0;i<e.touches.length;i++){
+    const t=e.touches[i].target;
+    if(!(t && t.closest && t.closest(".tapzone"))) n++;
+  }
+  return n;
+}
+function pinchGuard(e){
+  if(!$("stage").classList.contains("on")) return;
+  if(e.touches.length>=2 && offZoneTouchCount(e)>1) e.preventDefault();
+}
+document.addEventListener("touchstart", pinchGuard, {passive:false});
 // Double-tap zoom: swallow the second tap of a rapid pair on non-interactive areas.
 let _lastTap=0;
 document.addEventListener("touchend", e=>{
@@ -3784,6 +4250,63 @@ const stageOn = on => {
   document.body.classList.toggle("locked", on);
 };
 
+/* ===========================================================================
+   VIEWPORT ZOOM
+
+   The spiral is sized in millimeters from the pixels-per-mm calibration. A zoomed
+   page renders it at the wrong physical size, so a trial run while zoomed is not
+   measuring what it says it is measuring -- the millimeters in the record are
+   wrong, and nothing downstream can tell.
+
+   iOS Safari has ignored user-scalable=no since iOS 10, for accessibility, so a
+   pinch cannot be refused outright by markup. The guard above stops most of them;
+   this catches whatever gets past it, and refuses to let it be silent.
+   =========================================================================== */
+const viewportScale = () => (window.visualViewport && window.visualViewport.scale) || 1;
+const ZOOM_TOL=0.01;
+const isZoomed = () => Math.abs(viewportScale()-1) > ZOOM_TOL;
+
+// Toggling maximum-scale forces a rescale on some iOS versions. It does not work on all
+// of them, which is why the banner exists.
+function tryResetZoom(){
+  const m=document.querySelector('meta[name=viewport]');
+  if(!m) return false;
+  const original=m.getAttribute("content");
+  m.setAttribute("content",
+    "width=device-width, initial-scale=1, minimum-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover");
+  void document.body.offsetWidth;                     // force a reflow
+  setTimeout(()=>{ m.setAttribute("content", original); renderZoomBanner(); }, 350);
+  return true;
+}
+function renderZoomBanner(){
+  let el=$("zoombanner");
+  if(!isZoomed()){ if(el) el.remove(); return; }
+  if(!el){
+    el=document.createElement("div"); el.id="zoombanner";
+    document.body.appendChild(el);
+  }
+  el.innerHTML=`<b>The page is zoomed (${viewportScale().toFixed(2)}×).</b>
+    The spiral is drawn from a millimeter calibration, so at this zoom it is the wrong
+    physical size and <b>any trial run now is invalid</b>.
+    <button class="ghost sm" onclick="tryResetZoom()">Try to reset</button>
+    <span>If that does not clear it, pinch back out with two fingers, or reload the page —
+    the session is saved and will be restored.</span>`;
+}
+if(window.visualViewport){
+  window.visualViewport.addEventListener("resize", ()=>{
+    renderZoomBanner();
+    if(RUN && !RUN.ready && RUN.viewport) noteTrialScale();
+  });
+}
+// Every sample taken during a trial, so a zoom that happens mid-trial and is pinched back
+// out before the end is still on the record.
+function noteTrialScale(){
+  if(!RUN || !RUN.viewport) return;
+  const sc=viewportScale();
+  RUN.viewport.scale_max=Math.max(RUN.viewport.scale_max, sc);
+  RUN.viewport.scale_min=Math.min(RUN.viewport.scale_min, sc);
+}
+
 // Refreshing was the only escape from a stuck zoom, and it wiped the participant. Keep the
 // working state on the device so a reload is recoverable.
 const STATE_KEY="motiq_state";
@@ -3796,6 +4319,9 @@ function saveState(){
     const f={}; STATE_FIELDS.forEach(id=>{ if($(id)) f[id]=$(id).value; });
     localStorage.setItem(STATE_KEY, JSON.stringify({
       fields:f, sessionKey:SESSION_KEY, plan:PLAN, queue:QUEUE, qpos:QPOS,
+      // Saved explicitly: STATE_FIELDS persists .value, and a checkbox has none. Losing
+      // this on a reload would silently unmark the rest of the session's trials.
+      paramExplore: paramExploring(),
       series:SERIES, repeats:REPEATS, lastTask:LAST_TASK, lastHand:LAST_HAND,
       selfPacedEstS:SELF_PACED_EST_S,
       audio:AUDIO_DEFAULTS, savedAt:new Date().toISOString()
@@ -3812,6 +4338,7 @@ function restoreState(){
   try{
     Object.entries(st.fields).forEach(([id,v])=>{ if($(id)) $(id).value=v; });
     if(st.sessionKey) SESSION_KEY=st.sessionKey;
+    if($("paramexplore")) $("paramexplore").checked=!!st.paramExplore;
     SELF_PACED_EST_S=clamp(Number(st.selfPacedEstS)||Number(st.fields.spest)||20,5,180);
     if($("spest")) $("spest").value=SELF_PACED_EST_S;
 
@@ -3851,6 +4378,7 @@ function restoreState(){
       if(AUDIO_DEFAULTS[k] && v && typeof v==="object") Object.assign(AUDIO_DEFAULTS[k],v); });
 
     applyCal(); updateAgeNote(); renderSecureNote(); onVoiceConsentChange();
+    onParamExploreChange();
     renderStatus(); renderPlan(); renderQueue(); renderAudioTable();
     const done=QUEUE.filter(q=>q.status==="done").length;
     if($("statusbar")) $("statusbar").insertAdjacentHTML("beforeend",
@@ -3887,6 +4415,7 @@ if(/[?&]reset\b/.test(location.search)){ clearState(); }
 
 renderPlan(); renderAudioTable(); renderSaved(); renderScreens(); renderStatus();
 renderSecureNote(); onVoiceConsentChange(); mtbReset(); dotReset(); renderAudioStore();
+renderZoomBanner();
 
 // Nothing below start-up should be able to leave a blank page.
 try { if(restoreState()) goPage(3); }
