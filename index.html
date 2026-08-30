@@ -465,36 +465,63 @@
 
     <fieldset>
       <legend>Spiral geometry</legend>
+      <p class="note" style="margin-top:0"><b>Pitch and turns are set separately for the stylus
+      and the finger.</b> Every task uses the set that matches its own implement, so a task and
+      its single-task baseline always share a geometry — dual-task cost is the change from
+      single to dual, and a mismatched baseline would confound load with geometry. Everything
+      below this pair is shared by both.</p>
       <div class="r4">
-        <div><label for="pitch">Pitch (mm)</label><input id="pitch" type="number" value="12" step="0.5" min="6" max="25"></div>
-        <div><label for="turns">Turns</label><input id="turns" type="number" value="5" step="1" min="2" max="8"></div>
-        <div><label for="instr">Instruction</label>
-          <select id="instr"><option value="between" selected>Draw between the lines</option>
-            <option value="trace">Trace on the line</option></select></div>
-        <div><label for="preset">Match printed template</label>
-          <select id="preset"><option value="">— choose —</option>
+        <div><label for="pitch_pen">Stylus — pitch (mm)</label>
+          <input id="pitch_pen" type="number" value="10" step="0.5" min="6" max="25"></div>
+        <div><label for="turns_pen">Stylus — turns</label>
+          <input id="turns_pen" type="number" value="6" step="1" min="2" max="8"></div>
+        <div style="grid-column:span 2"><label for="preset_pen">Stylus — match printed template</label>
+          <select id="preset_pen"><option value="">— choose —</option>
+            <option value="10,6">SP-R60-T6 · pitch 10, 6 turns</option>
+            <option value="12,5">SP-R60-T5 · pitch 12, 5 turns</option>
             <option value="11,4">SP-R44-T4 · pitch 11, 4 turns</option>
             <option value="11,5">SP-R55-T5 · pitch 11, 5 turns</option>
             <option value="12,4">SP-R48-T4 · pitch 12, 4 turns</option>
-            <option value="12,5">SP-R60-T5 · pitch 12, 5 turns</option>
             <option value="13,4">SP-R52-T4 · pitch 13, 4 turns</option>
             <option value="13,5">SP-R65-T5 · pitch 13, 5 turns</option></select></div>
       </div>
-      <div class="r4">
-        <div><label for="startdia">Start zone (mm)</label><input id="startdia" type="number" value="8" step="1" min="4" max="20"></div>
-        <div><label for="endang">End angle (deg)</label><input id="endang" type="number" value="90" step="15"></div>
-        <div><label for="split">Split (drawing share)</label><input id="split" type="number" value="0.70" step="0.05" min="0.4" max="1"></div>
-        <div><label for="tmpl">Template line</label>
-          <select id="tmpl">
-            <option value="grey" selected>Gray, solid</option>
-            <option value="black">Black, solid</option>
-            <option value="dotted">Gray, dotted</option>
-          </select></div>
+      <div id="geonote_pen"></div>
+      <div class="r4" style="margin-top:10px">
+        <div><label for="pitch_finger">Finger — pitch (mm)</label>
+          <input id="pitch_finger" type="number" value="12" step="0.5" min="6" max="25"></div>
+        <div><label for="turns_finger">Finger — turns</label>
+          <input id="turns_finger" type="number" value="5" step="1" min="2" max="8"></div>
+        <div style="grid-column:span 2"><label for="preset_finger">Finger — match printed template</label>
+          <select id="preset_finger"><option value="">— choose —</option>
+            <option value="10,6">SP-R60-T6 · pitch 10, 6 turns</option>
+            <option value="12,5">SP-R60-T5 · pitch 12, 5 turns</option>
+            <option value="11,4">SP-R44-T4 · pitch 11, 4 turns</option>
+            <option value="11,5">SP-R55-T5 · pitch 11, 5 turns</option>
+            <option value="12,4">SP-R48-T4 · pitch 12, 4 turns</option>
+            <option value="13,4">SP-R52-T4 · pitch 13, 4 turns</option>
+            <option value="13,5">SP-R65-T5 · pitch 13, 5 turns</option></select></div>
       </div>
-      <div class="r4">
-        <div><label for="idle">Idle auto-stop (s)</label><input id="idle" type="number" value="5" step="1" min="2" max="30"></div>
+      <div id="geonote_finger"></div>
+      <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:10px">
+        <div class="note" style="margin:0 0 4px"><b>Shared by both implements</b></div>
+        <div class="r4">
+          <div><label for="instr">Instruction</label>
+            <select id="instr"><option value="between" selected>Draw between the lines</option>
+              <option value="trace">Trace on the line</option></select></div>
+          <div><label for="startdia">Start zone (mm)</label><input id="startdia" type="number" value="8" step="1" min="4" max="20"></div>
+          <div><label for="endang">End angle (deg)</label><input id="endang" type="number" value="90" step="15"></div>
+          <div><label for="split">Split (drawing share)</label><input id="split" type="number" value="0.70" step="0.05" min="0.4" max="1"></div>
+        </div>
+        <div class="r4">
+          <div><label for="tmpl">Template line</label>
+            <select id="tmpl">
+              <option value="grey" selected>Gray, solid</option>
+              <option value="black">Black, solid</option>
+              <option value="dotted">Gray, dotted</option>
+            </select></div>
+          <div><label for="idle">Idle auto-stop (s)</label><input id="idle" type="number" value="5" step="1" min="2" max="30"></div>
+        </div>
       </div>
-      <div id="geonote" class="note"></div>
     </fieldset>
 
     <fieldset>
@@ -709,12 +736,14 @@ const CATALOGUE = [
   { id:"ODT",      label:"Oddball tapping",            order:70, spiral:0, tap:1, audio:1, zones:1, hands:"each",  repeats:2, lengthS:20 },
   { id:"SP_TAP",   label:"Spiral + tapping",           order:80, spiral:1, tap:1, audio:0, zones:1, hands:"roles", repeats:2, lengthS:null, implement:"pen" },
   { id:"SP_DET",   label:"Spiral + detection",         order:90, spiral:1, tap:1, audio:1, zones:1, hands:"roles", repeats:2, lengthS:45, implement:"pen", selfPaceable:1 },
-  { id:"SP_ODT",   label:"Spiral + oddball",           order:100,spiral:1, tap:1, audio:1, zones:1, hands:"roles", repeats:1, lengthS:45, implement:"pen", selfPaceable:1 },
+  // repeats 2: at ISI 1200 ms with 25% targets a 30 s drawing yields about 6 target events
+  // and a 40 s drawing about 8, well under the 12 per hand the plan summary warns below.
+  { id:"SP_ODT",   label:"Spiral + oddball",           order:100,spiral:1, tap:1, audio:1, zones:1, hands:"roles", repeats:2, lengthS:45, implement:"pen", selfPaceable:1 },
   // Counted aloud, so the number itself is on the recording as well as typed in at
   // the end. ptg 0 means there is nothing to discriminate: every tone is counted.
   { id:"SP_DEC",   label:"Spiral + count every tone aloud", order:102, spiral:1, tap:0, audio:1, zones:0, hands:"one", repeats:1, lengthS:null, implement:"pen",
                    selfPaceable:1, fixedS:45, count:1, countMode:"aloud", countOf:"all", respond:"speak", voice:1 },
-  { id:"SP_ODC",   label:"Spiral + count high tones aloud", order:104, spiral:1, tap:0, audio:1, zones:0, hands:"one", repeats:1, lengthS:null, implement:"pen",
+  { id:"SP_ODC",   label:"Spiral + count high tones aloud", order:104, spiral:1, tap:0, audio:1, zones:0, hands:"one", repeats:2, lengthS:null, implement:"pen",
                    selfPaceable:1, fixedS:45, count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1 },
   // Switching: the low tone is tapped, the high tone is spoken. Both tone types carry
   // a response, so targets may be adjacent and the attribution gap is the ISI itself.
@@ -815,6 +844,15 @@ const AUDIO_DEFAULTS = {
 // windowS  fluency only: the naming window is fixed, even though the trial itself stays
 //        self-paced like every other spiral trial. Fluency output is steeply front-loaded,
 //        so words per second cannot be compared across windows of different length.
+// Identical on every dual task, every participant and every visit, and written verbatim
+// into the record. With no instruction, how a participant splits attention is free to vary,
+// and someone with a motor impairment tends to protect the motor task -- which would show up
+// as a group difference in dual-task cost that is really a difference in strategy.
+const PRIORITIZATION = "Do your best on both. Don't let either one slip.";
+// Matches instructionFor()'s own test, so what the record claims and what was shown cannot
+// drift apart.
+const isDualTask = c => !!(c && c.spiral && (c.tap || c.audio || c.verbal));
+
 const VERBAL_PROMPTS = {
   up1:     { label:"Count forward by 1",       step:1,  range:[10,59],
              help:"The articulation-only baseline: speaking aloud with next to no cognitive load." },
@@ -948,6 +986,8 @@ function instructionFor(taskId, opts){
     }
   }
 
+  if(dualTask) lines.push(PRIORITIZATION);
+
   // Identical wording on every spoken task and every participant, because loudness that
   // varies with how it was asked for is loudness that cannot be compared. Explicit cueing
   // is the evidence-based route: Parkinson's disrupts implicit loudness regulation but
@@ -1020,6 +1060,11 @@ $("buildstamp").textContent = "Build " + BUILD;
 const PENCHECK={};                 // by hand: {samples, rate, pressure_varied, ...}
 let pcPts=null;
 const PC_TURNS=3;                  // rotations in the pen-check spiral; see penPadSetup()
+// Declared here, not down in the geometry section, for the reason above: updateGeo() is
+// reached from applyCal() during start-up.
+const TRACE_SPEEDS_CM_S=[2,4,6];   // slow and careful, through to brisk
+// Arc length of an Archimedean spiral. A function declaration so it is hoisted.
+function spiralPathMM(pitch,turns){ return pitch*Math.PI*turns*turns; }
 
 /* ------------------------------------------------------------------ pages */
 function goPage(n){
@@ -2118,8 +2163,11 @@ function renderNextUpParams(){
   if(QPOS>=QUEUE.length){ host.innerHTML=""; return; }
   const c=byId(QUEUE[QPOS].task); if(!c){ host.innerHTML=""; return; }
   const groups=[];
-  if(c.spiral) groups.push(`<div><b>Spiral</b>
-    <div class="r4">${pNum("pitch","Pitch (mm)",0.5,6,25)}${pNum("turns","Turns",1,2,8)}
+  // Pitch and turns come from the set this task's implement resolves to, so editing them
+  // here cannot accidentally change the other family's geometry.
+  const gs=geomSet(c.implement), gsLabel=gs==="finger"?"Finger":"Stylus";
+  if(c.spiral) groups.push(`<div><b>Spiral — ${gsLabel} geometry</b>
+    <div class="r4">${pNum("pitch_"+gs,"Pitch (mm)",0.5,6,25)}${pNum("turns_"+gs,"Turns",1,2,8)}
       ${pSel("instr","Instruction")}${pNum("startdia","Start zone (mm)",1,4,20)}</div>
     <div class="r4">${pNum("endang","End angle (deg)",15)}${pNum("split","Split (drawing share)",0.05,0.4,1)}
       ${pSel("tmpl","Template line")}${pNum("idle","Idle auto-stop (s)",1,2,30)}</div></div>`);
@@ -2293,6 +2341,27 @@ function renderAudioTable(){
 function audioSet(k,f,v){ AUDIO_DEFAULTS[k][f]=v; renderAudioTable(); planSummary(); saveState(); }
 
 /* ------------------------------------------------------- geometry */
+/* ---------------------------------------------------------------------------
+   Spiral geometry is per IMPLEMENT, not global and not per task.
+
+   A stylus tip is about 1 mm across; a fingertip contact patch is 8-10 mm. The
+   finger family therefore keeps a wider corridor. Both families are R60 -- the
+   same physical footprint -- so comparing implements is not also comparing
+   workspace size.
+
+   SP and SPF now differ deliberately in pitch and turns and are therefore NOT
+   comparable as measures. SPF exists to test whether a stylus-free configuration
+   is feasible at all, not to produce a number that can sit beside SP.
+
+   Per-implement is exactly the granularity required: a task and its single-task
+   baseline always resolve to the same set, so dual-task cost is never confounded
+   with a geometry difference. There is deliberately no task-level override, which
+   is the only thing that could silently break that.
+   --------------------------------------------------------------------------- */
+const geomSet   = impl => (impl==="finger" ? "finger" : "pen");
+const geomPitch = impl => +$("pitch_"+geomSet(impl)).value;
+const geomTurns = impl => +$("turns_"+geomSet(impl)).value;
+
 function spiralPath(radius,turns,direction,endAngleDeg,nPts=3000){
   const s=direction==="cw"?-1:1, phi=endAngleDeg*Math.PI/180;
   const b=radius/(turns*2*Math.PI), pts=[], thMax=turns*2*Math.PI;
@@ -2301,17 +2370,70 @@ function spiralPath(radius,turns,direction,endAngleDeg,nPts=3000){
   let len=0; for(let i=1;i<pts.length;i++) len+=Math.hypot(pts[i].x-pts[i-1].x,pts[i].y-pts[i-1].y);
   return {pts,b,s,phi,pathMM:len};
 }
-function updateGeo(){
-  if(!$("pitch")) return;
-  const pitch=+$("pitch").value, turns=+$("turns").value, radius=pitch*turns;
+// The drawing area the stage will actually give the spiral, in millimeters. Derived from
+// the same pixels-per-mm calibration the spiral itself is drawn from, so the comparison is
+// like for like.
+function usableStageMM(){
   const p=parseFloat($("ppmm").value)||3.78;
-  const sp=spiralPath(radius,turns,"cw",+$("endang").value,600);
-  $("geonote").innerHTML=`Outer radius <b>${radius} mm</b> (diameter ${2*radius} mm), path about
-    <b>${Math.round(sp.pathMM)} mm</b>, needing ${((2*radius+14)*p).toFixed(0)} px of drawing region.`;
+  const sa=safeAreaMM();
+  const uy0=Math.max(sa.top,2)*p;
+  const uh=window.innerHeight-uy0-Math.max(sa.bottom,2)*p;
+  const uw=window.innerWidth-(Math.max(sa.left,2)+Math.max(sa.right,2))*p;
+  const topPad=100;                                   // the admin bar, in px
+  return { height_mm:(uh-topPad)/p, width_mm:uw/p, split:clamp(+$("split").value,.4,1) };
 }
-["pitch","turns","endang"].forEach(id=>$(id).addEventListener("input",updateGeo));
-$("preset").addEventListener("change",e=>{ if(!e.target.value) return;
-  const [p,t]=e.target.value.split(","); $("pitch").value=p; $("turns").value=t; updateGeo(); });
+// spiralPathMM() -- pitch x pi x turns^2 -- and TRACE_SPEEDS_CM_S are declared up with the
+// other start-up constants. It agrees with the numeric length spiralPath() computes; the
+// closed form is used here so the readout is instant.
+
+function renderGeoSet(which){
+  const host=$("geonote_"+which); if(!host) return;
+  const pitch=+$("pitch_"+which).value, turns=+$("turns_"+which).value;
+  const radius=pitch*turns, dia=2*radius;
+  const pathMM=spiralPathMM(pitch,turns), pathCM=pathMM/10;
+  const u=usableStageMM();
+  // A dual task gives the drawing region only a share of the width.
+  const usableW=u.width_mm*u.split;
+  const times=TRACE_SPEEDS_CM_S.map(v=>`${Math.round(pathCM/v)} s at ${v} cm/s`).join(", ");
+  const label=which==="pen"?"Stylus":"Finger";
+  const sizeLine=`<b>${label}</b> — pitch ${pitch} mm × ${turns} turns: radius
+      <b>${radius} mm</b>, <b>${dia} mm</b> across, path <b>${pathCM.toFixed(0)} cm</b>.`;
+  // The window can report no size at all -- a hidden tab, a pane mid-layout. Printing
+  // negative millimeters and declaring it does not fit would be worse than saying so.
+  const measurable = u.height_mm>0 && u.width_mm>0;
+  if(!measurable){
+    host.innerHTML=`<div class="note" style="margin-top:6px">${sizeLine}
+      Stage size cannot be measured right now, so the fit check is not shown.</div>
+      <div class="note" style="margin-top:2px">Estimated drawing time: ${times}.</div>`;
+    return;
+  }
+  const fitsH=dia<=u.height_mm, fitsW=dia<=usableW;
+  host.innerHTML=
+    `<div class="${(fitsH&&fitsW)?"good":"bad"}" style="margin-top:6px">
+      ${sizeLine}
+      Usable stage height <b>${Math.round(u.height_mm)} mm</b>${
+        u.split<1?`, drawing-region width <b>${Math.round(usableW)} mm</b> at the current split`:``}.
+      ${(fitsH&&fitsW)?"It fits."
+        :`<b>IT DOES NOT FIT</b> — ${!fitsH?`${dia} mm across needs more than the
+           ${Math.round(u.height_mm)} mm of height available`:``}${(!fitsH&&!fitsW)?" and ":""}${
+           !fitsW?`the drawing region is only ${Math.round(usableW)} mm wide at this split`:``}.
+           Reduce pitch or turns, or the spiral will be drawn clipped.`}</div>
+     <div class="note" style="margin-top:2px">Estimated drawing time: ${times}. Estimates only,
+       spanning slow careful tracing to brisk.</div>`;
+}
+function updateGeo(){
+  if(!$("pitch_pen")) return;
+  renderGeoSet("pen"); renderGeoSet("finger");
+}
+["pitch_pen","turns_pen","pitch_finger","turns_finger","endang","split","ppmm"]
+  .forEach(id=>{ const el=$(id); if(el) el.addEventListener("input",updateGeo); });
+["pen","finger"].forEach(which=>{
+  const sel=$("preset_"+which); if(!sel) return;
+  sel.addEventListener("change",e=>{ if(!e.target.value) return;
+    const [p,t]=e.target.value.split(",");
+    $("pitch_"+which).value=p; $("turns_"+which).value=t; updateGeo(); saveState(); });
+});
+window.addEventListener("resize",()=>{ if(!$("pg4").classList.contains("hidden")) updateGeo(); });
 updateGeo();
 
 /* ------------------------------------------------------- sequence */
@@ -2712,7 +2834,7 @@ function drawScene(){
     g.setLineDash([]); }
 
   if(L.spiralOn){
-    const pitch=+$("pitch").value,turns=+$("turns").value,radius=pitch*turns;
+    const pitch=geomPitch(TRIAL.implement), turns=geomTurns(TRIAL.implement), radius=pitch*turns;
     const dir=TRIAL.drawHand==="left"?"ccw":"cw";
     const sp=spiralPath(radius,turns,dir,+$("endang").value);
     SPIRAL={radius,turns,pitch,direction:dir,pathMM:sp.pathMM,instruction:$("instr").value,
@@ -3606,7 +3728,9 @@ function paramSet(){
             hand_role:TRIAL.hand, draw_hand:TRIAL.drawHand, tap_hand:TRIAL.tapHand,
             implement:TRIAL.implement, length_s:TRIAL.lengthS,
             self_paced:TRIAL.lengthS==null };
-  if(c.spiral) p.spiral={ pitch_mm:+$("pitch").value, turns:+$("turns").value,
+  if(c.spiral) p.spiral={ geometry_set:geomSet(c.implement),
+    pitch_mm:geomPitch(c.implement), turns:geomTurns(c.implement),
+    geometry_note:"pitch and turns come from the geometry set for this task's implement; the stylus and finger families differ deliberately and are not comparable as measures",
     end_angle_deg:+$("endang").value, instruction:$("instr").value,
     start_zone_mm:+$("startdia").value, split:+$("split").value,
     template_style:$("tmpl").value, idle_stop_s:+$("idle").value };
@@ -3724,6 +3848,11 @@ function buildRecord(){
         recorder_start_alignment:V.recorder_start_alignment,
         recorder_start_alignment_note:V.recorder_start_alignment_note,
         failure:V.failure, failure_detail:V.failure_detail } : null,
+    // Verbatim, so the analysis can confirm what every participant was actually told rather
+    // than trusting that the protocol was followed.
+    instructions:{ prioritization: isDualTask(c) ? PRIORITIZATION : null,
+      prioritization_given: isDualTask(c),
+      note:"identical on every dual task, participant and visit. Without it, attention allocation varies freely and a motor-impaired participant tends to protect the motor task, which appears as a group difference in dual-task cost that is really a difference in strategy." },
     spiral_rendered:LAST.SPIRAL||null,
     strokes:LAST.STROKES,
     strokes_units:"x,y mm from spiral center, y up; t ms from START; p pressure 0-1",
@@ -3864,7 +3993,7 @@ const CSV_HEAD=[
   "min_isi_ms","output_latency_ms",
   "n_pen_samples","achieved_rate_hz","n_strokes",
   "n_taps_left","n_taps_right","n_taps_single","alternation_pct",
-  "palm_rejection_affected",
+  "palm_rejection_affected","prioritization_given",
   "count_reported","count_presented","count_error","count_mode","count_of",
   "count_presented_scheduled",
   "voice_consented","voice_recorded","voice_audio_id","voice_mime",
@@ -3952,6 +4081,7 @@ function csvRows(rec){
     num(tp.nL), num(tp.nR), num(tp.nS),
     Number.isFinite(tp.altPct)?tp.altPct.toFixed(1):"",
     bit(rec.input_limits?rec.input_limits.palm_rejection:false),
+    bit(rec.instructions?rec.instructions.prioritization_given:false),
     rec.counting?(ct.reported??""):"", rec.counting?(ct.presented??""):"",
     rec.counting?(ct.error??""):"", rec.counting?(ct.mode??""):"", rec.counting?(ct.of??""):"",
     rec.counting?(ct.presented_scheduled??""):"",
@@ -4312,7 +4442,8 @@ function noteTrialScale(){
 const STATE_KEY="motiq_state";
 const STATE_FIELDS=["pid","grp","sex","byear","bmonth","domhand","notes",
                     "visitno","sessnum","sessnote","instr","tmpl","implement",
-                    "pitch","turns","startdia","endang","split","tapdia","zonegap",
+                    "pitch_pen","turns_pen","pitch_finger","turns_finger",
+                    "startdia","endang","split","tapdia","zonegap",
                     "fstd","ftgt","lvl","seedmode","idle","ppmm","spest"];
 function saveState(){
   try{
