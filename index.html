@@ -465,19 +465,19 @@
           one. It is not sent to any trial and changes nothing about what is administered.</div></div>
       </div>
       <div id="planSummary"></div>
-      <div class="btnrow">
-        <button class="ghost" onclick="planPreset('core')">Core</button>
-        <button class="ghost" onclick="planPreset('second')">Core + Second</button>
-        <button class="ghost" onclick="planPreset('all')">Everything</button>
-        <button class="ghost" onclick="clearAllSelections()">Clear all selections</button>
-      </div>
+      <div class="btnrow" id="tierButtons"></div>
       <div id="presetNote"></div>
-      <div class="note">The presets are cumulative and change the selection only. Repeats,
-      lengths and prompts are unchanged, so re-selecting a task restores its settings.</div>
+      <div class="note">Each button selects or clears that tier, and they combine in any
+      order. Selection only: repeats, lengths and prompts are unchanged, so re-selecting a
+      task restores its settings.</div>
       <div class="btnrow">
         <button onclick="buildQueue()">Build session</button>
-        <button class="ghost" onclick="resetPlan()">Reset to defaults</button>
+        <button class="ghost" onclick="clearAllSelections()">Clear all selections</button>
+        <button class="ghost" onclick="resetPlan()">Reset plan table</button>
       </div>
+      <div class="note"><b>Reset plan table</b> returns the selection, repeats, hands,
+      lengths and prompts on this page to their catalogue defaults. It does not change
+      anything on the Parameters page.</div>
     </fieldset>
 
     <fieldset id="queueBox" class="hidden">
@@ -1926,9 +1926,9 @@ const HAND_LABEL={ each:"Each hand, alternating", one:"One hand",
 // D1. The badge carries the WORD as well as the color -- color alone does not survive
 // color blindness, a printout or a screenshot. Tier lives in the catalogue precisely so
 // moving a task between tiers stays a one-line edit there and never a change in here.
-const TIERS={ core:  { label:"Core",        bg:"#e6f0fb", fg:"#134a86", bd:"#b7d3f0" },
+const TIERS={ core:  { label:"Core",        bg:"#e3f3ea", fg:"#155e39", bd:"#9ecfb5" },
               second:{ label:"Second",      bg:"#fdf3e7", fg:"#7a4410", bd:"#e8c9a4" },
-              expl:  { label:"Exploratory", bg:"#eef1f5", fg:"#5d6570", bd:"#d5dae1" } };
+              expl:  { label:"Exploratory", bg:"#eef1f5", fg:"#5d6570", bd:"#c8ced7" } };
 const tierOf = c => TIERS[c.tier] || TIERS.expl;
 const tierBadge = c => { const t=tierOf(c);
   return `<span style="display:inline-block;font-size:11px;font-weight:600;padding:2px 7px;
@@ -1941,27 +1941,39 @@ const FAMILIES=[ { key:"TAP_", label:"Tapping" },
                  { key:"FIN_", label:"Finger drawing" } ];
 const familyOf = id => (FAMILIES.find(f=>id.startsWith(f.key)) || FAMILIES[2]).label;
 
-// D2. Cumulative presets. Selection only -- repeats, lengths and prompts are untouched.
-function planPreset(which){
-  const want = c => {
-    if(which==="all") return true;
-    if(which==="core") return c.tier==="core";
-    return c.tier==="core" || c.tier==="second";       // "second" = core + second
-  };
-  const skipped=[];
-  CATALOGUE.forEach(c=>{
-    const wanted=want(c), blocked=taskBlocked(c);
-    if(wanted && blocked) skipped.push(c.id);
-    PLAN[c.id].include = wanted && !blocked;
+// One toggle per tier, combinable in any order: Core alone, Core and Exploratory, all
+// three, none. Selection only -- repeats, lengths and prompts are untouched.
+let PRESET_NOTE=null;
+const tierTasks = tier => CATALOGUE.filter(c=>c.tier===tier);
+const tierFullySelected = tier => {
+  const t=tierTasks(tier).filter(c=>!taskBlocked(c));
+  return t.length>0 && t.every(c=>PLAN[c.id].include);
+};
+function toggleTier(tier){
+  const turnOff=tierFullySelected(tier), skipped=[];
+  tierTasks(tier).forEach(c=>{
+    const blocked=taskBlocked(c);
+    if(turnOff){ PLAN[c.id].include=false; return; }
+    if(blocked){ skipped.push(c.id); return; }
+    PLAN[c.id].include=true;
   });
-  // A preset that selects four of six reports which two it could not select. Voice consent
-  // is a consent requirement, not an experimental parameter.
+  // A toggle that selects four of six reports which two it could not. Voice consent is a
+  // consent requirement, not an experimental parameter.
   PRESET_NOTE = skipped.length
     ? `<b>${skipped.join(", ")}</b> not selected: ${taskBlocked(byId(skipped[0]))}.`
     : null;
   renderPlan(); saveState();
 }
-let PRESET_NOTE=null;
+function renderTierButtons(){
+  const host=$("tierButtons"); if(!host) return;
+  host.innerHTML = Object.entries(TIERS).map(([key,t])=>{
+    const on=tierFullySelected(key), n=tierTasks(key).length;
+    return `<button onclick="toggleTier('${key}')"
+      style="background:${on?t.fg:t.bg};color:${on?"#fff":t.fg};border:1px solid ${t.bd};
+             font-weight:600">${on?"✓ ":""}${t.label}
+      <span style="font-weight:400;opacity:.75">(${n})</span></button>`;
+  }).join("");
+}
 
 // D3. Shown only when the dependency is actually missing. Notes, never rules: nothing is
 // auto-checked and nothing is blocked. Stella is exploring.
@@ -2060,6 +2072,7 @@ function renderPlan(){
     });
   });
   $("planTable").innerHTML=h;
+  renderTierButtons();
   if($("presetNote")) $("presetNote").innerHTML = PRESET_NOTE
     ? `<div class="warn" style="margin-top:8px">${PRESET_NOTE}</div>` : "";
   planSummary();
@@ -2095,38 +2108,24 @@ function adhocCell(c,s2,blocked){
 // single control it always had.
 function lengthCell(c,s,blocked){
   const dis=blocked?"disabled":"";
+  // No explanation in this column. How a self-paced stream is generated and cut is stated
+  // once on the Parameters page, next to the values it depends on.
   if(!c.selfPaceable){
     if(c.lengthS===null) return `<span class="note" style="margin:0">self-paced</span>`;
     return `<input type="number" min="5" max="180" step="5" value="${s.lengthS}" ${dis}
           onchange="planSet('${c.id}','lengthS',+this.value)"> s` +
-      (c.verbal==="word"?`<div class="note" style="margin:4px 0 0;max-width:230px;color:var(--warm)">
-        <b>Fixed, not self-paceable.</b> Word output is steeply front-loaded — roughly 40–45%
-        of words come in the first 15 s — so words per second cannot be compared between
-        windows of different length.</div>`:"");
+      (c.verbal==="word"?`<div class="note" style="margin:4px 0 0">Fixed.</div>`:"");
   }
-  const a=AUDIO_DEFAULTS[c.id];
   const selfPaced = s.lengthS==null;
-  let sub="";
-  if(selfPaced){
-    sub = a
-      ? `<div class="note" style="margin:4px 0 0;max-width:230px">Stream generated to
-         ${a.selfPacedDurS ?? a.durS} s so it cannot run out, cut once drawing stops,
-         never before ${a.floorS ?? 20} s.</div>`
-      : `<div class="note" style="margin:4px 0 0;max-width:230px">Ends on END.</div>`;
-    if(c.verbal==="word")
-      sub += `<div class="note" style="margin:4px 0 0;max-width:230px;color:var(--warm)">
-        Fluency is scored over a fixed <b>60 s</b> window inside the trial — the screen
-        says when it is up. Fluency output is front-loaded (~40–45% of words in the first
-        15 s), so words per second cannot be compared between windows of different length.</div>`;
-  } else {
-    sub = `<input type="number" style="margin-top:4px" min="5" max="180" step="5"
-            value="${s.lengthS}" ${dis} onchange="planSet('${c.id}','lengthS',+this.value)"> s`;
-  }
+  const sub = selfPaced ? "" :
+    `<input type="number" style="margin-top:4px" min="5" max="180" step="5"
+       value="${s.lengthS}" ${dis} onchange="planSet('${c.id}','lengthS',+this.value)"> s`;
   return `<select ${dis} onchange="planSetLength('${c.id}',this.value)">
       <option value="self" ${selfPaced?"selected":""}>Self-paced</option>
       <option value="fixed" ${selfPaced?"":"selected"}>Fixed length</option>
     </select>${sub}`;
 }
+
 function planSetLength(id,mode){
   PLAN[id].lengthS = mode==="self" ? null : fixedLengthFor(byId(id));
   renderPlan(); saveState();
@@ -2483,9 +2482,14 @@ function renderAudioTable(){
     elapses. The usable window follows directly from the floor and is exact rather than a
     probabilistic bound. Increase the mean to increase unpredictability; increase the floor to
     lengthen the minimum response time. The two are set independently.</div>
-    <div class="note">Trial length is set once, per task, in the session plan — not here —
-    because it belongs to the trial rather than the stream. A task set to self-paced there uses
-    its own <code>selfPacedDurS</code> instead, so the stream cannot run out mid-drawing.</div>
+    <div class="note">Trial length is set per task in the session plan, not here, because it
+    belongs to the trial rather than the stream. A task set to <b>self-paced</b> there ignores
+    its stream duration and uses <code>selfPacedDurS</code>: the stream is generated long
+    enough that it cannot run out mid-drawing, and is cut once drawing stops, never before
+    <code>floorS</code>.
+    ${Object.entries(AUDIO_DEFAULTS).map(([k,a])=>`<br><b>${k}</b> — generated to
+      ${a.selfPacedDurS ?? a.durS} s, cut at drawing end, never before
+      ${a.floorS ?? 20} s`).join("")}</div>
     <div class="note"><b>Usable window</b> is the longest response time that can still be
     attributed to a specific tone. A slower response arrives after the following tone, so the
     two cannot be distinguished. It is derived from the floor, not set directly.</div>
