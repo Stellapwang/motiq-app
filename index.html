@@ -473,11 +473,12 @@
       <div class="btnrow">
         <button onclick="buildQueue()">Build session</button>
         <button class="ghost" onclick="clearAllSelections()">Clear all selections</button>
-        <button class="ghost" onclick="resetPlan()">Reset plan table</button>
+        <button class="ghost" onclick="resetPlan()">Reset all settings</button>
       </div>
-      <div class="note"><b>Reset plan table</b> returns the selection, repeats, hands,
-      lengths and prompts on this page to their catalogue defaults. It does not change
-      anything on the Parameters page.</div>
+      <div class="note"><b>Clear all selections</b> unticks every task and leaves its
+      repeats, hands, length and prompt as you set them.
+      <b>Reset all settings</b> also returns those to their catalogue defaults and discards
+      the trial list. Neither touches the Parameters page or any saved trial.</div>
     </fieldset>
 
     <fieldset id="queueBox" class="hidden">
@@ -1903,7 +1904,29 @@ function defaultPlan(){
       adhocHand:c.oneHand||"dominant" }; });
   return p;
 }
-function resetPlan(){ PLAN=defaultPlan(); QUEUE=[]; QPOS=0; renderPlan(); renderQueue(); saveState(); }
+// Wider than clearing the selection: it rebuilds repeats, hands, lengths and prompts from
+// the catalogue as well, and discards the built trial list. Because nothing is selected by
+// default, the visible result looks identical to clearing the selection unless something
+// has been edited -- so it says what it is about to undo, and asks first when there is a
+// trial list to lose.
+function resetPlan(){
+  const edited=CATALOGUE.filter(c=>{
+    const a=PLAN[c.id], allowed=handsAllowed(c);
+    return a.repeats!==c.repeats
+        || a.hands!==(allowed.includes(c.hands)?c.hands:allowed[0])
+        || a.lengthS!==c.lengthS
+        || a.oneHand!=="dominant";
+  }).map(c=>c.id);
+  const done=QUEUE.filter(q=>q.status!=="pending").length;
+  const bits=[];
+  if(edited.length) bits.push(`restores repeats, hands, lengths and prompts on ${edited.length} task${edited.length===1?"":"s"} (${edited.slice(0,4).join(", ")}${edited.length>4?", …":""})`);
+  if(QUEUE.length) bits.push(`discards the trial list of ${QUEUE.length}${done?`, ${done} of them already run or skipped`:""}`);
+  bits.push("clears every selection");
+  if(!confirm("Reset all settings on this page?\n\nThis "+bits.join(", ")+
+      ".\n\nSaved trials and everything on the Parameters page are untouched.")) return;
+  PLAN=defaultPlan(); QUEUE=[]; QPOS=0; SESSION_STARTED_AT=null;
+  renderPlan(); renderQueue(); saveState();
+}
 PLAN=defaultPlan();
 
 // Clears every selection and changes nothing else, so re-selecting a task restores the
