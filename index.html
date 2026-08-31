@@ -2462,7 +2462,7 @@ function bindingLimitMs(taskId,a){
 function renderAudioTable(){
   let h=`<tr><th>Task</th><th>Floor (ms)</th><th>Mean interval (ms)</th>
          <th>Target prob.</th><th>Tone (ms)</th><th>Lead-in (ms)</th>
-         <th style="color:var(--ink)">Usable window</th></tr>`;
+         <th class="num">Tones</th><th style="color:var(--ink)">Usable window</th></tr>`;
   Object.entries(AUDIO_DEFAULTS).forEach(([k,a])=>{
     const limit=bindingLimitMs(k,a);
     h+=`<tr><td><b>${k}</b><br><span class="note" style="margin:0">${a.label}</span></td>
@@ -2471,50 +2471,34 @@ function renderAudioTable(){
       <td><input type="number" value="${a.ptg}" min="0" max="0.5" step="0.01" onchange="audioSet('${k}','ptg',+this.value)"></td>
       <td><input type="number" value="${a.tone}" min="30" max="200" step="10" onchange="audioSet('${k}','tone',+this.value)"></td>
       <td><input type="number" value="${a.lead}" min="0" max="3000" step="100" onchange="audioSet('${k}','lead',+this.value)"></td>
+      <td class="num">${Math.max(0,Math.floor((a.selfPacedDurS??a.durS)*1000/a.meanMs))}</td>
       <td class="num"><b style="font-size:15px">${Math.round(limit)} ms</b></td></tr>`;
   });
   $("audioTable").innerHTML=h;
 
-  let notes=`<div class="good"><b>Setting the floor and the mean.</b> Intervals are drawn from
-    a floor plus an exponential tail rather than symmetric jitter. The floor sets the minimum
-    interval, so every interval allows time to respond. The exponential component has a
-    constant hazard, so the probability of the next tone does not increase as the interval
-    elapses. The usable window follows directly from the floor and is exact rather than a
-    probabilistic bound. Increase the mean to increase unpredictability; increase the floor to
-    lengthen the minimum response time. The two are set independently.</div>
-    <div class="note">Trial length is set per task in the session plan, not here, because it
-    belongs to the trial rather than the stream. A task set to <b>self-paced</b> there ignores
-    its stream duration and uses <code>selfPacedDurS</code>: the stream is generated long
-    enough that it cannot run out mid-drawing, and is cut once drawing stops, never before
-    <code>floorS</code>.
-    ${Object.entries(AUDIO_DEFAULTS).map(([k,a])=>`<br><b>${k}</b> — generated to
-      ${a.selfPacedDurS ?? a.durS} s, cut at drawing end, never before
-      ${a.floorS ?? 20} s`).join("")}</div>
-    <div class="note"><b>Usable window</b> is the longest response time that can still be
-    attributed to a specific tone. A slower response arrives after the following tone, so the
-    two cannot be distinguished. It is derived from the floor, not set directly.</div>
-    <div class="note">All values here are unvalidated starting points. None have been piloted
-    and all are intended to be adjusted.</div>`;
+  // One line of definition, then nothing unless there is something to act on. Everything
+  // else that used to be here -- how the distribution works, how self-paced streams are
+  // generated, that the values are unpiloted -- is in the source, not on screen in front of
+  // an administrator running a session.
+  let notes=`<div class="note"><b>Usable window</b> is the longest response still attributable
+    to one tone. It follows from the floor and is not set directly. <b>Tones</b> is how many a
+    full stream contains at the current mean.</div>`;
+
+  const slow=Object.entries(AUDIO_DEFAULTS).filter(([k,a])=>bindingLimitMs(k,a)<950).map(([k])=>k);
+  if(slow.length) notes+=`<div class="warn">Usable window under 900 ms on
+    <b>${slow.join(", ")}</b>. Reported reaction time in Lewy body dementia sits near 900 ms
+    before dual-task load, so these load attention but lose the slowest responses as a
+    measure. Raise the floor to widen the window.</div>`;
+
   Object.entries(AUDIO_DEFAULTS).forEach(([k,a])=>{
-    const odd=a.ptg>0, limit=bindingLimitMs(k,a);
     const pair=a.pairWith && AUDIO_DEFAULTS[a.pairWith];
-    const mismatched = pair && (pair.floorMs!==a.floorMs || pair.meanMs!==a.meanMs || pair.ptg!==a.ptg);
-    notes+=`<div class="${limit<950?"warn":"good"}"><b>${k}</b>: floor
-      ${a.floorMs} ms, mean interval ${a.meanMs} ms, about
-      ${Math.max(0,Math.floor((a.selfPacedDurS??a.durS)*1000/a.meanMs))} tones in a full stream.
-      ${odd
-        ? `Only targets need a response and no two are adjacent, so the binding gap is
-           target-to-target — exactly ${Math.round(limit)} ms.`
-        : `Every tone needs a response, so the binding gap is the floor itself,
-           ${Math.round(limit)} ms.`}
-      ${limit<950?`Reported reaction time in Lewy body dementia sits near 900 ms before
-        dual-task load, so this works as a loader but loses slow responses as a measure.`:``}</div>`;
-    // Informs, never enforces: the pair can be broken, but not quietly.
-    if(mismatched) notes+=`<div class="bad"><b>${k} and ${a.pairWith} do not match.</b>
-      These form a single-task and dual-task pair. Dual-task cost is the difference between
-      them, so unequal stream parameters introduce a stream difference alongside the load
-      difference. ${k} is floor ${a.floorMs} / mean ${a.meanMs} / p ${a.ptg};
-      ${a.pairWith} is floor ${pair.floorMs} / mean ${pair.meanMs} / p ${pair.ptg}.
+    if(!pair) return;
+    const mismatched = pair.floorMs!==a.floorMs || pair.meanMs!==a.meanMs || pair.ptg!==a.ptg;
+    // Informs, never enforces: the pair can be broken, but not without saying so.
+    if(mismatched) notes+=`<div class="bad"><b>${k} and ${a.pairWith} do not match</b> —
+      ${k} is ${a.floorMs}/${a.meanMs}/p${a.ptg}, ${a.pairWith} is
+      ${pair.floorMs}/${pair.meanMs}/p${pair.ptg}. They are a single-task and dual-task pair,
+      so unequal streams add a stream difference to the dual-task cost.
       <button class="ghost sm" onclick="matchStreamPair('${k}','${a.pairWith}')">Match ${a.pairWith} to ${k}</button></div>`;
   });
   const box=$("audioTable").parentElement;
