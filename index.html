@@ -1760,6 +1760,9 @@ function updateAgeNote(){
 ["byear","bmonth"].forEach(id=>$(id).addEventListener("input",updateAgeNote));
 updateAgeNote();
 $("pid").addEventListener("input",()=>{ deriveNumbers(); });
+// Which physical side "dominant" resolves to changes with this answer, and the plan table
+// prints that side, so it has to be redrawn when the answer changes.
+$("domhand").addEventListener("change",()=>{ if(typeof PLAN!=="undefined" && PLAN) renderPlan(); });
 
 /* ------------------------------------------------------- voice consent */
 const voiceConsented = () => !!($("voiceconsent") && $("voiceconsent").checked);
@@ -2108,16 +2111,21 @@ function adhocCell(c,s2,blocked){
   // Read from the PLAN, not the catalogue: the catalogue holds the default, and the row's
   // Hands column can be changed away from it. Using the default here drew a selector on a
   // row the examiner had already set to one hand.
+  // Shown as the PHYSICAL side, not as dominance. The Hands column already says which of
+  // dominant and non-dominant is being used, and repeating it here adds nothing -- whereas
+  // the physical side is what the trial actually turns on: drawScene() winds the spiral
+  // clockwise for a right hand and counter-clockwise for a left.
+  const side = h => physHand(h)==="left" ? "left hand" : "right hand";
   const label = s2.hands==="both" ? "both hands"
-              : s2.hands==="one"  ? (s2.oneHand==="nondominant" ? "non-dominant" : "dominant")
+              : s2.hands==="one"  ? side(s2.oneHand==="nondominant"?"nondominant":"dominant")
               : null;
   return `<button class="ghost sm" onclick="runAdhoc('${c.id}')">Run now</button>` +
     (label
       ? `<div class="note" style="margin:4px 0 0;font-size:11px">${label}</div>`
       : `<select style="margin-top:4px;font-size:12px"
            onchange="planSet('${c.id}','adhocHand',this.value)">
-        <option value="dominant" ${s2.adhocHand!=="nondominant"?"selected":""}>dominant</option>
-        <option value="nondominant" ${s2.adhocHand==="nondominant"?"selected":""}>non-dominant</option>
+        <option value="dominant" ${s2.adhocHand!=="nondominant"?"selected":""}>${side("dominant")}</option>
+        <option value="nondominant" ${s2.adhocHand==="nondominant"?"selected":""}>${side("nondominant")}</option>
       </select>`);
 }
 
