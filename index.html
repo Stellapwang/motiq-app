@@ -192,21 +192,23 @@
          rows exist so somebody who skips this page still sees something; they point back
          here rather than repeating all of it on every row. -->
     <fieldset style="border-color:#e9b7b7;background:#fdecec">
-      <legend style="color:#8c2020">Before you start — three things that will bite you</legend>
+      <legend style="color:#8c2020">Known limitations</legend>
       <div style="color:#8c2020;font-size:14px;line-height:1.6">
-        <p style="margin:0 0 8px"><b>1. Pen and finger do not work at the same time.</b>
-        While an Apple Pencil is touching the glass, iPadOS discards finger touches as palm
-        contact. No web API turns this off. <b>PEN_TONE</b> and <b>PEN_FAST</b> are affected:
-        tap responses are lost for as long as the pen is down, so they do not run as true
-        dual tasks here. The trials still record, and are flagged in the data.</p>
-        <p style="margin:0 0 8px"><b>2. Voice recording needs an https address.</b> The
-        microphone is only available over <code>https</code>, or from
-        <code>localhost</code>/<code>127.0.0.1</code>. Opened from a plain
-        <code>http://</code> address on the network — a Mac's LAN address, say — the spoken
-        tasks run and record nothing. That is a property of the address, not of the iPad.</p>
-        <p style="margin:0"><b>3. This is a prototype, not the production instrument.</b>
-        Millimeters come from a card calibration and timing from the browser clock. Both are
-        approximations, and neither is good enough to publish a number from without saying so.</p>
+        <p style="margin:0 0 8px"><b>1. Pen and touch input are not simultaneous.</b>
+        While an Apple Pencil is in contact with the screen, iPadOS classifies concurrent
+        finger touches as palm contact and discards them. This cannot be changed from a web
+        page. <b>PEN_TONE</b> and <b>PEN_FAST</b> are affected: tap responses are not
+        recorded while the pen is down, so these do not run as true dual tasks in this
+        prototype. Trials still record, and the limitation is flagged in the data.</p>
+        <p style="margin:0 0 8px"><b>2. Voice recording requires an https address.</b>
+        Microphone access is available only over <code>https</code>, or from
+        <code>localhost</code> and <code>127.0.0.1</code>. When the app is opened from a
+        plain <code>http://</code> address on a local network, the spoken tasks run but
+        record no audio. This depends on the address the page was opened from, not on the
+        device.</p>
+        <p style="margin:0"><b>3. This is a prototype instrument.</b> Millimeters are derived
+        from a card calibration and timing from the browser clock. Both are approximate and
+        should be reported as such.</p>
       </div>
     </fieldset>
     <fieldset>
@@ -286,10 +288,10 @@
       <legend>Pen check <span style="font-weight:400;color:var(--muted)">— per participant</span></legend>
       <p class="note" style="margin-top:0">Ask the participant to draw the spiral below, once
       with each hand. This checks that the stylus registers, that samples arrive at a usable
-      rate, and that pressure varies. A spiral rather than a straight line: the same four
-      numbers come out, but over a longer stroke, so the rate estimate does not depend on how
-      long a line somebody happened to draw — and it rehearses the instruction SP will use.
-      It is a device check, not a trial — no trial record is written.</p>
+      rate, and that pressure varies. A spiral is used rather than a straight line: the same
+      four measures are obtained over a longer stroke, so the sample-rate estimate is less
+      dependent on stroke length, and it familiarizes the participant with the spiral
+      instruction. This is a device check, not a trial; no trial record is written.</p>
       <div class="r4">
         <div><label for="pchand">Hand</label>
           <select id="pchand" onchange="penPadClear()"><option value="right">Right</option><option value="left">Left</option></select></div>
@@ -315,15 +317,14 @@
       <legend>Mini Trail B <span style="font-weight:400;color:var(--muted)">— screening, per participant</span></legend>
       <p class="note" style="margin-top:0">Ask the participant to join the circles in order —
       <b>1, A, 2, B, 3, C, 4, D</b> — in one continuous movement, as quickly as they can without
-      lifting the stylus. Nothing on screen says which circle is next: finding it, and keeping
-      the two sequences in step, is what this screen measures. A move to the wrong circle does
-      not connect — tell them to go back to the last correct one and carry on. The layout is the
-      same every single time it is administered: a covariate whose difficulty varied between
-      administrations would not be comparable. Expect roughly 15–20 seconds.</p>
-      <p class="note" style="margin-top:6px"><b>Run the practice first.</b> It is four circles
-      with the same rules, untimed, and writes no record. Without it the first real
-      administration measures whether the instruction was understood rather than whether the
-      participant can do the task.</p>
+      lifting the stylus. The next circle is not indicated: locating it, and alternating
+      between the two sequences, is what this screen measures. A move to an incorrect circle
+      does not connect; direct the participant back to the last correct circle. The layout is
+      identical at every administration, so difficulty does not vary between administrations.
+      Expect approximately 15–20 seconds.</p>
+      <p class="note" style="margin-top:6px"><b>Run the practice first.</b> Four circles, same
+      rules, untimed, and no record is written. Without a practice, the first administration
+      partly measures comprehension of the instruction rather than performance.</p>
       <div class="r4">
         <div><label for="mtbhand">Hand</label>
           <select id="mtbhand"><option value="dominant">Dominant</option>
@@ -424,10 +425,10 @@
       </div>
       <label class="checkrow" for="paramexplore">
         <input id="paramexplore" type="checkbox" onchange="onParamExploreChange()">
-        <span><b>Parameter exploration session.</b> Tick this when parameters are being varied
-        between trials. Trials in such a session are not comparable with one another, and the
-        marker is written into every trial record so the data says so rather than being taken
-        later for a fixed-protocol run.</span></label>
+        <span><b>Parameter exploration session.</b> Select this when parameters are being
+        varied between trials. Trials in such a session are not comparable with one another.
+        The marker is written into every trial record so the session can be identified as
+        exploratory rather than a fixed-protocol run.</span></label>
       <div id="exploreNote"></div>
       <div class="btnrow">
         <button class="ghost" onclick="newVisit()">New visit for this participant</button>
@@ -469,9 +470,8 @@
         <button class="ghost" onclick="clearAllSelections()">Clear all selections</button>
       </div>
       <div id="presetNote"></div>
-      <div class="note">The three presets are cumulative. They change the ticks only —
-      repeats, lengths and prompts are left exactly as you set them, so re-ticking a task
-      restores its numbers.</div>
+      <div class="note">The presets are cumulative and change the selection only. Repeats,
+      lengths and prompts are unchanged, so re-selecting a task restores its settings.</div>
       <div class="btnrow">
         <button onclick="buildQueue()">Build session</button>
         <button class="ghost" onclick="resetPlan()">Reset to defaults</button>
@@ -661,8 +661,9 @@
         <button class="ghost" onclick="renderScreens()">Refresh</button>
         <button class="ghost" onclick="delAllScreens()">Delete all screening</button>
       </div>
-      <div class="note">One row per administration, not per trial. Mini Trail B and the dot tap
-      screen are participant-level covariates and are kept out of the trial file entirely.</div>
+      <div class="note">One row per administration rather than per trial. Mini Trail B and the
+      dot tap screen are participant-level covariates and are stored separately from the trial
+      file.</div>
     </fieldset>
 
     <fieldset>
@@ -673,10 +674,10 @@
         <button class="ghost" onclick="renderAudioStore()">Refresh</button>
         <button class="ghost" onclick="delAllAudio()">Delete all audio</button>
       </div>
-      <div class="note">Clips live in IndexedDB, not in the ~5 MB string store the trials use,
-      and each file is named after the trial it belongs to. A bulk download starts one download
-      per clip; Safari may ask permission for multiple downloads, and may refuse them if the
-      page is not in the foreground — download individually if that happens.</div>
+      <div class="note">Clips are held in IndexedDB rather than the approximately 5 MB string
+      store used for trials, and each file is named after its trial. A bulk download starts one
+      download per clip. Safari may request permission for multiple downloads and may refuse
+      them if the page is not in the foreground; download individually if this occurs.</div>
     </fieldset>
 
     <div class="navrow">
@@ -766,7 +767,7 @@ const CATALOGUE = [
   // there to verify the participant was tracking the stream throughout, which a count
   // reported only at the end cannot show. It does NOT feed the reaction-time endpoint:
   // there is no timestamped response channel here, and analyzing it as though there were
-  // is the failure mode this comment exists to prevent.
+  // Analyzing it as a reaction-time measure would be incorrect.
   //
   // PEN_VCNT and PEN_VODD are a PAIR. VCNT demands a spoken response to every tone; VODD
   // to roughly a quarter of them while monitoring stays continuous. The contrast separates
@@ -831,9 +832,8 @@ const PALM_WARNING = "Pen and finger do not work at the same time in Safari on i
 //                      exposure without leaving a fast participant tapping to silence.
 // selfPacedDurS      : the stream length used when the task is set to self-paced. Long
 //                      on purpose -- the stream must outlast the slowest participant,
-//                      because running out of tones mid-drawing is the failure this
-//                      whole mechanism exists to prevent. It is cut at drawEnd, so the
-//                      participant never actually hears all of it.
+//                      so that the stream does not run out before drawing finishes. It is
+//                      cut at drawEnd, so the full length is not normally heard.
 //
 // Every row here carries UNVALIDATED starting values. Nothing has been piloted; they are
 // starting points, editable on the Parameters page, and expected to change.
@@ -1199,7 +1199,7 @@ function safeAreaMM(){
 // A small spiral, not a straight line. The four things this check measures -- sample
 // count, sample rate, pressure range and pointer type -- do not depend on the path being
 // straight, and a spiral gives all four over a longer stroke, so the rate estimate stops
-// being hostage to how short a line somebody drew. It also rehearses the instruction SP
+// depending on how short a line was drawn. It also familiarizes the participant with the
 // will use, which a straight line does not.
 //
 // The pad mirrors the trial's own template handling: the same spiralPath() geometry, the
@@ -1646,8 +1646,8 @@ function dotFinish(){
   // row of zeros in the screening file that reads exactly like a participant who
   // tapped nothing at all.
   if(!scored.length){
-    $("dotresult").innerHTML=`<div class="warn">No dots were presented, so nothing was
-      saved. Start the screen again with the iPad in front of the participant.</div>`;
+    $("dotresult").innerHTML=`<div class="warn">No dots were presented; no record was
+      saved. Run the screen again with the iPad in front of the participant.</div>`;
     return;
   }
   const hits=scored.filter(d=>d.outcome==="hit");
@@ -1672,10 +1672,9 @@ function dotFinish(){
     ${scored.length} tapped, ${rec.misses} missed${rec.off_target_taps?`, ${rec.off_target_taps} tap${rec.off_target_taps===1?"":"s"} off target`:""}.
     Mean RT ${rec.rt_mean_ms==null?"–":Math.round(rec.rt_mean_ms)+" ms"},
     SD ${rec.rt_sd_ms==null?"–":Math.round(rec.rt_sd_ms)+" ms"}.</div>
-    <div class="warn">This is a <b>screen</b>. Ten seconds gives too few responses for the SD to
-    be a usable estimate of response-time variability — the record says so in
-    <code>measure_grade</code>, so an analyst reading the file later does not have to
-    rediscover it.</div>` +
+    <div class="warn">This is a screening measure. Ten seconds yields too few responses for
+    the SD to be a usable estimate of response-time variability. The record states this in
+    <code>measure_grade</code>.</div>` +
     (res.ok ? `<div class="note">Saved as a screening record (<code>${esc(rec.screen_uid)}</code>).</div>`
             : `<div class="bad">Not saved — ${esc(res.error)}. ${res.error==="no participant id"
                ? "Enter a Participant ID at the top of this page, then run it again."
@@ -1769,16 +1768,15 @@ const VOICE_TASKS = () => CATALOGUE.filter(c=>c.voice).map(c=>c.id);
 function renderSecureNote(){
   const el=$("securenote"); if(!el) return;
   if(secureOrigin()){ el.innerHTML=""; return; }
-  el.innerHTML=`<div class="bad"><b>Voice recording cannot work from this address.</b>
+  el.innerHTML=`<div class="bad"><b>Voice recording is unavailable from this address.</b>
     This page was opened from <code>${esc(location.origin)}</code>, which is not a secure
-    origin. Browsers expose the microphone only over <b>https</b>, or from
-    <code>localhost</code> / <code>127.0.0.1</code> — so <code>getUserMedia</code> is not
-    available here at all.
-    <br><br>Nothing is wrong with the iPad, the microphone, or the app: an
-    <code>http://</code> address on the local network simply cannot reach a microphone.
-    Open the app over <b>https</b> to record. The spoken tasks will still run from here,
-    but they will capture no audio, and every trial record will say so.
-    <br><br>Every task that does not record is unaffected.</div>`;
+    origin. Microphone access is available only over <b>https</b>, or from
+    <code>localhost</code> and <code>127.0.0.1</code>, so <code>getUserMedia</code> is not
+    present here.
+    <br><br>This depends on the address the page was opened from, not on the device or the
+    microphone. Open the app over <b>https</b> to record. The spoken tasks will still run,
+    but no audio is captured and each trial record states this.
+    <br><br>Tasks that do not record are unaffected.</div>`;
 }
 function onVoiceConsentChange(){
   renderSecureNote();
@@ -1905,7 +1903,7 @@ function defaultPlan(){
 function resetPlan(){ PLAN=defaultPlan(); QUEUE=[]; QPOS=0; renderPlan(); renderQueue(); saveState(); }
 PLAN=defaultPlan();
 
-// Unticks everything and touches nothing else, so re-ticking a task brings back the
+// Clears every selection and changes nothing else, so re-selecting a task restores the
 // repeats and length that were already set for it.
 function clearAllSelections(){
   CATALOGUE.forEach(c=>{ if(PLAN[c.id]) PLAN[c.id].include=false; });
@@ -1953,11 +1951,10 @@ function planPreset(which){
     if(wanted && blocked) skipped.push(c.id);
     PLAN[c.id].include = wanted && !blocked;
   });
-  // A preset that quietly ticks four of six is worse than one that ticks four and says
-  // which two it could not. Voice consent is an ethics gate, not an experimental one.
+  // A preset that selects four of six reports which two it could not select. Voice consent
+  // is a consent requirement, not an experimental parameter.
   PRESET_NOTE = skipped.length
-    ? `<b>${skipped.join(", ")}</b> ${skipped.length===1?"was":"were"} left unticked —
-       ${taskBlocked(byId(skipped[0]))}.`
+    ? `<b>${skipped.join(", ")}</b> not selected: ${taskBlocked(byId(skipped[0]))}.`
     : null;
   renderPlan(); saveState();
 }
@@ -1971,15 +1968,17 @@ function dependencyNote(c){
   if(c.id==="PEN_TONE"){
     const missing=["PEN_DRAW","TAP_TONE"].filter(id=>!inc(id));
     if(!missing.length) return null;
-    return `Dual-task cost is the change from single to dual. Without ${missing.join(" and ")}
-            there is no baseline to subtract, so this trial gives a level and not a cost.`;
+    return `Dual-task cost is measured against a single-task baseline. Without
+            ${missing.join(" and ")} there is no baseline for comparison, so this task
+            yields a level rather than a cost.`;
   }
   if(c.id==="PEN_VCNT" || c.id==="PEN_VODD"){
     const other = c.id==="PEN_VCNT" ? "PEN_VODD" : "PEN_VCNT";
     if(inc(other)) return null;
-    return `${c.id} and ${other} are a pair — one demands a response to every tone, the other
-            to a quarter of them while monitoring stays continuous. The contrast is what
-            separates response-rate interference from monitoring load; neither alone does.`;
+    return `${c.id} and ${other} form a pair: one requires a spoken response to every tone,
+            the other to about a quarter of them while monitoring remains continuous. The
+            comparison separates response-rate interference from monitoring load. Neither
+            task provides this on its own.`;
   }
   return null;
 }
@@ -1988,7 +1987,7 @@ function dependencyNote(c){
 // summary and the queue builder cannot disagree about it.
 function taskBlocked(c){
   if(c.voice && !voiceConsented())
-    return "voice recording not consented — tick the box on the Participant page";
+    return "voice recording consent not given; see the Participant page";
   return null;
 }
 
@@ -2038,7 +2037,7 @@ function renderPlan(){
             <div class="note" style="margin:4px 0 0;max-width:280px">${
               verbalPrompt(s2.verbalType,c.verbal).help || verbalPrompt(s2.verbalType,c.verbal).equivalence}</div>`:""}
           ${palmRejectionAffected(c)?`<div class="note" style="margin:4px 0 0;color:#8c2020">
-              <b>⚠ Pen + finger not simultaneous</b> — see the warnings on the Screen page.</div>`:""}
+              <b>Pen and touch not simultaneous.</b> See Known limitations on the Screen page.</div>`:""}
           ${dep?`<div class="warn" style="margin:5px 0 0;max-width:300px">${dep}</div>`:""}
           ${blocked?`<div class="note" style="margin:4px 0 0;color:var(--warm)">${blocked}</div>`:""}</td>
         <td><input type="number" min="1" max="20" value="${s2.repeats}" ${blocked?"disabled":""}
@@ -2273,8 +2272,8 @@ const paramExploring = () => !!($("paramexplore") && $("paramexplore").checked);
 function onParamExploreChange(){
   const on=paramExploring();
   if($("exploreNote")) $("exploreNote").innerHTML = on
-    ? `<div class="warn">Every trial saved from now on is marked
-       <code>parameter_exploration</code>. Turn it off for a fixed-protocol run.</div>` : "";
+    ? `<div class="warn">Trials saved from now on are marked
+       <code>parameter_exploration</code>. Deselect for a fixed-protocol run.</div>` : "";
   renderStatus(); renderQueue(); saveState();
 }
 function setParam(id,val){
@@ -2341,11 +2340,10 @@ function renderNextUpParams(){
       style="margin-top:12px;border:1px solid var(--line);border-radius:8px;padding:8px 12px">
     <summary style="cursor:pointer;font-size:14px;font-weight:600">Parameters for this task</summary>
     ${groups.join("")}
-    <div class="note">These are the same values as the Parameters page — changing one here
-    changes it there, and it applies to the next trial you start. Every trial records the
-    full parameter set it ran under, so a change between trials is never lost.
-    ${paramExploring()?"":`<b>If you are varying parameters between trials, tick
-    “Parameter exploration session” above.</b>`}</div>
+    <div class="note">These are the same values as the Parameters page. A change here applies
+    to the next trial started. Each trial records the full parameter set it ran under.${
+    paramExploring()?"":` If you are varying parameters between trials, select “Parameter
+    exploration session” above.`}</div>
   </details>`;
 }
 const handWord=h=> h==="both"?"both":h==="dominant"?"dominant":"non-dominant";
@@ -2417,7 +2415,7 @@ function newParticipant(){
   if($("voiceconsent")) $("voiceconsent").checked=false;
   if($("paramexplore")) $("paramexplore").checked=false;
   // The room belongs to the session, not the person, but a new participant is a new
-  // session -- and a stale floor is worse than none, because it looks measured.
+  // session. A retained floor from a previous room would be misleading.
   Object.keys(ROOMCHECK).forEach(k=>delete ROOMCHECK[k]); ROOMCHECK.floor_dbfs=null;
   if($("roomresult")) $("roomresult").innerHTML="";
   if($("roomBtn")){ $("roomBtn").disabled=false; $("roomBtn").textContent="Run room check (5 s)"; }
@@ -2464,22 +2462,21 @@ function renderAudioTable(){
   });
   $("audioTable").innerHTML=h;
 
-  let notes=`<div class="good"><b>Set the floor by the usable window.</b> Intervals are drawn
-    from a <b>floor plus an exponential tail</b>, not from symmetric jitter. The floor is a hard
-    guarantee that every interval leaves room to respond; the exponential above it has a flat
-    hazard, so no moment is more predictable than any other and the participant cannot
-    anticipate the next tone. Because the floor is a floor, the usable window is
-    <b>exact</b> — not a probabilistic worst case. Raise unpredictability by raising the mean;
-    protect response time by raising the floor. They move independently, which is the point.</div>
+  let notes=`<div class="good"><b>Setting the floor and the mean.</b> Intervals are drawn from
+    a floor plus an exponential tail rather than symmetric jitter. The floor sets the minimum
+    interval, so every interval allows time to respond. The exponential component has a
+    constant hazard, so the probability of the next tone does not increase as the interval
+    elapses. The usable window follows directly from the floor and is exact rather than a
+    probabilistic bound. Increase the mean to increase unpredictability; increase the floor to
+    lengthen the minimum response time. The two are set independently.</div>
     <div class="note">Trial length is set once, per task, in the session plan — not here —
     because it belongs to the trial rather than the stream. A task set to self-paced there uses
     its own <code>selfPacedDurS</code> instead, so the stream cannot run out mid-drawing.</div>
     <div class="note"><b>Usable window</b> is the longest response time that can still be
-    attributed to the right event. A response slower than this arrives after the next event the
-    participant could be answering, so the two cannot be told apart. It is not a setting — it
-    follows from the floor above.</div>
-    <div class="note">Every row here is an <b>unvalidated starting value</b>. Nothing has been
-    piloted; they are here to be changed.</div>`;
+    attributed to a specific tone. A slower response arrives after the following tone, so the
+    two cannot be distinguished. It is derived from the floor, not set directly.</div>
+    <div class="note">All values here are unvalidated starting points. None have been piloted
+    and all are intended to be adjusted.</div>`;
   Object.entries(AUDIO_DEFAULTS).forEach(([k,a])=>{
     const odd=a.ptg>0, limit=bindingLimitMs(k,a);
     const pair=a.pairWith && AUDIO_DEFAULTS[a.pairWith];
@@ -2495,10 +2492,10 @@ function renderAudioTable(){
       ${limit<950?`Reported reaction time in Lewy body dementia sits near 900 ms before
         dual-task load, so this works as a loader but loses slow responses as a measure.`:``}</div>`;
     // Informs, never enforces: the pair can be broken, but not quietly.
-    if(mismatched) notes+=`<div class="bad"><b>${k} and ${a.pairWith} no longer match.</b>
-      They are a single-task and dual-task pair, and dual-task cost is the change between
-      them — with different streams the comparison measures the stream difference as well as
-      the load. ${k} is floor ${a.floorMs} / mean ${a.meanMs} / p ${a.ptg};
+    if(mismatched) notes+=`<div class="bad"><b>${k} and ${a.pairWith} do not match.</b>
+      These form a single-task and dual-task pair. Dual-task cost is the difference between
+      them, so unequal stream parameters introduce a stream difference alongside the load
+      difference. ${k} is floor ${a.floorMs} / mean ${a.meanMs} / p ${a.ptg};
       ${a.pairWith} is floor ${pair.floorMs} / mean ${pair.meanMs} / p ${pair.ptg}.
       <button class="ghost sm" onclick="matchStreamPair('${k}','${a.pairWith}')">Match ${a.pairWith} to ${k}</button></div>`;
   });
@@ -2577,11 +2574,11 @@ function renderGeoSet(which){
   const sizeLine=`<b>${label}</b> — pitch ${pitch} mm × ${turns} turns: radius
       <b>${radius} mm</b>, <b>${dia} mm</b> across, path <b>${pathCM.toFixed(0)} cm</b>.`;
   // The window can report no size at all -- a hidden tab, a pane mid-layout. Printing
-  // negative millimeters and declaring it does not fit would be worse than saying so.
+  // reporting negative millimeters, so the fit check is omitted instead.
   const measurable = u.height_mm>0 && u.width_mm>0;
   if(!measurable){
     host.innerHTML=`<div class="note" style="margin-top:6px">${sizeLine}
-      Stage size cannot be measured right now, so the fit check is not shown.</div>
+      Stage size is not measurable at present; the fit check is not shown.</div>
       <div class="note" style="margin-top:2px">Estimated drawing time: ${times}.</div>`;
     return;
   }
@@ -2591,11 +2588,11 @@ function renderGeoSet(which){
       ${sizeLine}
       Usable stage height <b>${Math.round(u.height_mm)} mm</b>${
         u.split<1?`, drawing-region width <b>${Math.round(usableW)} mm</b> at the current split`:``}.
-      ${(fitsH&&fitsW)?"It fits."
-        :`<b>IT DOES NOT FIT</b> — ${!fitsH?`${dia} mm across needs more than the
-           ${Math.round(u.height_mm)} mm of height available`:``}${(!fitsH&&!fitsW)?" and ":""}${
-           !fitsW?`the drawing region is only ${Math.round(usableW)} mm wide at this split`:``}.
-           Reduce pitch or turns, or the spiral will be drawn clipped.`}</div>
+      ${(fitsH&&fitsW)?"Fits the available area."
+        :`<b>Does not fit.</b> ${!fitsH?`${dia} mm across exceeds the
+           ${Math.round(u.height_mm)} mm of available height`:``}${(!fitsH&&!fitsW)?"; ":""}${
+           !fitsW?`the drawing region is ${Math.round(usableW)} mm wide at this split`:``}.
+           Reduce pitch or turns to avoid clipping.`}</div>
      <div class="note" style="margin-top:2px">Estimated drawing time: ${times}. Estimates only,
        spanning slow careful tracing to brisk.</div>`;
 }
@@ -2667,7 +2664,7 @@ function makeSequence(durationS,floorMs,meanMs,pTarget,seed){
     const c=Array.from({length:n},drawOne);
     const sc=durMs/c.reduce((a,b)=>a+b,0), scaled=c.map(v=>v*sc);
     // Rescaling to fill the requested duration must not push an interval under the
-    // floor -- the floor is the whole guarantee.
+    // floor, since the floor is what guarantees a minimum response time.
     if(Math.abs(sc-1)<=0.05 && Math.min(...scaled)>=floorMs*0.98){ iv=scaled; break; }
   }
   if(!iv) throw new Error("Could not generate intervals — loosen the parameters.");
@@ -2907,18 +2904,18 @@ function renderRoomCheck(){
     `<div class="${noisy?"warn":"good"}">Noise floor <b>${floor.toFixed(1)} dBFS</b>.
       For the 30 dB minimum, speech has to reach about <b>${need.toFixed(1)} dBFS</b>;
       for the recommended 42 dB, about ${(floor+SNR_GOOD_DB).toFixed(1)} dBFS.
-      ${noisy?`This room is <b>noisy</b> — at this floor, usable speech would have to be
-        recorded close to clipping. Turn off fans and air conditioning, close the door,
-        move away from corridors, and run it again.`
-             :`Quiet enough to record in.`}</div>` +
-    ((agc||ns)?`<div class="bad"><b>The browser overrode the recording settings.</b>
-      ${agc?"Automatic gain control is ON. ":""}${ns?"Noise suppression is ON. ":""}
-      Automatic gain control lifts a quiet speaker to the same level as a loud one, which
-      erases exactly the differences these recordings exist to measure. Levels from this
-      device are not comparable between participants. This is recorded on every trial.</div>`:"") +
-    `<div class="note">Recorded once per session and written into every trial record.
-      Every voice recording also carries its own level statistics, so quiet stretches are
-      visible without listening to the files.</div>`;
+      ${noisy?`Background level is high. At this floor, speech would have to be recorded
+        close to clipping to reach the minimum signal-to-noise ratio. Switch off fans and air
+        conditioning, close the door, move away from corridors, and run the check again.`
+             :`Background level is acceptable for recording.`}</div>` +
+    ((agc||ns)?`<div class="bad"><b>The browser did not apply the requested settings.</b>
+      ${agc?"Automatic gain control is enabled. ":""}${ns?"Noise suppression is enabled. ":""}
+      Automatic gain control raises a quiet speaker toward the level of a loud one, removing
+      the level differences these recordings are intended to measure. Levels from this device
+      are not comparable between participants. This is recorded on every trial.</div>`:"") +
+    `<div class="note">Recorded once per session and written into every trial record. Each
+      voice recording also carries its own level statistics, so quiet passages can be
+      identified without listening to the files.</div>`;
 }
 const AUDIO_EXT = m => /webm/.test(m)?"webm" : /mp4|m4a|aac/.test(m)?"m4a" : /ogg/.test(m)?"ogg" : "bin";
 
@@ -3236,14 +3233,13 @@ function openTrial(showInstruction){
     // getUserMedia has to be reached inside the gesture that started this trial;
     // Safari refuses the microphone otherwise. The permission sheet can also sit there
     // unanswered forever, so this screen always offers a way out -- a trial that cannot
-    // be started is worse than one that is not recorded.
+    // be started is a greater problem than one that is not recorded.
     const gate={settled:false};
     TRIAL.micGate=gate;
     showOverlay(`<h3>Starting the microphone</h3>
-      <p>Allow microphone access if the iPad asks. This task is recorded.</p>
-      <p style="font-size:16px;color:#5d6570">If no prompt appears, or it has been
-      dismissed, carry on without recording — the trial record will say the audio is
-      missing.</p>`,
+      <p>Allow microphone access if prompted. This task is recorded.</p>
+      <p style="font-size:16px;color:#5d6570">If no prompt appears, or it has been dismissed,
+      continue without recording. The trial record will note that audio is missing.</p>`,
       [{ label:"Continue without recording", ghost:true, onClick:()=>{
            if(gate.settled) return; gate.settled=true;
            TRIAL.voiceFailure={ reason:"microphone_not_granted",
@@ -3267,9 +3263,9 @@ function openTrial(showInstruction){
 function micFailOverlay(detail, cont){
   showOverlay(`<h3 style="color:#8c2020">No recording for this trial</h3>
     <p><b>${esc(detail)}</b></p>
-    <p style="font-size:17px;color:#5d6570">The trial can still be run — the spoken responses
-    simply will not be captured, and the trial record will say so. Nothing else about the
-    trial changes.</p>`,
+    <p style="font-size:17px;color:#5d6570">The trial can still be run. Spoken responses will
+    not be captured, and the trial record will note this. Nothing else about the trial
+    changes.</p>`,
     [{ label:"Run without recording", onClick:()=>{ hideOverlay(); cont(); } },
      { label:"Try again", ghost:true, onClick:()=>{ hideOverlay(); openTrial(TRIAL.task!==LAST_TASK); } },
      { label:"Abandon", ghost:true, onClick:()=>{ hideOverlay(); stageOn(false); RUN=null; goPage(3); } }]);
@@ -3362,8 +3358,7 @@ function showInstructionScreen(seq,c,returnToReady){
         max-width:660px;margin-left:auto;margin-right:auto">
         <ul style="font-size:19px;line-height:1.6;padding-left:22px">
           ${ins.drawingRules.map(l=>`<li>${l}</li>`).join("")}</ul>
-        <div class="note">Word for word what PEN_DRAW is given, so the instruction itself
-          cannot be part of any difference between them.</div>
+        <div class="note">Identical to the wording used for PEN_DRAW.</div>
       </div></div>` : ``;
   const voiceNote = c.voice ? (TRIAL.voiceFailure
       ? `<p style="font-size:17px;color:#8c2020"><b>Not being recorded</b> — ${esc(TRIAL.voiceFailure.detail)}</p>`
@@ -3596,9 +3591,8 @@ function runTrial(seq,c){
     // minutes over a spiral, and stopping them would destroy the trial.
     if(!RUN.longNoted && (now-perf0)/1000 >= (+$("longtrial").value||90)){
       RUN.longNoted=+((now-perf0)/1000).toFixed(1);
-      $("reminder").innerHTML=`<span style="color:var(--warm)">This trial has been running
-        <b>${Math.round(RUN.longNoted)} s</b>. Nothing is wrong — it will keep going until
-        you press END.</span>`;
+      $("reminder").innerHTML=`<span style="color:var(--warm)">Trial running
+        <b>${Math.round(RUN.longNoted)} s</b>. The trial continues until END is pressed.</span>`;
     }
     if(c.tap||c.audio||c.verbal) $("hud").textContent = fluencyWinMs
       ? (RUN.fluencyCueMs===null
@@ -3737,7 +3731,7 @@ function attribute(seq,taps,outLat){
    This is a PRIMARY ENDPOINT, not a data-quality flag. In prodromal Lewy body
    disease, omission rate discriminated MCI-LB from MCI-AD where ex-Gaussian
    reaction-time parameters did not -- so a trial with many omissions is a result,
-   not a spoiled trial, and must never be quietly discarded as one.
+   not a data-quality failure, and should not be discarded as one.
 
    The window is exact because intervals have a floor: bindingLimitMs() is the
    longest response still attributable to its own tone. The lower bound of 150 ms
@@ -3760,7 +3754,7 @@ function omissionStats(seq, att, outLat, windowMs){
   return { tones_presented:presented, responses_made:responded, omissions,
     omission_rate: presented ? +(omissions/presented).toFixed(4) : null,
     window_ms:+windowMs.toFixed(1), anticipation_cut_ms:ANTICIPATION_MS,
-    note:"a tone with no response between the anticipation cut and the usable window is an omission. This is a primary endpoint -- omission rate discriminated MCI-LB from MCI-AD where ex-Gaussian reaction-time parameters did not -- and a trial with many omissions is a result, not a spoiled trial." };
+    note:"a tone with no response between the anticipation cut and the usable window is counted as an omission. Omission rate is a primary endpoint: it discriminated MCI-LB from MCI-AD where ex-Gaussian reaction-time parameters did not. A high omission rate is a result and should not be treated as a data-quality failure." };
 }
 
 function finish(){
@@ -3883,45 +3877,45 @@ function renderResult(seq,c,pts,rate,att,tp){
         <th>Lead-in</th><td class="num">${RUN.leadMs} ms</td></tr>`:""}
   </table>
   ${(RUN.viewport && (RUN.viewport.scale_max>1+ZOOM_TOL || RUN.viewport.scale_min<1-ZOOM_TOL))
-    ? `<div class="bad"><b>This trial is invalid — the page was zoomed while it ran</b>
+    ? `<div class="bad"><b>Trial invalid: the page was zoomed during the trial</b>
        (scale reached ${RUN.viewport.scale_max.toFixed(2)}×). The spiral is sized in millimeters
-       from the calibration, so at that zoom it was drawn at the wrong physical size and the
-       millimeter measures cannot be compared with other trials. The record is flagged
-       <code>geometry_valid: false</code>. Clear the zoom and run it again.</div>`:""}
+       from the calibration, so at this scale it was rendered at the wrong physical size and
+       the millimeter measures are not comparable with other trials. The record is flagged
+       <code>geometry_valid: false</code>. Clear the zoom and repeat the trial.</div>`:""}
   ${RUN.omissions?`<div class="${RUN.omissions.omission_rate>0.2?"warn":"good"}">
       <b>${RUN.omissions.omissions}</b> omission${RUN.omissions.omissions===1?"":"s"} of
       ${RUN.omissions.tones_presented} tones
       (<b>${(RUN.omissions.omission_rate*100).toFixed(0)}%</b>), counting a response as made
       between ${RUN.omissions.anticipation_cut_ms} and ${Math.round(RUN.omissions.window_ms)} ms.
-      This is an endpoint in its own right, not a fault — a high rate is a finding.</div>`:""}
+      Omission rate is a reported endpoint; a high rate is a result rather than a fault.</div>`:""}
   ${c.spiral&&rate<55?`<div class="warn">Pen rate under 60 Hz — one point per frame. Browser
     kinematics will be coarse.</div>`:""}
-  ${V&&!V.recorded?`<div class="bad">No audio was captured for this trial${V.failure?` (${esc(V.failure)})`:""}.
-    ${V.failure_detail?esc(V.failure_detail)+" ":""}The trial record says so explicitly, so it will not be
-    mistaken for a recording that was made and then lost.</div>`:""}
+  ${V&&!V.recorded?`<div class="bad">No audio captured for this trial${V.failure?` (${esc(V.failure)})`:""}.
+    ${V.failure_detail?esc(V.failure_detail)+" ":""}This is recorded in the trial record.</div>`:""}
   ${V&&V.recorded&&V.level?(()=>{
       const L=V.level;
       return L.too_low_to_score
-        ? `<div class="bad"><b>This recording is too quiet to score.</b> Speech level
-           (p90) was ${L.p90_dbfs} dBFS against a usable threshold of
-           ${L.usable_threshold_dbfs} dBFS — ${esc(L.threshold_source)}.
-           Move the iPad closer, or prompt a stronger voice, and run it again.</div>`
+        ? `<div class="bad"><b>Recording too quiet to score.</b> Speech level (p90) was
+           ${L.p90_dbfs} dBFS against a usable threshold of ${L.usable_threshold_dbfs} dBFS
+           (${esc(L.threshold_source)}). Move the iPad closer or prompt a stronger voice, and
+           repeat the trial.</div>`
         : `<div class="good">Level ${L.p90_dbfs} dBFS against a
            ${L.usable_threshold_dbfs} dBFS threshold${L.frac_below_usable>0.7
-             ? `. ${Math.round(L.frac_below_usable*100)}% of frames sit below it, which is
-                expected if there were long pauses — check the clip if that seems wrong`:``}.</div>`;
+             ? `. ${Math.round(L.frac_below_usable*100)}% of frames are below the threshold,
+                which is expected where there were long pauses`:``}.</div>`;
     })():""}
-  ${V&&V.recorded&&V.constraints_overridden?`<div class="bad"><b>The browser overrode the
-    recording settings on this trial</b> — automatic gain control or noise suppression came
-    back enabled. Gain control lifts a quiet speaker to the level of a loud one, so levels
-    from this device cannot be compared between participants. Recorded on the trial.</div>`:""}
+  ${V&&V.recorded&&V.constraints_overridden?`<div class="bad"><b>Requested audio settings were
+    not applied on this trial.</b> Automatic gain control or noise suppression was enabled by
+    the browser. Gain control raises a quiet speaker toward the level of a loud one, so levels
+    from this device are not comparable between participants. This is recorded on the
+    trial.</div>`:""}
   ${V&&V.recorded&&ROOMCHECK.floor_dbfs==null?`<div class="warn">No room check was run this
-    session, so the level threshold is a fixed fallback rather than this room's noise floor.
+    session, so the level threshold is a fixed default rather than the measured noise floor.
     Run it from the Sound check panel on the Participant page.</div>`:""}
-  ${V&&V.recorded?`<div class="note"><code>recorder_start_ms</code> is written on the same clock as
-    the tone onsets, but the alignment is marked <b>uncharacterized</b> in the record: MediaRecorder's
-    start latency on this device has not been measured, so the file's first sample is not known to
-    fall at that instant.</div>`:""}
+  ${V&&V.recorded?`<div class="note"><code>recorder_start_ms</code> is written on the same clock
+    as the tone onsets. The alignment is marked <code>uncharacterized</code> in the record:
+    MediaRecorder start latency has not been measured on this device, so the first sample in the
+    file is not known to correspond to that instant.</div>`:""}
   ${c.count&&seq?(RUN.reportedCount==null
     ? `<div class="warn">No count reported, so this trial has no validity check.</div>`
     : (()=>{ const heard=countedHeard(seq, RUN.streamCutMs, c.countOf);
@@ -4689,12 +4683,12 @@ function renderZoomBanner(){
     el=document.createElement("div"); el.id="zoombanner";
     document.body.appendChild(el);
   }
-  el.innerHTML=`<b>The page is zoomed (${viewportScale().toFixed(2)}×).</b>
-    The spiral is drawn from a millimeter calibration, so at this zoom it is the wrong
-    physical size and <b>any trial run now is invalid</b>.
-    <button class="ghost sm" onclick="tryResetZoom()">Try to reset</button>
-    <span>If that does not clear it, pinch back out with two fingers, or reload the page —
-    the session is saved and will be restored.</span>`;
+  el.innerHTML=`<b>Page is zoomed (${viewportScale().toFixed(2)}×).</b>
+    The spiral is drawn from a millimeter calibration, so at this scale it is the wrong
+    physical size and trials run now are invalid.
+    <button class="ghost sm" onclick="tryResetZoom()">Reset zoom</button>
+    <span>If this does not clear it, pinch out with two fingers or reload the page. The
+    session is saved and will be restored.</span>`;
 }
 if(window.visualViewport){
   window.visualViewport.addEventListener("resize", ()=>{
