@@ -2067,12 +2067,15 @@ function renderPlan(){
 // parameter-tuning trial and a protocol trial can never be confused in the CSV.
 function adhocCell(c,s2,blocked){
   if(blocked) return "";
-  // Which hand Run now uses is taken from the Hands column wherever that column already
-  // names one. A second selector beside the button would duplicate it, and the two could
-  // be set to disagree -- the Hands column saying non-dominant while Run now used dominant.
-  // Only "each" leaves it genuinely unspecified, because the plan alternates.
-  const label = c.hands==="both" ? "both hands"
-              : c.hands==="one"  ? (s2.oneHand==="nondominant" ? "non-dominant" : "dominant")
+  // Which hand Run now uses is taken from the Hands column wherever that column names one.
+  // A second selector would duplicate it, and the two could be set to disagree.
+  // Only "each" leaves it unspecified, because the plan alternates.
+  //
+  // Read from the PLAN, not the catalogue: the catalogue holds the default, and the row's
+  // Hands column can be changed away from it. Using the default here drew a selector on a
+  // row the examiner had already set to one hand.
+  const label = s2.hands==="both" ? "both hands"
+              : s2.hands==="one"  ? (s2.oneHand==="nondominant" ? "non-dominant" : "dominant")
               : null;
   return `<button class="ghost sm" onclick="runAdhoc('${c.id}')">Run now</button>` +
     (label
@@ -3115,10 +3118,10 @@ function runAdhoc(taskId){
   }
   if(!storageGuard()){ goPage(6); return; }
   const c=byId(taskId), s2=PLAN[taskId];
-  // Same resolution the row displays: the Hands column governs where it names a hand,
-  // and adhocHand is consulted only for "each", where the plan alternates.
-  const hand = c.hands==="both" ? "both"
-             : c.hands==="one"  ? (s2.oneHand==="nondominant" ? "nondominant" : "dominant")
+  // Same resolution the row displays, and from the same source -- the plan, not the
+  // catalogue default -- so what the row shows is what actually runs.
+  const hand = s2.hands==="both" ? "both"
+             : s2.hands==="one"  ? (s2.oneHand==="nondominant" ? "nondominant" : "dominant")
              : (s2.adhocHand||"dominant");
   TRIAL={ task:taskId, hand, role:null, lengthS:s2.lengthS,
           verbalType:c.verbal?(s2.verbalType||null):null,
