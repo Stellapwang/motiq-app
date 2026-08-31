@@ -2067,13 +2067,21 @@ function renderPlan(){
 // parameter-tuning trial and a protocol trial can never be confused in the CSV.
 function adhocCell(c,s2,blocked){
   if(blocked) return "";
-  const needsHand = c.hands!=="both";
+  // Which hand Run now uses is taken from the Hands column wherever that column already
+  // names one. A second selector beside the button would duplicate it, and the two could
+  // be set to disagree -- the Hands column saying non-dominant while Run now used dominant.
+  // Only "each" leaves it genuinely unspecified, because the plan alternates.
+  const label = c.hands==="both" ? "both hands"
+              : c.hands==="one"  ? (s2.oneHand==="nondominant" ? "non-dominant" : "dominant")
+              : null;
   return `<button class="ghost sm" onclick="runAdhoc('${c.id}')">Run now</button>` +
-    (needsHand?`<br><select style="margin-top:4px;font-size:12px"
-        onchange="planSet('${c.id}','adhocHand',this.value)">
-      <option value="dominant" ${s2.adhocHand!=="nondominant"?"selected":""}>dominant</option>
-      <option value="nondominant" ${s2.adhocHand==="nondominant"?"selected":""}>non-dominant</option>
-    </select>`:"");
+    (label
+      ? `<div class="note" style="margin:4px 0 0;font-size:11px">${label}</div>`
+      : `<select style="margin-top:4px;font-size:12px"
+           onchange="planSet('${c.id}','adhocHand',this.value)">
+        <option value="dominant" ${s2.adhocHand!=="nondominant"?"selected":""}>dominant</option>
+        <option value="nondominant" ${s2.adhocHand==="nondominant"?"selected":""}>non-dominant</option>
+      </select>`);
 }
 
 
@@ -3107,7 +3115,11 @@ function runAdhoc(taskId){
   }
   if(!storageGuard()){ goPage(6); return; }
   const c=byId(taskId), s2=PLAN[taskId];
-  const hand = c.hands==="both" ? "both" : (s2.adhocHand||"dominant");
+  // Same resolution the row displays: the Hands column governs where it names a hand,
+  // and adhocHand is consulted only for "each", where the plan alternates.
+  const hand = c.hands==="both" ? "both"
+             : c.hands==="one"  ? (s2.oneHand==="nondominant" ? "nondominant" : "dominant")
+             : (s2.adhocHand||"dominant");
   TRIAL={ task:taskId, hand, role:null, lengthS:s2.lengthS,
           verbalType:c.verbal?(s2.verbalType||null):null,
           status:"pending", skipReason:null, adhoc:true, index:null,
