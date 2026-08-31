@@ -166,8 +166,6 @@
                 padding:10px 14px; font-size:14px; line-height:1.45;
                 display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   #zoombanner button { margin:0; }
-  #tosession { font-size:13px !important; padding:9px 14px !important; min-width:0 !important;
-               background:#fff; color:var(--accent); border:1px solid var(--accent); }
   #quit { font-size:13px !important; padding:9px 14px !important; min-width:0 !important;
           background:#fff; color:var(--muted); border:1px solid var(--line); }
 </style>
@@ -301,8 +299,8 @@
           <select id="pcimpl"><option value="pen">Stylus</option><option value="finger">Index finger</option></select></div>
         <div><label for="pcmode">Instruction</label>
           <select id="pcmode" onchange="penPadClear()">
-            <option value="between" selected>Draw between the lines</option>
-            <option value="trace">Trace on the line</option></select></div>
+            <option value="between">Draw between the lines</option>
+            <option value="trace" selected>Trace on the line</option></select></div>
         <div><label>&nbsp;</label><div class="btnrow" style="margin:0">
           <button class="ghost" onclick="penPadClear()">Clear</button></div></div>
       </div>
@@ -539,8 +537,8 @@
         <div class="note" style="margin:0 0 4px"><b>Shared by both implements</b></div>
         <div class="r4">
           <div><label for="instr">Instruction</label>
-            <select id="instr"><option value="between" selected>Draw between the lines</option>
-              <option value="trace">Trace on the line</option></select></div>
+            <select id="instr"><option value="between">Draw between the lines</option>
+              <option value="trace" selected>Trace on the line</option></select></div>
           <div><label for="startdia">Start zone (mm)</label><input id="startdia" type="number" value="8" step="1" min="4" max="20"></div>
           <div><label for="endang">End angle (deg)</label><input id="endang" type="number" value="90" step="15"></div>
           <div><label for="split">Split (drawing share)</label><input id="split" type="number" value="0.70" step="0.05" min="0.4" max="1"></div>
@@ -700,8 +698,7 @@
     <div class="spacer"></div>
 
     <div id="reminder"></div>
-    <button id="tosession" onclick="backToSession()">Session</button>
-    <button id="quit" onclick="abandonTrial()">Abandon trial</button>
+    <button id="quit" onclick="backToSession()">Back to session</button>
   </div>
   <div id="overlay">
     <div id="ovBody"></div>
@@ -943,7 +940,7 @@ function drawingRules(tool, mode){
 }
 function instructionFor(taskId, opts){
   const c=byId(taskId); if(!c) return null;
-  const mode = (opts&&opts.mode) || ($("instr")?$("instr").value:"between");
+  const mode = (opts&&opts.mode) || ($("instr")?$("instr").value:"trace");
   const impl = (opts&&opts.implement) || c.implement || "pen";
   const tool = impl==="finger" ? "finger" : "pen";
   const verbal = (opts&&opts.verbal) || null;
@@ -1250,10 +1247,10 @@ function renderPenCheckMode(){
   const mode=$("pcmode")?$("pcmode").value:"between";
   const tool=($("pcimpl")&&$("pcimpl").value==="finger")?"finger":"pen";
   $("pcinstr").innerHTML = mode==="trace"
-    ? `Say: <b>“Start in the middle and trace the line all the way out, as accurately as you
-       can. Keep your ${tool} on the screen.”</b>`
-    : `Say: <b>“Start in the middle and follow the path all the way out, staying between the
-       lines. Keep your ${tool} on the screen.”</b>`;
+    ? `<b>Start in the middle and trace the line all the way out, as accurately as you can.
+       Keep your ${tool} on the screen.</b>`
+    : `<b>Start in the middle and follow the path all the way out, staying between the lines.
+       Keep your ${tool} on the screen.</b>`;
 }
 function penPadClear(){ pcPts=null; penPadSetup(); renderPenCheckMode();
   $("pcresult").innerHTML=""; }
@@ -2071,9 +2068,7 @@ function renderPlan(){
           ${c.verbal?`<br><select style="margin-top:5px" onchange="planSet('${c.id}','verbalType',this.value)">
               ${promptsFor(c.verbal).map(([k,v])=>
                 `<option value="${k}" ${s2.verbalType===k?"selected":""}>${v.label}</option>`).join("")}
-            </select>
-            <div class="note" style="margin:4px 0 0;max-width:280px">${
-              verbalPrompt(s2.verbalType,c.verbal).help || verbalPrompt(s2.verbalType,c.verbal).equivalence}</div>`:""}
+            </select>`:""}
           ${palmRejectionAffected(c)?`<div class="note" style="margin:4px 0 0;color:#8c2020">
               <b>Pen and touch not simultaneous.</b> See Known limitations on the Screen page.</div>`:""}
           ${dep?`<div class="warn" style="margin:5px 0 0;max-width:300px">${dep}</div>`:""}
@@ -3342,7 +3337,7 @@ function verbalTypeChanged(){
   if(pr.family==="word"){
     VERBAL_SUGGEST=null;
     help.innerHTML=`<div style="font-size:22px;color:var(--ink);margin:10px 0">
-        Say: <b>“Name as many ${pr.label.toLowerCase()} as you can.”</b></div>
+        <b>Name as many ${pr.label.toLowerCase()} as you can.</b></div>
       Scored over a fixed <b>60 s</b> window, which is why this task cannot be self-paced:
       fluency output is steeply front-loaded (roughly 40–45% of words in the first 15 s), so
       words per second cannot be compared between windows of different length.
@@ -3352,8 +3347,8 @@ function verbalTypeChanged(){
     // administrations share a start.
     VERBAL_SUGGEST=randomVerbalStart(t);
     help.innerHTML=`<div style="font-size:22px;color:var(--ink);margin:10px 0">
-        Say: <b>“Start at ${VERBAL_SUGGEST} and ${pr.step>0?"count up":"count down"}
-        ${Math.abs(pr.step)===1?"one at a time":"in "+(Math.abs(pr.step)===2?"twos":"threes")}.”</b></div>
+        <b>Start at ${VERBAL_SUGGEST} and ${pr.step>0?"count up":"count down"}
+        ${Math.abs(pr.step)===1?"one at a time":"in "+(Math.abs(pr.step)===2?"twos":"threes")}.</b></div>
       Reads as <b>${verbalExample(t,VERBAL_SUGGEST)} …</b>
       Drawn from ${pr.range[0]}–${pr.range[1]}, fresh every trial, so there are unlimited
       alternate forms and nothing carries over between visits. The number used is written
@@ -3737,9 +3732,12 @@ function stopTrial(auto){
   if(RUN.viewport){ noteTrialScale(); RUN.viewport.scale_at_end=viewportScale(); }
   RUN.stoppedEarly=!auto; finish();
 }
-// Leaves the stage and returns to the session page from wherever the examiner happens to
-// be. Available on the admin bar and in the footer of every overlay that would otherwise
-// have no way out, so no screen is a dead end.
+// The single way off the stage, on the admin bar and in the footer of every overlay that
+// would otherwise be a dead end. It replaces a separate "Abandon trial" button that did
+// exactly the same thing under a more alarming name.
+//
+// Participant details, the plan and every saved trial are untouched; only a trial that has
+// been run and not saved is lost, and that is what the confirmation is for.
 function backToSession(){
   const running = RUN && !RUN.ready && !RUN.saved;
   if(running && !confirm("Leave this trial and go back to the session page?\n\nIt has NOT been saved and will be lost. The participant, the plan and all saved trials are kept.")) return;
@@ -3749,18 +3747,6 @@ function backToSession(){
   hideOverlay(); stageOn(false); RUN=null; goPage(3);
 }
 
-// Abandons the trial on screen only. Participant details, the plan and every saved
-// trial are untouched -- clearing those is "Start a new session" on the Session page.
-function abandonTrial(){
-  const unsaved = RUN && !RUN.ready && !RUN.saved;
-  if(!confirm("Abandon this trial and return to the session page?\n\n"+
-     (unsaved?"It has NOT been saved and will be lost, including any recording. ":"")+
-     "The participant, the plan and all saved trials are kept.")) return;
-  if(RUN){ clearTimeout(RUN.timer); if(RUN.teardown) RUN.teardown(); endRecording(); }
-  else RECORDER.release();
-  cancelAnimationFrame(RAF); stopAudio();
-  stageOn(false); RUN=null; goPage(3);
-}
 
 /* ------------------------------------------------------- results */
 // Every tapped task in the current set answers every tone, so the responded-to class is
