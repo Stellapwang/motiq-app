@@ -188,6 +188,27 @@
 
   <!-- ===================== 1 CALIBRATION ===================== -->
   <div id="pg1">
+    <!-- D14. Said once, prominently, in one place. The compact markers on affected task
+         rows exist so somebody who skips this page still sees something; they point back
+         here rather than repeating all of it on every row. -->
+    <fieldset style="border-color:#e9b7b7;background:#fdecec">
+      <legend style="color:#8c2020">Before you start — three things that will bite you</legend>
+      <div style="color:#8c2020;font-size:14px;line-height:1.6">
+        <p style="margin:0 0 8px"><b>1. Pen and finger do not work at the same time.</b>
+        While an Apple Pencil is touching the glass, iPadOS discards finger touches as palm
+        contact. No web API turns this off. <b>PEN_TONE</b> and <b>PEN_FAST</b> are affected:
+        tap responses are lost for as long as the pen is down, so they do not run as true
+        dual tasks here. The trials still record, and are flagged in the data.</p>
+        <p style="margin:0 0 8px"><b>2. Voice recording needs an https address.</b> The
+        microphone is only available over <code>https</code>, or from
+        <code>localhost</code>/<code>127.0.0.1</code>. Opened from a plain
+        <code>http://</code> address on the network — a Mac's LAN address, say — the spoken
+        tasks run and record nothing. That is a property of the address, not of the iPad.</p>
+        <p style="margin:0"><b>3. This is a prototype, not the production instrument.</b>
+        Millimeters come from a card calibration and timing from the browser clock. Both are
+        approximations, and neither is good enough to publish a number from without saying so.</p>
+      </div>
+    </fieldset>
     <fieldset>
       <legend>Screen calibration <span style="font-weight:400;color:var(--muted)">— per device, done once</span></legend>
       <div id="detected" class="note"></div>
@@ -241,9 +262,9 @@
             <option value="7">July</option><option value="8">August</option>
             <option value="9">September</option><option value="10">October</option>
             <option value="11">November</option><option value="12">December</option></select></div>
-        <div><label for="domhand">Dominant hand</label>
+        <div><label for="domhand">Which hand do you write with?</label>
           <select id="domhand"><option value="right">Right</option><option value="left">Left</option>
-            <option value="ambidextrous">Ambidextrous</option></select></div>
+            <option value="either">Either</option></select></div>
       </div>
       <div id="agenote" class="note"></div>
       <label class="checkrow" for="voiceconsent">
@@ -415,6 +436,8 @@
       <div id="nestnote" class="note"></div>
     </fieldset>
 
+    <div id="glance" class="hidden"></div>
+
     <fieldset id="nextUp" class="hidden">
       <legend>Next trial</legend>
       <div id="nextUpBody"></div>
@@ -440,12 +463,19 @@
       </div>
       <div id="planSummary"></div>
       <div class="btnrow">
-        <button onclick="buildQueue()">Build session</button>
+        <button class="ghost" onclick="planPreset('core')">Core</button>
+        <button class="ghost" onclick="planPreset('second')">Core + Second</button>
+        <button class="ghost" onclick="planPreset('all')">Everything</button>
         <button class="ghost" onclick="clearAllSelections()">Clear all selections</button>
+      </div>
+      <div id="presetNote"></div>
+      <div class="note">The three presets are cumulative. They change the ticks only —
+      repeats, lengths and prompts are left exactly as you set them, so re-ticking a task
+      restores its numbers.</div>
+      <div class="btnrow">
+        <button onclick="buildQueue()">Build session</button>
         <button class="ghost" onclick="resetPlan()">Reset to defaults</button>
       </div>
-      <div class="note">“Clear all selections” unticks every task and leaves the repeats and
-      lengths alone, so re-ticking a task restores the numbers you had set.</div>
     </fieldset>
 
     <fieldset id="queueBox" class="hidden">
@@ -520,6 +550,8 @@
               <option value="dotted">Gray, dotted</option>
             </select></div>
           <div><label for="idle">Idle auto-stop (s)</label><input id="idle" type="number" value="5" step="1" min="2" max="30"></div>
+          <div><label for="longtrial">Long-trial notice (s)</label>
+            <input id="longtrial" type="number" value="90" step="10" min="30" max="600"></div>
         </div>
       </div>
     </fieldset>
@@ -662,7 +694,7 @@
     <div id="recdot"></div>
     <div id="levelmeter"><div id="levelbar"><i></i></div><span id="leveltxt"></span></div>
     <div class="spacer"></div>
-    <div id="tapcount" style="font-size:14px;color:var(--muted);min-width:70px"></div>
+
     <div id="reminder"></div>
     <button id="quit" onclick="abandonTrial()">Abandon trial</button>
   </div>
@@ -709,57 +741,50 @@ const BUILD = "v10.01 2026-08-29";
    countOf   "targets" = count the high tones only; "all" = count every tone. This
              is what the typed total is scored against, so it must match the words
              the participant was actually given.
-   respond   "tap" (default), "speak", or "both". "both" means one tone type is
-             tapped and the other is spoken -- SP_SWT, the switching task.
-   respondTo which tone type the TAP answers: "target" (default, the high tone, as
-             in every oddball task) or "standard" (the low tone, as in SP_SWT).
-             Response-time scoring follows this, not the tone label.
-   adjacentTargetsOK 1 = the generator may place targets next to each other. Set
-             only where every tone type carries a response, so a tap binds to the
-             preceding tone by the ISI itself rather than by the target-to-target
-             gap. Without it, no stream can exceed ~50% targets.
+   respond   "tap" (default) or "speak". Which channel the participant answers on.
    voice     1 = record the participant's voice for this task. Needs the consent
              tick on the Participant page; the task cannot be planned without it.
-   verbal    1 = a spoken secondary task configured per trial (SP_VRB): a prompt
-             type from VERBAL_PROMPTS plus the exact wording used, written into
-             the trial record.
+   verbal    "math" or "word" -- a spoken secondary task configured per trial. The
+             prompt used and its exact wording are written into the trial record.
+   tier      "core" | "second" | "expl". Read by the UI for badges and the plan
+             presets. Provisional and expected to move: changing a task's tier must
+             stay a one-line edit here, never a change in the UI.
 
    Audio settings live in AUDIO_DEFAULTS, keyed by the same id.
    ============================================================================ */
 const CATALOGUE = [
-  { id:"SP",       label:"Spiral",                     order:10, spiral:1, tap:0, audio:0, zones:0, hands:"each",  repeats:3, lengthS:null, implement:"pen" },
-  { id:"SPF",      label:"Spiral, finger",             order:20, spiral:1, tap:0, audio:0, zones:0, hands:"one",   repeats:2, lengthS:null, implement:"finger" },
-  { id:"TAP",      label:"Unimanual tapping",          order:30, spiral:0, tap:1, audio:0, zones:1, hands:"each",  repeats:2, lengthS:10 },
-  { id:"BMIN",     label:"Bimanual tapping, in phase", order:40, spiral:0, tap:1, audio:0, zones:2, hands:"both",  repeats:2, lengthS:10 },
-  { id:"BMANT",    label:"Bimanual tapping, antiphase",order:50, spiral:0, tap:1, audio:0, zones:2, hands:"both",  repeats:2, lengthS:10 },
-  { id:"DET",      label:"Detection tapping",          order:60, spiral:0, tap:1, audio:1, zones:1, hands:"one",   repeats:2, lengthS:20 },
-  { id:"ODT",      label:"Oddball tapping",            order:70, spiral:0, tap:1, audio:1, zones:1, hands:"each",  repeats:2, lengthS:20 },
-  { id:"SP_TAP",   label:"Spiral + tapping",           order:80, spiral:1, tap:1, audio:0, zones:1, hands:"roles", repeats:2, lengthS:null, implement:"pen" },
-  { id:"SP_DET",   label:"Spiral + detection",         order:90, spiral:1, tap:1, audio:1, zones:1, hands:"roles", repeats:2, lengthS:45, implement:"pen", selfPaceable:1 },
-  // repeats 2: at ISI 1200 ms with 25% targets a 30 s drawing yields about 6 target events
-  // and a 40 s drawing about 8, well under the 12 per hand the plan summary warns below.
-  { id:"SP_ODT",   label:"Spiral + oddball",           order:100,spiral:1, tap:1, audio:1, zones:1, hands:"roles", repeats:2, lengthS:45, implement:"pen", selfPaceable:1 },
-  // Counted aloud, so the number itself is on the recording as well as typed in at
-  // the end. ptg 0 means there is nothing to discriminate: every tone is counted.
-  { id:"SP_DEC",   label:"Spiral + count every tone aloud", order:102, spiral:1, tap:0, audio:1, zones:0, hands:"one", repeats:1, lengthS:null, implement:"pen",
+  { id:"TAP_FAST", label:"Tapping, as fast as you can",   order:10,  tier:"core",   spiral:0, tap:1, audio:0, zones:1, hands:"each", repeats:2, lengthS:10 },
+  // Dominant hand only, 3 repeats. The trial-count requirement for a reaction-time
+  // estimate is PER CONDITION, so splitting it across hands halves it; three repeats in
+  // one hand yields about 99 responses. Hand asymmetry is covered by TAP_FAST.
+  { id:"TAP_TONE", label:"Tapping to every tone",         order:20,  tier:"core",   spiral:0, tap:1, audio:1, zones:1, hands:"one",  oneHand:"dominant", repeats:3, lengthS:40 },
+  { id:"PEN_DRAW", label:"Spiral",                        order:30,  tier:"core",   spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:2, lengthS:null, implement:"pen" },
+  { id:"PEN_TONE", label:"Spiral + tapping to every tone",order:40,  tier:"core",   spiral:1, tap:1, audio:1, zones:1, hands:"one",  oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", selfPaceable:1, fixedS:45 },
+  { id:"PEN_VCNT", label:"Spiral + counting the tones aloud", order:50, tier:"core", spiral:1, tap:0, audio:1, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen",
                    selfPaceable:1, fixedS:45, count:1, countMode:"aloud", countOf:"all", respond:"speak", voice:1 },
-  { id:"SP_ODC",   label:"Spiral + count high tones aloud", order:104, spiral:1, tap:0, audio:1, zones:0, hands:"one", repeats:2, lengthS:null, implement:"pen",
+  // PEN_VODD's endpoint is KINEMATIC -- the spiral, not the voice. The spoken count is
+  // there to verify the participant was tracking the stream throughout, which a count
+  // reported only at the end cannot show. It does NOT feed the reaction-time endpoint:
+  // there is no timestamped response channel here, and analyzing it as though there were
+  // is the failure mode this comment exists to prevent.
+  //
+  // PEN_VCNT and PEN_VODD are a PAIR. VCNT demands a spoken response to every tone; VODD
+  // to roughly a quarter of them while monitoring stays continuous. The contrast separates
+  // response-rate interference with the drawing from monitoring load. Neither alone does.
+  { id:"PEN_VODD", label:"Spiral + counting the high tones aloud", order:60, tier:"core", spiral:1, tap:0, audio:1, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen",
                    selfPaceable:1, fixedS:45, count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1 },
-  // Switching: the low tone is tapped, the high tone is spoken. Both tone types carry
-  // a response, so targets may be adjacent and the attribution gap is the ISI itself.
-  { id:"SP_SWT",   label:"Spiral + tap / speak switching", order:106, spiral:1, tap:1, audio:1, zones:1, hands:"roles", repeats:1, lengthS:null, implement:"pen",
-                   selfPaceable:1, fixedS:45, count:1, countMode:"aloud", countOf:"targets",
-                   respond:"both", respondTo:"standard", adjacentTargetsOK:1, voice:1 },
-  { id:"SPF_ODT",  label:"Spiral (finger) + oddball",  order:110,spiral:1, tap:1, audio:1, zones:1, hands:"one",   repeats:1, lengthS:45, implement:"finger", selfPaceable:1 },
-  // No tap zone: the response is a silent count reported at the end, so there is no
-  // timestamped response channel and no cognitive dual-task effect can be computed.
-  // Count error is a trial validity criterion, not a measure. Silent, and not recorded.
-  { id:"SPF_ODC",  label:"Spiral (finger) + silent count", order:120, spiral:1, tap:0, audio:1, zones:0, hands:"one", repeats:1, lengthS:45, implement:"finger",
-                   selfPaceable:1, count:1, countMode:"silent", countOf:"targets", respond:"speak" },
-  // The verbal slot: one task, four prompts. Which prompt was used, and its exact
-  // wording, are per trial rather than per task -- see VERBAL_PROMPTS.
-  { id:"SP_VRB",   label:"Spiral + spoken task",       order:130, spiral:1, tap:0, audio:0, zones:0, hands:"one", repeats:1, lengthS:null, implement:"pen",
-                   selfPaceable:1, fixedS:60, verbal:1, respond:"speak", voice:1 }
+  { id:"PEN_FAST", label:"Spiral + tapping as fast as you can", order:70, tier:"second", spiral:1, tap:1, audio:0, zones:1, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen" },
+  { id:"PEN_MATH", label:"Spiral + counting aloud",       order:80,  tier:"second", spiral:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen",
+                   selfPaceable:1, fixedS:60, verbal:"math", respond:"speak", voice:1 },
+  // Fixed 60 s and deliberately NOT self-paceable: fluency output is steeply front-loaded,
+  // so words per second cannot be compared across windows of different length.
+  { id:"PEN_WORD", label:"Spiral + naming words aloud",   order:90,  tier:"expl",   spiral:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:60, implement:"pen",
+                   verbal:"word", respond:"speak", voice:1 },
+  { id:"TAP_BMIN", label:"Bimanual tapping, in phase",    order:100, tier:"expl",   spiral:0, tap:1, audio:0, zones:2, hands:"both", repeats:2, lengthS:10 },
+  { id:"TAP_BANT", label:"Bimanual tapping, antiphase",   order:110, tier:"expl",   spiral:0, tap:1, audio:0, zones:2, hands:"both", repeats:2, lengthS:10 },
+  { id:"FIN_DRAW", label:"Spiral, finger",                order:120, tier:"expl",   spiral:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"finger" },
+  { id:"FIN_VCNT", label:"Spiral (finger) + counting the tones aloud", order:130, tier:"expl", spiral:1, tap:0, audio:1, zones:0, hands:"one", oneHand:"dominant", repeats:1, lengthS:null, implement:"finger",
+                   selfPaceable:1, fixedS:45, count:1, countMode:"aloud", countOf:"all", respond:"speak", voice:1 }
 ];
 
 /* ---------------------------------------------------------------------------
@@ -777,8 +802,9 @@ const CATALOGUE = [
 
    Consequence: a task needing pen drawing AND finger tapping AT THE SAME TIME
    cannot function as a genuine dual task in this prototype. Tap responses are lost
-   for as long as the pen is down. SP_TAP, SP_DET, SP_ODT and SP_SWT are affected.
-   SPF_ODT is NOT: it draws with the finger, so no Pencil is on the glass.
+   for as long as the pen is down. In the v11 set that is PEN_TONE and PEN_FAST.
+   No FIN_ task is affected -- they draw with the finger, so no Pencil is on the
+   glass -- and no voice task is affected: the response channel there is the voice.
 
    The tasks are kept and labeled rather than removed -- they are being tried out
    deliberately, and the data records which trials were affected so this is
@@ -809,73 +835,80 @@ const PALM_WARNING = "Pen and finger do not work at the same time in Safari on i
 //                      whole mechanism exists to prevent. It is cut at drawEnd, so the
 //                      participant never actually hears all of it.
 //
-// The three new spoken tasks (SP_DEC, SP_ODC, SP_SWT) carry UNVALIDATED starting
-// values. Nothing below has been piloted; they are starting points, editable on the
-// Parameters page exactly like every other row here, and expected to change.
-// Jitter is 50% on all three deliberately: unpredictable onsets are the point of the
-// design, not an artifact of picking a round number.
+// Every row here carries UNVALIDATED starting values. Nothing has been piloted; they are
+// starting points, editable on the Parameters page, and expected to change.
+// TAP_TONE and PEN_TONE are a single-task and dual-task pair, seeded identically; pairWith
+// makes that explicit, and the Parameters page says so loudly if they are made to drift.
 const AUDIO_DEFAULTS = {
-  DET:     { durS:20, isi:1000, jit:30, ptg:0,    tone:50, lead:500,
-             label:"Tones only — respond to every tone" },
-  ODT:     { durS:20, isi:700,  jit:30, ptg:0.25, tone:50, lead:500,
-             label:"Tones only — respond to high tones" },
-  SP_DET:  { durS:45, isi:1000, jit:30, ptg:0,    tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3, selfPacedDurS:180,
-             label:"Dual task — respond to every tone while drawing" },
-  SP_ODT:  { durS:45, isi:700,  jit:30, ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3, selfPacedDurS:180,
-             label:"Dual task — respond to high tones while drawing" },
-  SP_DEC:  { durS:180, isi:2000, jit:50, ptg:0,    tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
-             label:"Dual task — count every tone out loud while drawing" },
-  SP_ODC:  { durS:180, isi:1200, jit:50, ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
-             label:"Dual task — count high tones out loud while drawing" },
-  SP_SWT:  { durS:180, isi:1500, jit:50, ptg:0.5,  tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
-             label:"Dual task — tap the low tone, speak the number on the high tone" },
-  SPF_ODT: { durS:45, isi:700,  jit:30, ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3, selfPacedDurS:180,
-             label:"Dual task, finger drawing — high tones only" },
-  SPF_ODC: { durS:45, isi:700,  jit:30, ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
-             label:"Dual task, finger drawing — count high tones silently" }
+  TAP_TONE: { durS:40, floorMs:600, meanMs:1200, ptg:0,    tone:50, lead:500,
+              pairWith:"PEN_TONE",
+              label:"Tones only — tap to every tone" },
+  PEN_TONE: { durS:45, floorMs:600, meanMs:1200, ptg:0,    tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3, selfPacedDurS:180,
+              pairWith:"TAP_TONE",
+              label:"Dual task — tap to every tone while drawing" },
+  // Longer floor: a spoken number takes 600-800 ms to articulate, so a shorter floor
+  // would ask for the next response before the previous one had finished.
+  PEN_VCNT: { durS:45, floorMs:800, meanMs:1600, ptg:0,    tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
+              label:"Dual task — count every tone out loud while drawing" },
+  // Faster and denser ON PURPOSE. Only a quarter of tones need a response, so monitoring
+  // stays continuous while the motor interruptions stay sparse -- that density is the
+  // manipulation. About 12 targets in a 40-second drawing.
+  PEN_VODD: { durS:45, floorMs:400, meanMs:800,  ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
+              label:"Dual task — count the high tones out loud while drawing" },
+  FIN_VCNT: { durS:45, floorMs:800, meanMs:1600, ptg:0,    tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
+              label:"Dual task, finger drawing — count every tone out loud" }
 };
 
-// The spoken secondary tasks offered by SP_VRB. One task with a prompt type, rather
-// than four near-identical catalogue entries, because they differ only in what is said.
-// step   how the number moves each time the participant speaks; absent for fluency
-// range  the inclusive range the start number is drawn from, fresh every trial. A new
-//        start each trial gives unlimited alternate forms and stops anything carrying
-//        over between repeat visits. The number actually used goes into the record.
-// windowS  fluency only: the naming window is fixed, even though the trial itself stays
-//        self-paced like every other spiral trial. Fluency output is steeply front-loaded,
-//        so words per second cannot be compared across windows of different length.
-// Identical on every dual task, every participant and every visit, and written verbatim
+// H1. Identical on every dual task, every participant and every visit, and written verbatim
 // into the record. With no instruction, how a participant splits attention is free to vary,
 // and someone with a motor impairment tends to protect the motor task -- which would show up
 // as a group difference in dual-task cost that is really a difference in strategy.
 const PRIORITIZATION = "Do your best on both. Don't let either one slip.";
-// Matches instructionFor()'s own test, so what the record claims and what was shown cannot
-// drift apart.
+// Matches instructionFor()'s own test, so what the record claims and what was shown on
+// screen cannot drift apart.
 const isDualTask = c => !!(c && c.spiral && (c.tap || c.audio || c.verbal));
 
+// PEN_MATH prompts. step is how the number moves; range is drawn fresh every trial, so
+// there are unlimited alternate forms and nothing carries over between repeat visits. The
+// number actually used goes into the record.
 const VERBAL_PROMPTS = {
-  up1:     { label:"Count forward by 1",       step:1,  range:[10,59],
-             help:"The articulation-only baseline: speaking aloud with next to no cognitive load." },
-  up2:     { label:"Count forward by 2",       step:2,  range:[10,59],
-             help:"The same articulation with a small arithmetic load on top." },
-  up3:     { label:"Count forward by 3",       step:3,  range:[10,59],
-             help:"Counting up in threes: the arithmetic of serial threes without the backward direction." },
-  down1:   { label:"Count backward by 1",      step:-1, range:[60,99],
-             help:"Counting down cannot be run off automatically the way counting up can." },
-  down2:   { label:"Count backward by 2",      step:-2, range:[60,99],
-             help:"Between backward counting and counting backward by three." },
-  // Named for what the participant does, so the six counting prompts read as one family.
-  // This IS serial subtraction by 3 -- the standard task in the literature -- and the
-  // rename must not lose that link.
-  down3:   { label:"Count backward by 3",      step:-3, range:[60,99],
-             help:"This is the standard <b>serial subtraction by 3</b> task under a uniform name. The heaviest of the counting prompts." },
-  fluency: { label:"Category fluency", windowS:60,
-             help:"Scored over a fixed 60 s window. Fluency output is steeply front-loaded — roughly 40–45% of words come in the first 15 s — so words per second is not comparable between windows of different length." }
+  up1:   { label:"Count forward by 1",  step:1,  range:[10,59], family:"math",
+           help:"The articulation-only baseline: speaking aloud with next to no cognitive load." },
+  up2:   { label:"Count forward by 2",  step:2,  range:[10,59], family:"math",
+           help:"The same articulation with a small arithmetic load on top." },
+  up3:   { label:"Count forward by 3",  step:3,  range:[10,59], family:"math",
+           help:"Serial threes without the backward direction." },
+  down1: { label:"Count backward by 1", step:-1, range:[60,99], family:"math",
+           help:"Counting down cannot be run off automatically the way counting up can." },
+  down2: { label:"Count backward by 2", step:-2, range:[60,99], family:"math",
+           help:"Between backward counting and counting backward by three." },
+  // Named for what the participant does so the six read as one family. This IS serial
+  // subtraction by 3, the standard task in the literature; the rename must not lose that.
+  down3: { label:"Count backward by 3", step:-3, range:[60,99], family:"math",
+           help:"This is the standard <b>serial subtraction by 3</b> task under a uniform name. The heaviest of the counting prompts." }
 };
-// Plans and saved sessions written before the menu was expanded used these two keys.
-const VERBAL_ALIAS = { count:"up1", subtract3:"down3", sub3:"down3" };
-const VERBAL_KEY = k => VERBAL_PROMPTS[k] ? k : (VERBAL_ALIAS[k] || "up1");
-const verbalPrompt = k => VERBAL_PROMPTS[VERBAL_KEY(k)];
+// PEN_WORD categories. Animals and fruits & vegetables have published equivalence as
+// alternate forms; JOBS DOES NOT, so a jobs trial is not interchangeable with the other
+// two and must not be pooled with them as if it were.
+const WORD_PROMPTS = {
+  animals: { label:"Animals",             family:"word", equivalence:"published as an alternate form with fruits & vegetables" },
+  fruitveg:{ label:"Fruits & vegetables", family:"word", equivalence:"published as an alternate form with animals" },
+  jobs:    { label:"Jobs",                family:"word", equivalence:"NO published equivalence with the other two — not interchangeable" }
+};
+const ALL_PROMPTS = () => Object.assign({}, VERBAL_PROMPTS, WORD_PROMPTS);
+// Plans and saved sessions written before the split used these keys.
+const VERBAL_ALIAS = { count:"up1", subtract3:"down3", sub3:"down3", fluency:"animals" };
+function VERBAL_KEY(k, family){
+  const all=ALL_PROMPTS();
+  if(all[k] && (!family || all[k].family===family)) return k;
+  const aliased=VERBAL_ALIAS[k];
+  if(aliased && all[aliased] && (!family || all[aliased].family===family)) return aliased;
+  return family==="word" ? "animals" : "up1";
+}
+const verbalPrompt = (k,family) => ALL_PROMPTS()[VERBAL_KEY(k,family)];
+// Categories are chosen by the examiner, never drawn at random: the three are not
+// equivalent forms, so a random pick would silently vary difficulty between visits.
+const promptsFor = family => Object.entries(ALL_PROMPTS()).filter(([,v])=>v.family===family);
 
 // Posture and grip figure, shown on the instruction screen for drawing tasks.
 // Embedded so the app remains one file with nothing to fetch.
@@ -888,6 +921,22 @@ const OVERHEAD_S = 25;
 // this, so what you rehearse is what the participant hears.
 // Short lines, plain words, written to be read aloud.
 // ---------------------------------------------------------------------------
+// The drawing rules, in ONE place. PEN_DRAW shows them inline; every dual task built on
+// it shows a short line plus a button that reveals this identical block. The wording a
+// participant is held to is therefore the same in a task and its single-task baseline --
+// which is what stops the instruction itself contributing to dual-task cost -- without a
+// dual-task screen opening with four lines they already know.
+function drawingRules(tool, mode){
+  return [
+    "Start in the middle.",
+    mode==="between"
+      ? "Follow the white path from the center all the way out."
+      : "Trace the spiral line from the center all the way out.",
+    "Draw it as accurately as you can, at a comfortable speed.",
+    `Keep your ${tool} on the screen the whole time. Do not lift it.`,
+    "Do not rest your hand or arm on the table."
+  ];
+}
 function instructionFor(taskId, opts){
   const c=byId(taskId); if(!c) return null;
   const mode = (opts&&opts.mode) || ($("instr")?$("instr").value:"between");
@@ -896,28 +945,24 @@ function instructionFor(taskId, opts){
   const verbal = (opts&&opts.verbal) || null;
   const lines=[];
 
-  const dualTask = c.spiral && (c.tap || c.audio || c.verbal);
+  const dualTask = isDualTask(c);
+  const rules = drawingRules(tool, mode);
   if(c.spiral && !dualTask){
     lines.push("Sit comfortably.");
-    lines.push("Start in the middle.");
-    lines.push(mode==="between"
-      ? "Follow the white path from the center all the way out."
-      : "Trace the spiral line from the center all the way out, as accurately as you can.");
-    lines.push(`Keep your ${tool} on the screen the whole time. Do not lift it.`);
-    lines.push("Do not rest your hand or arm on the table.");
+    rules.forEach(l=>lines.push(l));
   } else if(dualTask){
-    // The drawing rules were taught in SP. Repeating them buries the part that is new.
-    lines.push(`Draw the spiral exactly as before, with your ${tool}.`);
+    // Short on screen; the identical rules are one click away. See drawingRules().
+    lines.push(`Draw the spiral with your ${tool}, exactly as before.`);
   }
 
   const also = dualTask ? "At the same time, " : "";
 
   if(c.zones===2){
     lines.push("Put one index finger on each circle.");
-    lines.push(taskId==="BMANT"
+    lines.push(taskId==="TAP_BANT"
       ? "Tap left, then right, then left, then right."
       : "Tap both circles at the same time.");
-    if(taskId==="BMANT") lines.push("Only one finger touches at a time.");
+    if(taskId==="TAP_BANT") lines.push("Only one finger touches at a time.");
     lines.push("Tap as fast as you can.");
   } else if(c.tap && !c.audio){
     lines.push(`${also}tap the circle with your index finger, as fast as you can.`);
@@ -925,37 +970,17 @@ function instructionFor(taskId, opts){
 
   const a = AUDIO_DEFAULTS[taskId];
   if(c.audio){
-    if(c.respond==="both"){
-      // Switching. Both tone types carry a response and they are DIFFERENT responses, so
-      // each mapping gets its own line with the tone first and the action second, and each
-      // line also says what NOT to do. A compound sentence holding both mappings at once
-      // is exactly what a 75-year-old hearing this once will not retain.
-      lines.push("You will hear low beeps and high beeps.");
-      lines.push("When you hear a <b>LOW</b> beep — tap the circle. Say nothing.");
-      lines.push("When you hear a <b>HIGH</b> beep — say the next number out loud. Do not tap.");
-      lines.push("Start at one and keep counting up: one, two, three.");
-      lines.push("Keep drawing the whole time.");
-      lines.push("Tell me the number you reached when the trial ends.");
-    } else if(c.count){
-      const aloud = c.countMode==="aloud";
+    if(c.count){
       if(c.countOf==="all"){
         lines.push("You will hear beeps, one after another.");
-        lines.push(aloud
-          ? `${also}count them <b>out loud</b> — one, two, three, and so on.`
-          : `${also}count them silently in your head.`);
+        lines.push(`${also}count them <b>out loud</b> — one, two, three, and so on.`);
       } else {
         lines.push("You will hear low beeps and high beeps.");
-        lines.push(aloud
-          ? `${also}count the <b>high</b> beeps out loud. Say the new number each time you hear one.`
-          : `${also}count the <b>high</b> beeps silently in your head.`);
+        lines.push(`${also}count the <b>high</b> beeps out loud. Say the new number each time you hear one.`);
         lines.push("Do nothing for the low beeps.");
       }
-      if(!c.tap) lines.push("Do not tap.");
-      lines.push("Tell me the number when the trial ends.");
-    } else if(a && a.ptg>0){
-      lines.push("You will hear low beeps and high beeps.");
-      lines.push(`${also}tap the circle only when you hear a <b>high</b> beep.`);
-      lines.push("Do nothing for the low beeps.");
+      lines.push("Do not tap.");
+      lines.push("Tell me the number you reached when the trial ends.");
     } else {
       lines.push("You will hear beeps.");
       lines.push(`${also}tap the circle every time you hear a beep.`);
@@ -963,25 +988,22 @@ function instructionFor(taskId, opts){
   }
 
   if(c.verbal){
-    const type = VERBAL_KEY(verbal&&verbal.type);
-    const pr = VERBAL_PROMPTS[type];
-    if(type==="fluency"){
-      const cat = (verbal&&verbal.category) ? `<b>${verbal.category}</b>` : "the category I give you";
+    const type=VERBAL_KEY(verbal&&verbal.type, c.verbal);
+    const pr=ALL_PROMPTS()[type];
+    if(c.verbal==="word"){
+      const cat=(verbal&&verbal.category) ? `<b>${verbal.category}</b>` : "the category I give you";
       lines.push(`${also}name as many ${cat} as you can.`);
       lines.push("Say them out loud, one after another, as fast as they come to you.");
       lines.push("Keep going until I tell you to stop.");
     } else {
-      const start = (verbal && verbal.start_number!=null) ? verbal.start_number : null;
-      const from  = start!=null ? `<b>${start}</b>` : "the number I give you";
-      const by    = Math.abs(pr.step);
-      lines.push(type==="down3"
-        ? `${also}start at ${from} and count backwards, taking away three each time.`
-        : by===1
-          ? `${also}start at ${from} and count ${pr.step>0?"up":"down"} out loud, one number at a time.`
-          : `${also}start at ${from} and count ${pr.step>0?"up":"down"} out loud in ${by===2?"twos":"threes"}.`);
+      const start=(verbal && verbal.start_number!=null) ? verbal.start_number : null;
+      const from=start!=null ? `<b>${start}</b>` : "the number I give you";
+      const by=Math.abs(pr.step);
+      lines.push(by===1
+        ? `${also}start at ${from} and count ${pr.step>0?"up":"down"} out loud, one number at a time.`
+        : `${also}start at ${from} and count ${pr.step>0?"up":"down"} out loud in ${by===2?"twos":"threes"}.`);
       const ex=verbalExample(type,start);
       if(ex) lines.push(`Like this: ${ex} — and keep going.`);
-      lines.push("Say every number out loud.");
       lines.push("Keep going until I tell you to stop.");
     }
   }
@@ -1001,10 +1023,13 @@ function instructionFor(taskId, opts){
   }
 
   return { id:taskId, title:c.label, lines,
+           drawingRules: c.spiral ? rules : null,
+           rulesShownInline: !!(c.spiral && !dualTask),
            figure: !!c.spiral && !dualTask, mode, implement:impl,
            length: c.lengthS===null ? "Ends when the administrator stops it."
                                     : `About ${a?a.durS:c.lengthS} seconds.` };
 }
+
 
 // The posture figure shows drawing BETWEEN the lines. Tracing needs its own picture, so
 // the spiral panel is generated from the same geometry the trial uses.
@@ -1663,7 +1688,7 @@ function screenRecordBase(which){
   const b=birthInfo(), pid=$("pid").value||"";
   const iso=new Date().toISOString();
   return {
-    schema:"motiq_prototype/7", build:BUILD, record_type:"screening", screen:which,
+    schema:"motiq_prototype/8", build:BUILD, record_type:"screening", screen:which,
     screen_uid:`${iso.replace(/[:.]/g,"-")}_${pid||"unnamed"}_${which}`,
     started_iso:iso,
     participant:{ id:pid, group:$("grp").value, sex:$("sex").value||null,
@@ -1828,7 +1853,7 @@ function renderInstrPage(){
   const c=byId(id);
   // The verbal task's wording is chosen per trial, so the rehearsal page shows the
   // prompt type currently set in the plan with the wording left as a placeholder.
-  const vb = c.verbal ? { type:VERBAL_KEY(PLAN&&PLAN[id]?PLAN[id].verbalType:null) } : null;
+  const vb = c.verbal ? { type:VERBAL_KEY(PLAN&&PLAN[id]?PLAN[id].verbalType:null, c.verbal) } : null;
   const ins=instructionFor(id,{mode:$("insMode").value, verbal:vb});
   $("insTitle").textContent=`${id} — ${c.label}`;
   $("insBody").innerHTML=instructionHTML(ins,{big:false});
@@ -1836,7 +1861,7 @@ function renderInstrPage(){
     `${c.spiral?(ins.implement==="finger"?"drawn with the index finger":"drawn with the pen"):"no drawing"}` +
     `${c.zones===2?" · both hands":c.tap?" · one hand taps":""}` +
     `${c.voice?" · <b>voice recorded</b>":""}` +
-    `${vb?` · prompt: ${VERBAL_PROMPTS[vb.type].label} (the exact wording is set per trial)`:""}`;
+    `${vb?` · prompt: ${ALL_PROMPTS()[vb.type].label} (the exact wording is set per trial)`:""}`;
 }
 function stepInstr(d){
   const sel=$("insTask"), i=sel.selectedIndex;
@@ -1873,7 +1898,8 @@ function defaultPlan(){
     p[c.id]={ include:false,
       repeats:c.repeats, hands:allowed.includes(c.hands)?c.hands:allowed[0],
       lengthS:c.lengthS, oneHand:"dominant",
-      verbalType:c.verbal?"up1":null }; });
+      verbalType:c.verbal?(c.verbal==="word"?"animals":"up1"):null,
+      adhocHand:c.oneHand||"dominant" }; });
   return p;
 }
 function resetPlan(){ PLAN=defaultPlan(); QUEUE=[]; QPOS=0; renderPlan(); renderQueue(); saveState(); }
@@ -1895,6 +1921,68 @@ function handsAllowed(c){
 }
 const HAND_LABEL={ each:"Each hand, alternating", one:"One hand",
                    both:"Both (bimanual)", roles:"Alternate which hand draws" };
+
+// D1. The badge carries the WORD as well as the color -- color alone does not survive
+// color blindness, a printout or a screenshot. Tier lives in the catalogue precisely so
+// moving a task between tiers stays a one-line edit there and never a change in here.
+const TIERS={ core:  { label:"Core",        bg:"#e6f0fb", fg:"#134a86", bd:"#b7d3f0" },
+              second:{ label:"Second",      bg:"#fdf3e7", fg:"#7a4410", bd:"#e8c9a4" },
+              expl:  { label:"Exploratory", bg:"#eef1f5", fg:"#5d6570", bd:"#d5dae1" } };
+const tierOf = c => TIERS[c.tier] || TIERS.expl;
+const tierBadge = c => { const t=tierOf(c);
+  return `<span style="display:inline-block;font-size:11px;font-weight:600;padding:2px 7px;
+    border-radius:10px;background:${t.bg};color:${t.fg};border:1px solid ${t.bd};
+    letter-spacing:.02em">${t.label}</span>`; };
+
+// D5. Display grouping only. Administration order stays governed by `order`.
+const FAMILIES=[ { key:"TAP_", label:"Tapping" },
+                 { key:"PEN_", label:"Stylus drawing" },
+                 { key:"FIN_", label:"Finger drawing" } ];
+const familyOf = id => (FAMILIES.find(f=>id.startsWith(f.key)) || FAMILIES[2]).label;
+
+// D2. Cumulative presets. Selection only -- repeats, lengths and prompts are untouched.
+function planPreset(which){
+  const want = c => {
+    if(which==="all") return true;
+    if(which==="core") return c.tier==="core";
+    return c.tier==="core" || c.tier==="second";       // "second" = core + second
+  };
+  const skipped=[];
+  CATALOGUE.forEach(c=>{
+    const wanted=want(c), blocked=taskBlocked(c);
+    if(wanted && blocked) skipped.push(c.id);
+    PLAN[c.id].include = wanted && !blocked;
+  });
+  // A preset that quietly ticks four of six is worse than one that ticks four and says
+  // which two it could not. Voice consent is an ethics gate, not an experimental one.
+  PRESET_NOTE = skipped.length
+    ? `<b>${skipped.join(", ")}</b> ${skipped.length===1?"was":"were"} left unticked —
+       ${taskBlocked(byId(skipped[0]))}.`
+    : null;
+  renderPlan(); saveState();
+}
+let PRESET_NOTE=null;
+
+// D3. Shown only when the dependency is actually missing. Notes, never rules: nothing is
+// auto-checked and nothing is blocked. Stella is exploring.
+function dependencyNote(c){
+  const inc = id => PLAN[id] && PLAN[id].include;
+  if(!inc(c.id)) return null;
+  if(c.id==="PEN_TONE"){
+    const missing=["PEN_DRAW","TAP_TONE"].filter(id=>!inc(id));
+    if(!missing.length) return null;
+    return `Dual-task cost is the change from single to dual. Without ${missing.join(" and ")}
+            there is no baseline to subtract, so this trial gives a level and not a cost.`;
+  }
+  if(c.id==="PEN_VCNT" || c.id==="PEN_VODD"){
+    const other = c.id==="PEN_VCNT" ? "PEN_VODD" : "PEN_VCNT";
+    if(inc(other)) return null;
+    return `${c.id} and ${other} are a pair — one demands a response to every tone, the other
+            to a quarter of them while monitoring stays continuous. The contrast is what
+            separates response-rate interference from monitoring load; neither alone does.`;
+  }
+  return null;
+}
 
 // Why a task cannot be planned right now, or null. One place, so the plan table, the
 // summary and the queue builder cannot disagree about it.
@@ -1927,50 +2015,81 @@ function onSelfPacedEstChange(){
 
 function renderPlan(){
   renderStatus();
-  let h=`<tr><th></th><th>Task</th><th>Repeats</th><th>Hands</th><th>Length</th><th>Uses</th></tr>`;
-  CATALOGUE.slice().sort((a,b)=>a.order-b.order).forEach(c=>{
-    const s=PLAN[c.id], blocked=taskBlocked(c);
-    if(blocked && s.include) s.include=false;
-    h+=`<tr class="${blocked?"blocked":""}">
-      <td><input type="checkbox" ${s.include?"checked":""} ${blocked?"disabled":""}
-           onchange="planSet('${c.id}','include',this.checked)"></td>
-      <td><b>${c.id}</b><br><span class="note" style="margin:0">${c.label}</span>
-        ${c.verbal?`<br><select style="margin-top:5px" onchange="planSet('${c.id}','verbalType',this.value)">
-            ${Object.entries(VERBAL_PROMPTS).map(([k,v])=>
-              `<option value="${k}" ${s.verbalType===k?"selected":""}>${v.label}</option>`).join("")}
-          </select>
-          <div class="note" style="margin:4px 0 0;max-width:280px">${verbalPrompt(s.verbalType).help}</div>`:""}
-        ${palmRejectionAffected(c)?`<div class="note" style="margin:4px 0 0;max-width:280px;color:#8c2020">
-            <b>Pen + finger not simultaneous on iPadOS.</b> Taps are lost while the pen is
-            down — see the instruction screen.</div>`:""}
-        ${blocked?`<div class="note" style="margin:4px 0 0;color:var(--warm)">${blocked}</div>`:""}</td>
-      <td><input type="number" min="1" max="20" value="${s.repeats}" ${blocked?"disabled":""}
-           onchange="planSet('${c.id}','repeats',+this.value)"></td>
-      <td><select onchange="planSet('${c.id}','hands',this.value)" ${blocked?"disabled":""}>
-            ${handsAllowed(c).map(hh=>`<option value="${hh}" ${s.hands===hh?"selected":""}>${HAND_LABEL[hh]}</option>`).join("")}
-          </select>
-          ${s.hands==="one"?`<select style="margin-top:4px" ${blocked?"disabled":""} onchange="planSet('${c.id}','oneHand',this.value)">
-            <option value="dominant" ${s.oneHand==="dominant"?"selected":""}>${c.spiral?"Dominant hand draws":"Dominant"}</option>
-            <option value="nondominant" ${s.oneHand==="nondominant"?"selected":""}>${c.spiral?"Non-dominant hand draws":"Non-dominant"}</option></select>`:""}</td>
-      <td>${lengthCell(c,s,blocked)}</td>
-      <td class="note" style="padding-top:10px">${[c.spiral?"drawing":null,c.tap?"tapping":null,
-          c.audio?"<b>tones</b>":null, c.count?(c.countMode==="aloud"?"count aloud":"silent count"):null,
-          c.verbal?"spoken task":null, c.voice?"<b>voice</b>":null].filter(Boolean).join(" · ")}</td>
-    </tr>`;
+  let h=`<tr><th></th><th>Task</th><th>Repeats</th><th>Hands</th><th>Length</th><th>Uses</th><th></th></tr>`;
+  const ordered=CATALOGUE.slice().sort((a,b)=>a.order-b.order);
+  FAMILIES.forEach(fam=>{
+    const rows=ordered.filter(c=>c.id.startsWith(fam.key));
+    if(!rows.length) return;
+    h+=`<tr><td colspan="7" style="background:#f2f5f8;font-weight:600;font-size:12px;
+        text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:7px 9px">
+        ${fam.label}</td></tr>`;
+    rows.forEach(c=>{
+      const s2=PLAN[c.id], blocked=taskBlocked(c);
+      if(blocked && s2.include) s2.include=false;
+      const dep=dependencyNote(c);
+      h+=`<tr class="${blocked?"blocked":""}">
+        <td><input type="checkbox" ${s2.include?"checked":""} ${blocked?"disabled":""}
+             onchange="planSet('${c.id}','include',this.checked)"></td>
+        <td><b>${c.id}</b> ${tierBadge(c)}<br><span class="note" style="margin:0">${c.label}</span>
+          ${c.verbal?`<br><select style="margin-top:5px" onchange="planSet('${c.id}','verbalType',this.value)">
+              ${promptsFor(c.verbal).map(([k,v])=>
+                `<option value="${k}" ${s2.verbalType===k?"selected":""}>${v.label}</option>`).join("")}
+            </select>
+            <div class="note" style="margin:4px 0 0;max-width:280px">${
+              verbalPrompt(s2.verbalType,c.verbal).help || verbalPrompt(s2.verbalType,c.verbal).equivalence}</div>`:""}
+          ${palmRejectionAffected(c)?`<div class="note" style="margin:4px 0 0;color:#8c2020">
+              <b>⚠ Pen + finger not simultaneous</b> — see the warnings on the Screen page.</div>`:""}
+          ${dep?`<div class="warn" style="margin:5px 0 0;max-width:300px">${dep}</div>`:""}
+          ${blocked?`<div class="note" style="margin:4px 0 0;color:var(--warm)">${blocked}</div>`:""}</td>
+        <td><input type="number" min="1" max="20" value="${s2.repeats}" ${blocked?"disabled":""}
+             onchange="planSet('${c.id}','repeats',+this.value)"></td>
+        <td><select onchange="planSet('${c.id}','hands',this.value)" ${blocked?"disabled":""}>
+              ${handsAllowed(c).map(hh=>`<option value="${hh}" ${s2.hands===hh?"selected":""}>${HAND_LABEL[hh]}</option>`).join("")}
+            </select>
+            ${s2.hands==="one"?`<select style="margin-top:4px" ${blocked?"disabled":""} onchange="planSet('${c.id}','oneHand',this.value)">
+              <option value="dominant" ${s2.oneHand==="dominant"?"selected":""}>${c.spiral?"Dominant hand draws":"Dominant"}</option>
+              <option value="nondominant" ${s2.oneHand==="nondominant"?"selected":""}>${c.spiral?"Non-dominant hand draws":"Non-dominant"}</option></select>`:""}</td>
+        <td>${lengthCell(c,s2,blocked)}</td>
+        <td class="note" style="padding-top:10px">${[c.spiral?"drawing":null,c.tap?"tapping":null,
+            c.audio?"<b>tones</b>":null, c.count?"count aloud":null,
+            c.verbal?"spoken task":null, c.voice?"<b>voice</b>":null].filter(Boolean).join(" · ")}</td>
+        <td>${adhocCell(c,s2,blocked)}</td>
+      </tr>`;
+    });
   });
   $("planTable").innerHTML=h;
+  if($("presetNote")) $("presetNote").innerHTML = PRESET_NOTE
+    ? `<div class="warn" style="margin-top:8px">${PRESET_NOTE}</div>` : "";
   planSummary();
 }
+
+// D4. One trial of this task, right now, without touching the queue -- for running the
+// same task repeatedly while tuning a parameter. The record is marked adhoc so a
+// parameter-tuning trial and a protocol trial can never be confused in the CSV.
+function adhocCell(c,s2,blocked){
+  if(blocked) return "";
+  const needsHand = c.hands!=="both";
+  return `<button class="ghost sm" onclick="runAdhoc('${c.id}')">Run now</button>` +
+    (needsHand?`<br><select style="margin-top:4px;font-size:12px"
+        onchange="planSet('${c.id}','adhocHand',this.value)">
+      <option value="dominant" ${s2.adhocHand!=="nondominant"?"selected":""}>dominant</option>
+      <option value="nondominant" ${s2.adhocHand==="nondominant"?"selected":""}>non-dominant</option>
+    </select>`:"");
+}
+
 
 // The Length column. A self-paceable task gets a choice; everything else keeps the
 // single control it always had.
 function lengthCell(c,s,blocked){
   const dis=blocked?"disabled":"";
   if(!c.selfPaceable){
-    return c.lengthS===null
-      ? `<span class="note" style="margin:0">self-paced</span>`
-      : `<input type="number" min="5" max="180" step="5" value="${s.lengthS}" ${dis}
-          onchange="planSet('${c.id}','lengthS',+this.value)"> s`;
+    if(c.lengthS===null) return `<span class="note" style="margin:0">self-paced</span>`;
+    return `<input type="number" min="5" max="180" step="5" value="${s.lengthS}" ${dis}
+          onchange="planSet('${c.id}','lengthS',+this.value)"> s` +
+      (c.verbal==="word"?`<div class="note" style="margin:4px 0 0;max-width:230px;color:var(--warm)">
+        <b>Fixed, not self-paceable.</b> Word output is steeply front-loaded — roughly 40–45%
+        of words come in the first 15 s — so words per second cannot be compared between
+        windows of different length.</div>`:"");
   }
   const a=AUDIO_DEFAULTS[c.id];
   const selfPaced = s.lengthS==null;
@@ -1981,7 +2100,7 @@ function lengthCell(c,s,blocked){
          ${a.selfPacedDurS ?? a.durS} s so it cannot run out, cut once drawing stops,
          never before ${a.floorS ?? 20} s.</div>`
       : `<div class="note" style="margin:4px 0 0;max-width:230px">Ends on END.</div>`;
-    if(c.verbal && s.verbalType==="fluency")
+    if(c.verbal==="word")
       sub += `<div class="note" style="margin:4px 0 0;max-width:230px;color:var(--warm)">
         Fluency is scored over a fixed <b>60 s</b> window inside the trial — the screen
         says when it is up. Fluency output is front-loaded (~40–45% of words in the first
@@ -2018,7 +2137,7 @@ function planSummary(){
       // self-paced trial is not its generated length. Reading s.lengthS alone here
       // yields NaN once self-pacing is selectable, and the warning below then never
       // fires -- on exactly the tasks where target count matters most.
-      const tones=Math.floor(expectedStreamS(c,s)*1000/a.isi), t=Math.round(tones*a.ptg);
+      const tones=Math.floor(expectedStreamS(c,s)*1000/a.meanMs), t=Math.round(tones*a.ptg);
       if(s.hands==="each"||s.hands==="roles"){ targetsByHand.dominant+=t*s.repeats; targetsByHand.nondominant+=t*s.repeats; }
       else targetsByHand[s.oneHand==="nondominant"?"nondominant":"dominant"]+=t*s.repeats;
     }
@@ -2064,7 +2183,7 @@ function buildQueue(){
     const why=taskBlocked(c);
     if(why){ omitted.push(`${c.id} — ${why}`); return; }
     const push=(hand,role)=>QUEUE.push({ task:c.id, hand, role, lengthS:s.lengthS,
-      verbalType:c.verbal?VERBAL_KEY(s.verbalType):null,
+      verbalType:c.verbal?VERBAL_KEY(s.verbalType,c.verbal):null,
       status:"pending", skipReason:null });
     if(s.hands==="each"){ for(let r=0;r<s.repeats;r++){ push("dominant"); push("nondominant"); } }
     else if(s.hands==="roles"){ for(let r=0;r<s.repeats;r++){ push("dominant","A"); push("nondominant","B"); } }
@@ -2072,10 +2191,41 @@ function buildQueue(){
     else { for(let r=0;r<s.repeats;r++) push(s.oneHand); }
   });
   if(omitted.length) alert("Left out of the trial list:\n\n"+omitted.join("\n"));
+  SESSION_STARTED_AT=Date.now();
   $("queueBox").classList.remove("hidden");
   renderQueue(); saveState();
 }
+// D6. What the administrator needs at a glance, without reading the trial list: how far
+// through, how long it has taken, and roughly how much is left.
+let SESSION_STARTED_AT=null;
+function renderGlance(){
+  const el=$("glance"); if(!el) return;
+  if(!QUEUE.length){ el.classList.add("hidden"); el.innerHTML=""; return; }
+  const done=QUEUE.filter(q=>q.status==="done").length;
+  const skipped=QUEUE.filter(q=>q.status==="skipped").length;
+  const left=QUEUE.length-done-skipped;
+  const est=selfPacedEstS();
+  let remainS=0;
+  QUEUE.forEach(q=>{ if(q.status!=="pending") return;
+    const c=byId(q.task); if(!c) return;
+    const len = q.lengthS!=null ? q.lengthS
+              : (c.audio ? expectedStreamS(c,{lengthS:null}) : est);
+    remainS += len + OVERHEAD_S; });
+  const elapsed = SESSION_STARTED_AT ? (Date.now()-SESSION_STARTED_AT)/1000 : 0;
+  const mmss = t => `${Math.floor(t/60)}:${String(Math.floor(t%60)).padStart(2,"0")}`;
+  el.classList.remove("hidden");
+  el.innerHTML=`<div class="note" style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;
+      background:#eef4fb;border:1px solid #cfe0f2;border-radius:8px;padding:9px 13px;
+      margin:0 0 12px;font-size:14px;color:var(--ink)">
+    <span><b>${done}</b> done${skipped?` · <b>${skipped}</b> skipped`:""} · <b>${left}</b> to go</span>
+    <span>elapsed <b>${mmss(elapsed)}</b></span>
+    <span>about <b>${mmss(remainS)}</b> left
+      <span class="note" style="margin:0">(at the ${est} s self-paced assumption)</span></span>
+    ${paramExploring()?`<span style="color:var(--warm)"><b>parameter exploration</b></span>`:""}
+  </div>`;
+}
 function renderQueue(){
+  renderGlance();
   if(!QUEUE.length){ $("queueBox").classList.add("hidden"); $("nextUp").classList.add("hidden"); return; }
   if(QPOS<QUEUE.length){
     const q=QUEUE[QPOS];
@@ -2137,7 +2287,10 @@ function setParam(id,val){
   renderNextUpParams();
 }
 function setAudioParam(task,field,val){ audioSet(task,field,val); renderNextUpParams(); }
-let NEXTUP_PARAMS_OPEN=true;
+// D8. Collapsed by default. What must be visible without opening anything is which task
+// is next, which hand, what the participant does and how long it should take -- the
+// parameters are for when you deliberately go looking for them.
+let NEXTUP_PARAMS_OPEN=false;
 function toggleNextUpParams(el){ NEXTUP_PARAMS_OPEN=el.open; }
 
 const pNum=(id,label,step,min,max)=>`<div><label for="np_${id}">${label}</label>
@@ -2175,7 +2328,10 @@ function renderNextUpParams(){
     <div class="r4">${pNum("tapdia","Zone size (mm)",5,20,90)}
       ${c.zones===2?pNum("zonegap","Bimanual spacing (mm)",5,60,200):""}</div></div>`);
   if(c.audio && AUDIO_DEFAULTS[c.id]) groups.push(`<div style="margin-top:10px"><b>Auditory stream — ${c.id}</b>
-    <div class="r4">${pAudio(c.id,"isi","Mean ISI (ms)",50,300,4000)}${pAudio(c.id,"jit","Jitter (%)",1,0,50)}
+    <div class="note" style="margin:2px 0 6px">Usable window
+      <b>${Math.round(bindingLimitMs(c.id,AUDIO_DEFAULTS[c.id]))} ms</b> — the longest response
+      that can still be attributed to the right tone. It follows from the floor.</div>
+    <div class="r4">${pAudio(c.id,"floorMs","Floor (ms)",50,150,4000)}${pAudio(c.id,"meanMs","Mean interval (ms)",50,200,6000)}
       ${pAudio(c.id,"ptg","Target prob.",0.01,0,0.5)}${pAudio(c.id,"tone","Tone (ms)",10,30,200)}</div>
     <div class="r4">${pAudio(c.id,"lead","Lead-in (ms)",100,0,3000)}${pNum("fstd","Standard (Hz)",50)}
       ${pNum("ftgt","Target (Hz)",50)}${pNum("lvl","Tone level (0–1)",0.05,0.05,1)}</div></div>`);
@@ -2282,55 +2438,69 @@ function nextIds(pid,task,H){
 }
 
 /* ------------------------------------------------------- audio defaults table */
-// The shortest response time that can still be attributed to the right event. Where
-// only targets are responded to and no two are adjacent, that is the target-to-target
-// gap; where every tone carries a response -- SP_SWT -- it is the interval itself.
+// The longest response time that can still be attributed to the right event -- and with
+// a floor rather than jitter this is EXACT, not a probabilistic worst case. Where every
+// tone carries a response the binding gap is the floor itself. Where only targets are
+// answered and no two are adjacent, the gap is target-to-target, so twice the floor.
+//
+// This is the number to set the floor and the mean by, which is why it is shown wherever
+// they are editable.
 function bindingLimitMs(taskId,a){
-  const c=byId(taskId), minISI=a.isi*(1-a.jit/100);
-  const everyToneAnswered = a.ptg<=0 || (c && (c.respond==="both" || c.adjacentTargetsOK));
-  return everyToneAnswered ? minISI : 2*minISI;
+  return (a.ptg>0 ? 2 : 1) * a.floorMs;
 }
 function renderAudioTable(){
-  let h=`<tr><th>Task</th><th>Mean ISI (ms)</th><th>Jitter (%)</th>
+  let h=`<tr><th>Task</th><th>Floor (ms)</th><th>Mean interval (ms)</th>
          <th>Target prob.</th><th>Tone (ms)</th><th>Lead-in (ms)</th>
-         <th>Usable window</th></tr>`;
+         <th style="color:var(--ink)">Usable window</th></tr>`;
   Object.entries(AUDIO_DEFAULTS).forEach(([k,a])=>{
     const limit=bindingLimitMs(k,a);
     h+=`<tr><td><b>${k}</b><br><span class="note" style="margin:0">${a.label}</span></td>
-      <td><input type="number" value="${a.isi}" min="300" max="4000" step="50" onchange="audioSet('${k}','isi',+this.value)"></td>
-      <td><input type="number" value="${a.jit}" min="0" max="50" step="1" onchange="audioSet('${k}','jit',+this.value)"></td>
+      <td><input type="number" value="${a.floorMs}" min="150" max="4000" step="50" onchange="audioSet('${k}','floorMs',+this.value)"></td>
+      <td><input type="number" value="${a.meanMs}" min="200" max="6000" step="50" onchange="audioSet('${k}','meanMs',+this.value)"></td>
       <td><input type="number" value="${a.ptg}" min="0" max="0.5" step="0.01" onchange="audioSet('${k}','ptg',+this.value)"></td>
       <td><input type="number" value="${a.tone}" min="30" max="200" step="10" onchange="audioSet('${k}','tone',+this.value)"></td>
       <td><input type="number" value="${a.lead}" min="0" max="3000" step="100" onchange="audioSet('${k}','lead',+this.value)"></td>
-      <td class="num">${Math.round(limit)} ms</td></tr>`;
+      <td class="num"><b style="font-size:15px">${Math.round(limit)} ms</b></td></tr>`;
   });
   $("audioTable").innerHTML=h;
 
-  let notes=`<div class="note">Trial length is set once, per task, in the session plan —
-    not here — because it belongs to the trial rather than the stream. A task set to
-    self-paced there uses its own <code>selfPacedDurS</code> instead, so the stream cannot
-    run out mid-drawing.</div>
-    <div class="note"><b>Usable window</b> is the longest response time that can still
-    be attributed to the right event. A tap slower than this arrives after the next event the
-    participant could be responding to, so it cannot be told apart from a response to that one.
-    It is not a setting — it follows from the ISI and jitter above.</div>
-    <div class="note">The rows for <b>SP_DEC</b>, <b>SP_ODC</b> and <b>SP_SWT</b> are
-    <b>unvalidated starting values</b>. Nothing about them has been piloted; they are here to
-    be changed.</div>`;
+  let notes=`<div class="good"><b>Set the floor by the usable window.</b> Intervals are drawn
+    from a <b>floor plus an exponential tail</b>, not from symmetric jitter. The floor is a hard
+    guarantee that every interval leaves room to respond; the exponential above it has a flat
+    hazard, so no moment is more predictable than any other and the participant cannot
+    anticipate the next tone. Because the floor is a floor, the usable window is
+    <b>exact</b> — not a probabilistic worst case. Raise unpredictability by raising the mean;
+    protect response time by raising the floor. They move independently, which is the point.</div>
+    <div class="note">Trial length is set once, per task, in the session plan — not here —
+    because it belongs to the trial rather than the stream. A task set to self-paced there uses
+    its own <code>selfPacedDurS</code> instead, so the stream cannot run out mid-drawing.</div>
+    <div class="note"><b>Usable window</b> is the longest response time that can still be
+    attributed to the right event. A response slower than this arrives after the next event the
+    participant could be answering, so the two cannot be told apart. It is not a setting — it
+    follows from the floor above.</div>
+    <div class="note">Every row here is an <b>unvalidated starting value</b>. Nothing has been
+    piloted; they are here to be changed.</div>`;
   Object.entries(AUDIO_DEFAULTS).forEach(([k,a])=>{
-    const c=byId(k), minISI=a.isi*(1-a.jit/100), odd=a.ptg>0, limit=bindingLimitMs(k,a);
-    const both = c && c.respond==="both";
-    notes+=`<div class="${limit<950?"warn":"good"}"><b>${k}</b>: shortest interval
-      ${Math.round(minISI)} ms. ${both
-        ? `Every tone carries a response — the low tone is tapped, the high tone is spoken —
-           so the binding gap is the interval itself, ${Math.round(limit)} ms.`
-        : odd
+    const odd=a.ptg>0, limit=bindingLimitMs(k,a);
+    const pair=a.pairWith && AUDIO_DEFAULTS[a.pairWith];
+    const mismatched = pair && (pair.floorMs!==a.floorMs || pair.meanMs!==a.meanMs || pair.ptg!==a.ptg);
+    notes+=`<div class="${limit<950?"warn":"good"}"><b>${k}</b>: floor
+      ${a.floorMs} ms, mean interval ${a.meanMs} ms, about
+      ${Math.max(0,Math.floor((a.selfPacedDurS??a.durS)*1000/a.meanMs))} tones in a full stream.
+      ${odd
         ? `Only targets need a response and no two are adjacent, so the binding gap is
-           target-to-target — at worst ${Math.round(limit)} ms.`
-        : `Every tone needs a response, so the binding gap is the interval itself,
+           target-to-target — exactly ${Math.round(limit)} ms.`
+        : `Every tone needs a response, so the binding gap is the floor itself,
            ${Math.round(limit)} ms.`}
       ${limit<950?`Reported reaction time in Lewy body dementia sits near 900 ms before
         dual-task load, so this works as a loader but loses slow responses as a measure.`:``}</div>`;
+    // Informs, never enforces: the pair can be broken, but not quietly.
+    if(mismatched) notes+=`<div class="bad"><b>${k} and ${a.pairWith} no longer match.</b>
+      They are a single-task and dual-task pair, and dual-task cost is the change between
+      them — with different streams the comparison measures the stream difference as well as
+      the load. ${k} is floor ${a.floorMs} / mean ${a.meanMs} / p ${a.ptg};
+      ${a.pairWith} is floor ${pair.floorMs} / mean ${pair.meanMs} / p ${pair.ptg}.
+      <button class="ghost sm" onclick="matchStreamPair('${k}','${a.pairWith}')">Match ${a.pairWith} to ${k}</button></div>`;
   });
   const box=$("audioTable").parentElement;
   let sib=box.nextElementSibling;
@@ -2339,6 +2509,13 @@ function renderAudioTable(){
   box.insertAdjacentElement("afterend",div);
 }
 function audioSet(k,f,v){ AUDIO_DEFAULTS[k][f]=v; renderAudioTable(); planSummary(); saveState(); }
+// Offered, never applied automatically. Copies the stream parameters of one half of a pair
+// onto the other so the single-vs-dual comparison is restored in one click.
+function matchStreamPair(from,to){
+  if(!AUDIO_DEFAULTS[from]||!AUDIO_DEFAULTS[to]) return;
+  ["floorMs","meanMs","ptg","tone"].forEach(f=>{ AUDIO_DEFAULTS[to][f]=AUDIO_DEFAULTS[from][f]; });
+  renderAudioTable(); planSummary(); renderNextUpParams(); saveState();
+}
 
 /* ------------------------------------------------------- geometry */
 /* ---------------------------------------------------------------------------
@@ -2349,9 +2526,10 @@ function audioSet(k,f,v){ AUDIO_DEFAULTS[k][f]=v; renderAudioTable(); planSummar
    same physical footprint -- so comparing implements is not also comparing
    workspace size.
 
-   SP and SPF now differ deliberately in pitch and turns and are therefore NOT
-   comparable as measures. SPF exists to test whether a stylus-free configuration
-   is feasible at all, not to produce a number that can sit beside SP.
+   The PEN_ and FIN_ families now differ deliberately in pitch and turns and are
+   therefore NOT comparable as measures. FIN_DRAW exists to test whether a
+   stylus-free configuration is feasible at all, not to produce a number that can
+   sit beside PEN_DRAW.
 
    Per-implement is exactly the granularity required: a task and its single-task
    baseline always resolve to the same set, so dual-task cost is never confounded
@@ -2445,45 +2623,64 @@ function drawSeed(){
             : (Math.floor(Math.random()*2147483647)+1);
   return LAST_SEED;
 }
-// allowAdjacent: targets may sit next to each other. Only pass it where every tone type
-// carries a response, because the non-adjacency rule exists so that a slow tap can still
-// be bound to the target it answers. Where both tone types are answered, a tap binds by
-// the interval itself and the rule buys nothing -- while costing a hard ceiling of about
-// 50% targets, which is exactly the proportion a switching task wants.
-function makeSequence(durationS,meanISI,jitter,pTarget,seed,allowAdjacent){
+/* ---------------------------------------------------------------------------
+   Interval timing: a floor plus an exponential tail, not uniform jitter.
+
+   Uniform jitter has a RISING HAZARD. As the window elapses without a tone, the
+   participant becomes progressively more certain one is imminent, so they start to
+   anticipate and respond predictively rather than reactively -- which quietly turns
+   a reaction-time measure into a synchronization measure. Symmetric jitter has a
+   second problem: minimum and maximum move together, so buying unpredictability by
+   widening the jitter drags the shortest interval below a physically possible
+   response time.
+
+   An exponential above a floor has a FLAT hazard -- having waited is no evidence
+   the tone is due -- so no moment is more predictable than any other. The floor is
+   a hard guarantee that every interval leaves room to respond, and it is set
+   independently of how unpredictable the stream is.
+
+     interval = floor - m * ln(1 - u),  m = mean - floor,  u uniform on [0,1)
+
+   Intervals beyond 4x the mean are redrawn: the exponential tail is unbounded and a
+   single 20-second gap inside a 45-second stream is not a stream.
+   --------------------------------------------------------------------------- */
+function makeSequence(durationS,floorMs,meanMs,pTarget,seed){
   const det = pTarget<=0;
   const rng=mulberry32(seed>>>0), durMs=durationS*1000;
-  const n=Math.floor(durMs/meanISI), t=det?0:Math.round(n*pTarget);
-  const lo=meanISI*(1-jitter), hi=meanISI*(1+jitter);
-  if(n<4) throw new Error(`Only ${n} tones at this ISI — lengthen the stream.`);
+  if(!(meanMs>floorMs)) throw new Error(
+    `Mean interval (${meanMs} ms) must be longer than the floor (${floorMs} ms).`);
+  const n=Math.floor(durMs/meanMs), t=det?0:Math.round(n*pTarget);
+  const m=meanMs-floorMs, cap=4*meanMs;
+  if(n<4) throw new Error(`Only ${n} tones at this mean interval — lengthen the stream.`);
   if(!det&&t<1) throw new Error("Target probability yields no targets.");
-  const ceiling = allowAdjacent ? (n-2) : Math.ceil((n-2)/2);
-  if(!det&&t>ceiling) throw new Error(
-    `Cannot place ${t} ${allowAdjacent?"":"non-adjacent "}targets in ${n} tones.`);
+  const ceiling=Math.ceil((n-2)/2);
+  if(!det&&t>ceiling) throw new Error(`Cannot place ${t} non-adjacent targets in ${n} tones.`);
+  const drawOne=()=>{
+    for(let k=0;k<200;k++){
+      const v=floorMs - m*Math.log(1-rng());
+      if(v<=cap) return v;
+    }
+    return cap;
+  };
   let iv=null;
   for(let k=0;k<5000;k++){
-    const c=Array.from({length:n},()=>lo+rng()*(hi-lo));
-    const sc=durMs/c.reduce((a,b)=>a+b,0), s=c.map(v=>v*sc);
-    if(Math.abs(sc-1)<=0.05){ iv=s; break; }
+    const c=Array.from({length:n},drawOne);
+    const sc=durMs/c.reduce((a,b)=>a+b,0), scaled=c.map(v=>v*sc);
+    // Rescaling to fill the requested duration must not push an interval under the
+    // floor -- the floor is the whole guarantee.
+    if(Math.abs(sc-1)<=0.05 && Math.min(...scaled)>=floorMs*0.98){ iv=scaled; break; }
   }
   if(!iv) throw new Error("Could not generate intervals — loosen the parameters.");
   let pos=[];
   if(!det){
-    if(allowAdjacent){
-      // Straight sample without replacement from position 2 onwards: the stream still
-      // never opens on a target, but nothing constrains the gaps after that.
-      const pool=[]; for(let i=2;i<n;i++) pool.push(i);
-      for(let i=pool.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
-      pos=pool.slice(0,t).sort((a,b)=>a-b);
-    } else {
-      const m=n-2,pool=[]; for(let i=0;i<m-t+1;i++) pool.push(i);
-      for(let i=pool.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
-      pos=pool.slice(0,t).sort((a,b)=>a-b).map((b,i)=>b+i+2);
-    }
+    const mm=n-2,pool=[]; for(let i=0;i<mm-t+1;i++) pool.push(i);
+    for(let i=pool.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
+    pos=pool.slice(0,t).sort((a,b)=>a-b).map((b,i)=>b+i+2);
   }
   const onsets=[0]; for(let i=0;i<n-1;i++) onsets.push(onsets[i]+iv[i]);
   const isTarget=Array(n).fill(false); pos.forEach(p=>isTarget[p]=true);
-  return {n,t,onsets,intervals:iv,isTarget,positions:pos,det,adjacent_allowed:!!allowAdjacent,
+  return {n,t,onsets,intervals:iv,isTarget,positions:pos,det,
+          distribution:"floor + exponential", floorMs, meanMs,
           minISI:Math.min(...iv),maxISI:Math.max(...iv),durationMs:durMs,seed};
 }
 
@@ -2510,14 +2707,6 @@ function demo(w){ const c=audio(), t0=c.currentTime+.08, lv=+$("lvl").value;
   const fs=+$("fstd").value, ft=+$("ftgt").value;
   if(w==="alt"){ for(let i=0;i<6;i++) tone(t0+i*0.55, i%2?ft:fs, 100, lv); }
   else tone(t0, w==="tgt"?ft:fs, 100, lv); }
-// Four tones, low high low high, at SP_SWT's own tone length and spacing -- a rehearsal
-// paced faster or slower than the trial rehearses the wrong thing.
-function rehearseSwitch(){
-  const c=audio(), lv=+$("lvl").value, fs=+$("fstd").value, ft=+$("ftgt").value;
-  const a=AUDIO_DEFAULTS.SP_SWT, gap=(a?a.isi:1500)/1000, dur=a?a.tone:50;
-  const t0=c.currentTime+0.15;
-  [fs,ft,fs,ft].forEach((f,i)=>tone(t0+i*gap, f, dur, lv));
-}
 
 /* ===========================================================================
    VOICE RECORDING
@@ -2818,7 +3007,8 @@ function onZoneDown(e){
   const el=e.currentTarget;
   el.classList.add("lit");
   setTimeout(()=>el.classList.remove("lit"), FLASH_MS);
-  $("tapcount").textContent = TAPS.length+" taps";
+  // D12. Deliberately NOT shown while the participant is tapping -- a running count in
+  // front of someone changes how they tap. It is in the end-of-trial summary and the record.
 }
 
 const mm2px=v=>v*L.p;
@@ -2909,6 +3099,29 @@ function storageWarnBeforeSave(){
 
 let LAST_TASK=null, LAST_HAND=null;      // what the participant was last shown
 
+// D4. Runs ONE trial of a task immediately, outside the queue. Uses the current visit and
+// session numbers so provenance is intact, ignores the task's repeats, and marks the record
+// adhoc:true -- a trial run while tuning a parameter must never look like a protocol trial
+// in the export.
+function runAdhoc(taskId){
+  if(!$("pid").value.trim()){
+    alert("Enter a participant ID before running a trial.\n\nWithout one the trial saves as \"unnamed\" and cannot be told apart later.");
+    goPage(2); return;
+  }
+  if(!storageGuard()){ goPage(6); return; }
+  const c=byId(taskId), s2=PLAN[taskId];
+  const hand = c.hands==="both" ? "both" : (s2.adhocHand||"dominant");
+  TRIAL={ task:taskId, hand, role:null, lengthS:s2.lengthS,
+          verbalType:c.verbal?(s2.verbalType||null):null,
+          status:"pending", skipReason:null, adhoc:true, index:null,
+          drawHand: c.spiral ? physHand(hand) : null,
+          tapHand:  c.zones===2 ? "both"
+                   : c.spiral&&c.tap ? (physHand(hand)==="right"?"left":"right")
+                   : physHand(hand),
+          implement: c.implement || "pen" };
+  openTrial(true);                       // always show the instruction for an ad-hoc run
+}
+
 function runCurrent(){
   if(!storageGuard()){ goPage(6); return; }
   if(QPOS>=QUEUE.length){ sessionComplete(); return; }
@@ -2975,14 +3188,14 @@ function audioCfgFor(task){
 // repeat visits; the number actually used is written into the trial record, because
 // "serial subtraction" without a start number is not a reproducible prompt.
 function randomVerbalStart(type){
-  const pr=VERBAL_PROMPTS[VERBAL_KEY(type)];
+  const pr=ALL_PROMPTS()[type];
   if(!pr || !pr.range) return null;
   const [lo,hi]=pr.range;
   return lo+Math.floor(Math.random()*(hi-lo+1));
 }
 // The first three numbers, so the examiner reads out a concrete example rather than a rule.
 function verbalExample(type,start){
-  const pr=VERBAL_PROMPTS[VERBAL_KEY(type)];
+  const pr=ALL_PROMPTS()[type];
   if(!pr || !pr.step || start==null) return null;
   return [0,1,2].map(i=>start+pr.step*i).join(", ");
 }
@@ -2993,7 +3206,7 @@ function openTrial(showInstruction){
   let seq=null;
   const cfg=audioCfgFor(TRIAL.task);
   if(cfg){
-    try{ seq=makeSequence(cfg.durS,cfg.isi,cfg.jit/100,cfg.ptg,drawSeed(),!!c.adjacentTargetsOK); }
+    try{ seq=makeSequence(cfg.durS,cfg.floorMs,cfg.meanMs,cfg.ptg,drawSeed()); }
     catch(e){ alert("Cannot build the stream for this trial:\n\n"+e.message); return; }
     audio();
   }
@@ -3062,16 +3275,17 @@ function micFailOverlay(detail, cont){
      { label:"Abandon", ghost:true, onClick:()=>{ hideOverlay(); stageOn(false); RUN=null; goPage(3); } }]);
 }
 
-// SP_VRB only: which spoken task, and the exact words used. Both go into the record,
+// PEN_MATH and PEN_WORD: which prompt, and the exact words used. Both go into the record,
 // because "serial subtraction" without the start number is not a reproducible prompt.
 function showVerbalSetup(c, done){
-  const planned=VERBAL_KEY(TRIAL.verbalType || (PLAN[c.id] && PLAN[c.id].verbalType));
+  const fam=c.verbal;                                   // "math" or "word"
+  const planned=VERBAL_KEY(TRIAL.verbalType || (PLAN[c.id] && PLAN[c.id].verbalType), fam);
   VERBAL_SUGGEST=randomVerbalStart(planned);
   showOverlay(`<h3>Spoken task for this trial</h3>
     <div style="width:min(90vw,560px);text-align:left">
-      <label for="vbType" style="font-size:15px">Prompt type</label>
+      <label for="vbType" style="font-size:15px">${fam==="word"?"Category":"Prompt type"}</label>
       <select id="vbType" style="font-size:19px" onchange="verbalTypeChanged()">
-        ${Object.entries(VERBAL_PROMPTS).map(([k,v])=>
+        ${promptsFor(fam).map(([k,v])=>
           `<option value="${k}" ${planned===k?"selected":""}>${v.label}</option>`).join("")}
       </select>
       <label for="vbText" style="font-size:15px;margin-top:14px">Exact prompt used</label>
@@ -3080,13 +3294,14 @@ function showVerbalSetup(c, done){
     </div>`,
     [{ label:"Use this", onClick:()=>{
         const type=$("vbType").value, text=($("vbText").value||"").trim();
-        const pr=VERBAL_PROMPTS[type];
-        const v={ type, prompt_type_label:pr.label, prompt_text:text,
+        const pr=ALL_PROMPTS()[type];
+        const v={ type, family:fam, prompt_type_label:pr.label, prompt_text:text,
                   start_number: pr.range ? (parseInt(text,10) || null) : null,
                   step:  pr.step  ?? null,
                   range: pr.range ?? null,
-                  category:     type==="fluency" ? (text||null) : null,
-                  fluency_window_s: type==="fluency" ? pr.windowS : null,
+                  category: fam==="word" ? (text||pr.label) : null,
+                  category_equivalence: fam==="word" ? pr.equivalence : null,
+                  fluency_window_s: fam==="word" ? 60 : null,
                   suggested_start: pr.range ? VERBAL_SUGGEST : null };
         TRIAL.verbal=v; TRIAL.verbalType=type;
         hideOverlay(); done();
@@ -3095,14 +3310,14 @@ function showVerbalSetup(c, done){
 }
 function verbalTypeChanged(){
   const t=$("vbType").value, box=$("vbText"), help=$("vbHelp");
-  const pr=VERBAL_PROMPTS[t];
-  if(t==="fluency"){
-    VERBAL_SUGGEST=null; box.value=""; box.placeholder="animals";
-    help.innerHTML=`Type the category exactly as you will say it. Scored over a fixed
-      <b>60 s</b> window — the admin bar says when it is up, and the trial itself carries on
-      until you press END. Fluency output is steeply front-loaded (roughly 40–45% of words
-      in the first 15 s), so words per second cannot be compared between windows of
-      different length.`;
+  const pr=ALL_PROMPTS()[t];
+  if(pr.family==="word"){
+    VERBAL_SUGGEST=null; box.value=pr.label.toLowerCase(); box.placeholder=pr.label.toLowerCase();
+    help.innerHTML=`Say the category exactly as it is typed here. Scored over a fixed
+      <b>60 s</b> window, which is why this task cannot be self-paced: fluency output is
+      steeply front-loaded (roughly 40–45% of words in the first 15 s), so words per second
+      cannot be compared between windows of different length.
+      <br><br><b>${pr.label}</b> — ${pr.equivalence}.`;
   } else {
     // A new number is drawn each time the prompt changes, and once per trial, so no two
     // administrations share a start.
@@ -3117,6 +3332,9 @@ function verbalTypeChanged(){
   }
 }
 
+function toggleDrawRules(){
+  const el=$("drawRules"); if(el) el.classList.toggle("hidden");
+}
 // The instruction page, drawn from the same source as the Instructions tab.
 function showInstructionScreen(seq,c,returnToReady){
   const ins=instructionFor(TRIAL.task,{implement:TRIAL.implement, verbal:TRIAL.verbal});
@@ -3130,28 +3348,27 @@ function showInstructionScreen(seq,c,returnToReady){
       <button class="ghost" style="font-size:18px;padding:14px 26px;margin:4px"
         onclick="demo('alt')">Play both</button>` : ``) +
       `<div class="note" style="margin-top:6px">Play these before starting.</div></div>` : ``;
-  // Switching is the one task where the mapping has to be confirmed before any data is
-  // collected: it is the only task with two different responses to two different tones.
-  // Reuses the sound check's tone generator rather than a second audio path.
-  const rehearsal = c.respond==="both" ? `<div style="margin-top:16px;padding:14px 18px;
-      border:1px solid var(--line);border-radius:9px;background:#f7f9fb;
-      max-width:660px;text-align:left">
-      <div style="font-size:19px;font-weight:600;margin-bottom:8px">Rehearse before starting</div>
-      <div style="font-size:20px;line-height:1.75">
-        <div><b>LOW</b> beep &rarr; tap the circle, say nothing</div>
-        <div><b>HIGH</b> beep &rarr; say the next number, do not tap</div></div>
-      <button class="ghost" style="font-size:18px;padding:14px 26px;margin-top:12px"
-        onclick="rehearseSwitch()">Play low – high – low – high</button>
-      <div class="note" style="margin-top:6px">Play it and have them tap and speak along.
-      Do not start the trial until they have it.</div></div>` : ``;
   const palmNote = palmRejectionAffected(c) ? `<div style="margin-top:16px;padding:14px 18px;
       border:1px solid #e9b7b7;border-radius:9px;background:#fdecec;color:#8c2020;
       max-width:660px;text-align:left;font-size:17px;line-height:1.55">
-      <b>Platform limit — read before running this task.</b><br>${PALM_WARNING}</div>` : ``;
+      <b>Platform limit.</b> ${PALM_WARNING}</div>` : ``;
+  // The drawing rules, one click away, identical to the ones PEN_DRAW shows inline. The
+  // dual-task screen stays short so the new demand is what the participant reads first,
+  // but the wording they are held to is the same in both.
+  const rulesNote = (ins.drawingRules && !ins.rulesShownInline) ? `<div style="margin-top:12px">
+      <button class="ghost" style="font-size:17px;padding:12px 22px"
+        onclick="toggleDrawRules()">Show the drawing rules</button>
+      <div id="drawRules" class="hidden" style="margin-top:10px;text-align:left;
+        max-width:660px;margin-left:auto;margin-right:auto">
+        <ul style="font-size:19px;line-height:1.6;padding-left:22px">
+          ${ins.drawingRules.map(l=>`<li>${l}</li>`).join("")}</ul>
+        <div class="note">Word for word what PEN_DRAW is given, so the instruction itself
+          cannot be part of any difference between them.</div>
+      </div></div>` : ``;
   const voiceNote = c.voice ? (TRIAL.voiceFailure
       ? `<p style="font-size:17px;color:#8c2020"><b>Not being recorded</b> — ${esc(TRIAL.voiceFailure.detail)}</p>`
       : `<p style="font-size:17px;color:var(--ok)">Voice recording is on for this trial.</p>`) : ``;
-  showOverlay(`<h3>${TRIAL.task} — ${c.label}</h3>` + instructionHTML(ins) + soundBtns + rehearsal + palmNote + voiceNote +
+  showOverlay(`<h3>${TRIAL.task} — ${c.label}</h3>` + instructionHTML(ins) + rulesNote + soundBtns + palmNote + voiceNote +
     `<p style="font-size:16px;color:#5d6570;margin-top:10px">${ins.length}</p>`,
     [{label:"Ready", onClick:()=>{ hideOverlay(); LAST_TASK=TRIAL.task;
         readyTrial(returnToReady?returnToReady.seq:seq, c); }}]);
@@ -3165,21 +3382,20 @@ function reminderText(){
   if(c.zones===2) bits.push("both index fingers");
   else if(c.tap) bits.push(TRIAL.tapHand+" index finger taps");
   const cfg=audioCfgFor(TRIAL.task);
-  if(c.respond==="both") bits.push("tap the low, say the number on the high");
-  else if(c.count) bits.push(c.countMode==="aloud"
+  if(c.count) bits.push(c.countMode==="aloud"
     ? (c.countOf==="all" ? "count every tone aloud" : "count high tones aloud")
     : "silent count, no tapping");
   else if(cfg) bits.push(cfg.ptg>0?"high tones only":"every tone");
   if(c.verbal && TRIAL.verbal) bits.push(TRIAL.verbal.prompt_type_label.toLowerCase() +
     (TRIAL.verbal.prompt_text?` — “${esc(TRIAL.verbal.prompt_text)}”`:""));
-  return `<b>${TRIAL.task}</b> ${TRIAL.index+1}/${QUEUE.length} · ${bits.join(" · ")}`;
+  const pos = TRIAL.adhoc ? "run now" : `${TRIAL.index+1}/${QUEUE.length}`;
+  return `<b>${TRIAL.task}</b> ${pos} · ${bits.join(" · ")}`;
 }
 
 function readyTrial(seq,c){
   $("hud").classList.remove("cue");
   $("hud").textContent = (TRIAL.lengthS===null && !c.audio) ? "" : (TRIAL.lengthS??"")+" s";
   $("reminder").innerHTML=reminderText();
-  $("tapcount").textContent="";
   $("recdot").textContent = c.voice ? (TRIAL.voiceFailure ? "no mic" : "mic ready") : "";
   $("recdot").style.color = c.voice && TRIAL.voiceFailure ? "#8c2020" : "#5d6570";
   $("ctrl").innerHTML="";
@@ -3198,7 +3414,7 @@ function readyTrial(seq,c){
           : `Now draw with the <b>${handNow.toUpperCase()}</b> hand`)
       : `Now tap with the <b>${handNow.toUpperCase()}</b> index finger`;
     showOverlay(`<h3 style="font-size:34px;line-height:1.3">${what}</h3>
-      <p style="font-size:19px;color:#5d6570">${TRIAL.task} · trial ${TRIAL.index+1} of ${QUEUE.length}</p>`,
+      <p style="font-size:19px;color:#5d6570">${TRIAL.task}${TRIAL.adhoc?" · run now":` · trial ${TRIAL.index+1} of ${QUEUE.length}`}</p>`,
       [{label:"Ready", onClick:hideOverlay}]);
   } else hideOverlay();
 
@@ -3269,7 +3485,7 @@ function runTrial(seq,c){
                    scale_max:scale0, scale_min:scale0 } };
 
   // Voice capture window. Tone tasks: from the start of the tone stream (perf0) to the
-  // end of the trial. SP_VRB has no tones, so its origin is the trial start, which is
+  // end of the trial. A task with no tones has its origin at the trial start, which is
   // the same instant on the same clock.
   if(c.voice){
     RUN.voice={ consented:voiceConsented(), attempted:false, recorded:false,
@@ -3376,6 +3592,14 @@ function runTrial(seq,c){
         Tell them to stop naming. Let them finish the spiral, then press END.</span>`;
     }
 
+    // D7. Information, not a limit: a very slow participant can legitimately take three
+    // minutes over a spiral, and stopping them would destroy the trial.
+    if(!RUN.longNoted && (now-perf0)/1000 >= (+$("longtrial").value||90)){
+      RUN.longNoted=+((now-perf0)/1000).toFixed(1);
+      $("reminder").innerHTML=`<span style="color:var(--warm)">This trial has been running
+        <b>${Math.round(RUN.longNoted)} s</b>. Nothing is wrong — it will keep going until
+        you press END.</span>`;
+    }
     if(c.tap||c.audio||c.verbal) $("hud").textContent = fluencyWinMs
       ? (RUN.fluencyCueMs===null
           ? "naming "+Math.max(0,(fluencyWinMs-(now-perf0))/1000).toFixed(1)+" s"
@@ -3490,11 +3714,10 @@ function abandonTrial(){
 }
 
 /* ------------------------------------------------------- results */
-// respondTo names the tone type the TAP answers. Every oddball task answers the target;
-// SP_SWT answers the standard, because its high tone is spoken rather than tapped.
-// Scoring the wrong class would report 0% caught on a perfectly performed trial.
-function attribute(seq,taps,outLat,respondTo){
-  const wants = i => respondTo==="standard" ? !seq.isTarget[i] : seq.isTarget[i];
+// Every tapped task in the current set answers every tone, so the responded-to class is
+// simply "any tone" when p(target) is 0 and "the target" otherwise.
+function attribute(seq,taps,outLat){
+  const wants = i => seq.det ? true : seq.isTarget[i];
   const firstLag=new Array(seq.n).fill(null),rows=[];
   taps.forEach((tapMs,ti)=>{
     let idx=-1; for(let i=0;i<seq.n;i++){ if(seq.onsets[i]<=tapMs) idx=i; else break; }
@@ -3505,14 +3728,52 @@ function attribute(seq,taps,outLat,respondTo){
   });
   const targetLags=[];
   for(let i=0;i<seq.n;i++) if(wants(i)&&firstLag[i]!==null) targetLags.push(firstLag[i]-outLat);
-  return {rows,firstLag,targetLags,respond_to:respondTo||"target"};
+  return {rows,firstLag,targetLags,respond_to:seq.det?"every tone":"target"};
+}
+
+/* ---------------------------------------------------------------------------
+   Omissions. A tone with no response inside the usable window is an OMISSION.
+
+   This is a PRIMARY ENDPOINT, not a data-quality flag. In prodromal Lewy body
+   disease, omission rate discriminated MCI-LB from MCI-AD where ex-Gaussian
+   reaction-time parameters did not -- so a trial with many omissions is a result,
+   not a spoiled trial, and must never be quietly discarded as one.
+
+   The window is exact because intervals have a floor: bindingLimitMs() is the
+   longest response still attributable to its own tone. The lower bound of 150 ms
+   is an anticipation cut -- a "response" faster than that was launched before the
+   tone -- and is recorded so it can be changed in analysis.
+   --------------------------------------------------------------------------- */
+const ANTICIPATION_MS=150;
+function omissionStats(seq, att, outLat, windowMs){
+  if(!seq || !att) return null;
+  let presented=0, responded=0;
+  for(let i=0;i<seq.n;i++){
+    if(!seq.det && !seq.isTarget[i]) continue;          // only tones that ask for a response
+    presented++;
+    const lag=att.firstLag[i];
+    if(lag==null) continue;
+    const corrected=lag-outLat;
+    if(corrected>=ANTICIPATION_MS && corrected<=windowMs) responded++;
+  }
+  const omissions=presented-responded;
+  return { tones_presented:presented, responses_made:responded, omissions,
+    omission_rate: presented ? +(omissions/presented).toFixed(4) : null,
+    window_ms:+windowMs.toFixed(1), anticipation_cut_ms:ANTICIPATION_MS,
+    note:"a tone with no response between the anticipation cut and the usable window is an omission. This is a primary endpoint -- omission rate discriminated MCI-LB from MCI-AD where ex-Gaussian reaction-time parameters did not -- and a trial with many omissions is a result, not a spoiled trial." };
 }
 
 function finish(){
   const seq=RUN.seq, c=RUN.c, pts=STROKES.flat();
   const dur=pts.length>1?(pts[pts.length-1].t-pts[0].t):0;
   const rate=dur>0?(pts.length-1)/(dur/1000):0;
-  let att=null; if(seq) att=attribute(seq,TAPS.map(t=>t.t),RUN.outLat,c.respondTo||"target");
+  let att=null; if(seq) att=attribute(seq,TAPS.map(t=>t.t),RUN.outLat);
+  let om=null;
+  if(seq && c.tap && att){
+    om=omissionStats(seq, att, RUN.outLat,
+      bindingLimitMs(RUN.task, RUN.cfg||AUDIO_DEFAULTS[RUN.task]||{floorMs:600,ptg:0}));
+  }
+  RUN.omissions=om;
   let tp=null;
   if(c.tap){
     const iti=v=>v.length>1?v.slice(1).map((x,i)=>x-v[i]):[];
@@ -3536,7 +3797,7 @@ function finish(){
   $("ctrl").innerHTML="";
 
   // Counting tasks have no timestamped response for the counted class, so the number
-  // is collected here. SP_VRB has none: the app cannot know the right answer for
+  // is collected here. PEN_MATH and PEN_WORD have none: the app cannot know the answer for
   // serial subtraction or for a fluency category, so it does not pretend to.
   if(c.count && RUN.reportedCount===undefined){ askCount(seq); return; }
   showEndControls(seq,c,pts,rate,att,tp);
@@ -3547,12 +3808,8 @@ function finish(){
 // showOverlay call threw, leaving this very prompt stranded back on screen.
 function askCount(seq){
   const c=RUN.c;
-  const what = c.respond==="both" ? "What number did they reach?"
-             : c.countOf==="all"  ? "How many beeps in total?"
-                                  : "How many high beeps?";
-  const sub  = c.respond==="both"
-    ? "The last number they said out loud, before anything else is shown."
-    : "Ask the participant for their count before showing anything else.";
+  const what = c.countOf==="all" ? "How many beeps in total?" : "How many high beeps?";
+  const sub  = "Ask the participant for the number they reached, before showing anything else.";
   showOverlay(`<h3>${what}</h3>
     <p>${sub}</p>
     <input id="countInput" type="number" min="0" max="500"
@@ -3573,7 +3830,7 @@ function showEndControls(seq,c,pts,rate,att,tp){
   rp.onclick=()=>{ if(!okUnsaved()) return; RUN=null; openTrial(false); }; $("ctrl").appendChild(rp);
   const nx=document.createElement("button"); nx.textContent="NEXT"; nx.className="ghost";
   nx.onclick=()=>{ if(!okUnsaved()) return;
-    if(RUN&&RUN.saved && QPOS===TRIAL.index) QPOS++;   // advance past the saved trial
+    if(RUN&&RUN.saved && !TRIAL.adhoc && QPOS===TRIAL.index) QPOS++;  // past the saved trial
     RUN=null; runCurrent(); };
   $("ctrl").appendChild(nx);
   const ex=document.createElement("button"); ex.textContent="Exit"; ex.className="ghost";
@@ -3599,7 +3856,7 @@ function renderResult(seq,c,pts,rate,att,tp){
   const V=RUN.voice;
   $("rsum").innerHTML=`<table>
     <tr><th>Task</th><td>${RUN.task}${RUN.stoppedEarly?" (ended early)":""}</td>
-        <th>Trial</th><td>${TRIAL.index+1} of ${QUEUE.length}</td></tr>
+        <th>Trial</th><td>${TRIAL.adhoc?"run now (not in the list)":`${TRIAL.index+1} of ${QUEUE.length}`}</td></tr>
     ${c.spiral?`<tr><th>Pen samples</th><td class="num">${pts.length}</td>
         <th>Achieved rate</th><td class="num">${rate.toFixed(0)} Hz</td></tr>
     <tr><th>Strokes</th><td class="num">${STROKES.length}</td>
@@ -3631,6 +3888,12 @@ function renderResult(seq,c,pts,rate,att,tp){
        from the calibration, so at that zoom it was drawn at the wrong physical size and the
        millimeter measures cannot be compared with other trials. The record is flagged
        <code>geometry_valid: false</code>. Clear the zoom and run it again.</div>`:""}
+  ${RUN.omissions?`<div class="${RUN.omissions.omission_rate>0.2?"warn":"good"}">
+      <b>${RUN.omissions.omissions}</b> omission${RUN.omissions.omissions===1?"":"s"} of
+      ${RUN.omissions.tones_presented} tones
+      (<b>${(RUN.omissions.omission_rate*100).toFixed(0)}%</b>), counting a response as made
+      between ${RUN.omissions.anticipation_cut_ms} and ${Math.round(RUN.omissions.window_ms)} ms.
+      This is an endpoint in its own right, not a fault — a high rate is a finding.</div>`:""}
   ${c.spiral&&rate<55?`<div class="warn">Pen rate under 60 Hz — one point per frame. Browser
     kinematics will be coarse.</div>`:""}
   ${V&&!V.recorded?`<div class="bad">No audio was captured for this trial${V.failure?` (${esc(V.failure)})`:""}.
@@ -3679,12 +3942,12 @@ function renderResult(seq,c,pts,rate,att,tp){
       <b>${tp.altPct==null||isNaN(tp.altPct)?"–":tp.altPct.toFixed(0)+"%"}</b> of consecutive taps.
       Near 100% is antiphase; near 0% means the hands land together.</p>`;
     $("rq").innerHTML="";
-  } else if(att && seq && c.tap && seq.t>0){
-    const respondsToStd = (c.respondTo||"target")==="standard";
-    const wants = i => respondsToStd ? !seq.isTarget[i] : seq.isTarget[i];
-    const nResp = respondsToStd ? seq.n-seq.t : seq.t;
-    const cls   = respondsToStd ? "low tones" : "high tones";
-    const limit = bindingLimitMs(RUN.task, RUN.cfg||AUDIO_DEFAULTS[RUN.task]||{isi:1000,jit:0,ptg:seq.t?0.25:0});
+  } else if(att && seq && c.tap){
+    const everyTone = seq.det;
+    const wants = i => everyTone ? true : seq.isTarget[i];
+    const nResp = everyTone ? seq.n : seq.t;
+    const cls   = everyTone ? "tones" : "high tones";
+    const limit = bindingLimitMs(RUN.task, RUN.cfg||AUDIO_DEFAULTS[RUN.task]||{floorMs:600,ptg:0});
     const cands=[500,600,700,800,900,1000,1200,1500,2000].filter(w=>w<=limit);
     let h=`<h2>Response window</h2><table><tr><th class="num">Window (ms)</th>
            <th class="num">${cls} caught</th><th class="num">%</th><th class="num">False alarms</th></tr>`;
@@ -3694,10 +3957,10 @@ function renderResult(seq,c,pts,rate,att,tp){
       h+=`<tr><td class="num">${w}</td><td class="num">${hit} of ${nResp}</td>
           <td class="num">${nResp?(100*hit/nResp).toFixed(0):"–"}%</td><td class="num">${fa}</td></tr>`; });
     $("rwin").innerHTML=h+`</table><p class="note">Attribution stays unambiguous up to
-      ${Math.round(limit)} ms${respondsToStd
-        ? ", the shortest interval between any two tones — both tone types carry a response here,"+
-          " so the binding gap is the interval itself rather than the target-to-target gap."
-        : ", the shortest possible target-to-target gap."}</p>`;
+      <b>${Math.round(limit)} ms</b>${everyTone
+        ? ", which is the interval floor — every tone carries a response, so that is exactly the gap."
+        : ", twice the floor, since no two targets are adjacent."} This is exact, not a
+      worst case: intervals are drawn from a floor plus an exponential tail.</p>`;
     const Lg=att.targetLags;
     $("rq").innerHTML=Lg.length?`<h2>Response times to ${cls}</h2><table>
       <tr><th class="num">n</th><th class="num">min</th><th class="num">25th</th><th class="num">median</th>
@@ -3752,7 +4015,7 @@ function buildRecord(){
   const heard = c.count ? countedHeard(R.seq, R.streamCutMs, c.countOf) : null;
   const scheduled = R.seq ? (c.countOf==="all" ? R.seq.n : R.seq.t) : null;
   return {
-    schema:"motiq_prototype/7", build:BUILD, record_type:"trial",
+    schema:"motiq_prototype/8", build:BUILD, record_type:"trial",
     note:"PROTOTYPE. Browser mm and browser timing are approximations.",
     trial_id:R.trialId, trial_uid:R.trialUid,
     session_key:SESSION_KEY,
@@ -3765,8 +4028,13 @@ function buildRecord(){
     session_mode:{ parameter_exploration:paramExploring(),
       note:"parameter_exploration true means parameters were being varied deliberately between trials in this session, so these trials are not a fixed-protocol run and must not be pooled as one" },
     series_number:R.seriesN, repeat_number:R.repeatN, hand_label:R.handLabel,
-    plan:{ position:TRIAL.index+1, planned_total:QUEUE.length,
-           queue:QUEUE.map(q=>({task:q.task,hand:q.hand,status:q.status,skip:q.skipReason})) },
+    // An ad-hoc trial has no position in a plan, and saying it did would be a lie the CSV
+    // could not be talked out of.
+    adhoc: !!TRIAL.adhoc,
+    plan: TRIAL.adhoc ? { position:null, planned_total:null, queue:null,
+             note:"run directly from the plan table with Run now; not part of a built trial list" }
+        : { position:TRIAL.index+1, planned_total:QUEUE.length,
+            queue:QUEUE.map(q=>({task:q.task,hand:q.hand,status:q.status,skip:q.skipReason})) },
     param_signature:sig, parameters:params,
     participant:{ id:$("pid").value, group:$("grp").value, sex:$("sex").value||null,
       birth_year:b.birth_year, birth_month:b.birth_month, age_years:b.age_years,
@@ -3783,6 +4051,7 @@ function buildRecord(){
     room_check: ROOMCHECK.floor_dbfs!=null ? {...ROOMCHECK} : null,
     trial:{ started_iso:R.startedISO, stopped_early:!!R.stoppedEarly, idle_ended:!!R.idleEnded,
       untimed:!!R.untimed, self_paced:TRIAL.lengthS==null,
+      long_trial_notice_at_s: R.longNoted ?? null,
       length_s:R.durMs/1000, lead_in_ms:R.leadMs,
       first_contact_ms:R.firstContactMs,
       t_zero:"START pressed plus the lead-in; pen, tap, tone and recorder times share this origin" },
@@ -3799,7 +4068,8 @@ function buildRecord(){
       stream_cut_ms: R.streamCutMs ?? null,
       stop_mode: (R.cfg && R.cfg.stopMode) || "fixed",
       self_paced_stream: !!(R.cfg && R.cfg.self_paced),
-      adjacent_targets_allowed: !!R.seq.adjacent_allowed,
+      interval_distribution:R.seq.distribution,
+      floor_ms:R.seq.floorMs, mean_interval_ms:R.seq.meanMs,
       n_tones_played: R.streamCutMs==null ? R.seq.n
         : R.seq.onsets.filter(o=>o<=R.streamCutMs).length,
       n_targets_played: R.streamCutMs==null ? R.seq.t
@@ -3815,6 +4085,7 @@ function buildRecord(){
         applies_to:"pen-drawn tasks that also require finger tapping",
         platform:"iPadOS Safari; not present in a native UIKit build"
       } : { palm_rejection:false },
+    omissions: R.omissions || null,
     tapping:LAST.tp||null,
     counting: c.count ? {
         reported:R.reportedCount??null,
@@ -3903,7 +4174,7 @@ async function saveTrial(btn){
   if(res.ok){
     RUN.saved=true;
     if(btn){ btn.textContent="SAVED"; btn.disabled=true; }
-    QUEUE[TRIAL.index].status="done";
+    if(!TRIAL.adhoc && QUEUE[TRIAL.index]) QUEUE[TRIAL.index].status="done";
     renderQueue(); saveState();
     const nb=[...$("ctrl").querySelectorAll("button")].find(b=>b.textContent==="NEXT");
     if(nb) nb.className="";                            // NEXT becomes the primary action
@@ -3986,14 +4257,15 @@ const CSV_HEAD=[
   "pen_check_rate_right_hz","pen_check_rate_left_hz",
   "sound_confirmed","audio_route","volume_steps",
   "pitch_mm","turns","radius_mm","direction","template_path_mm","template_style","tap_zone_mm","zones",
-  "audio_key","stream_duration_s","mean_isi_ms","jitter_pct","p_target","tone_ms",
+  "audio_key","stream_duration_s","floor_ms","mean_interval_ms","p_target","tone_ms",
   "f_standard_hz","f_target_hz","tone_level","seed","seed_mode",
   "n_tones","n_targets","n_tones_played","n_targets_played","stream_cut_ms","stop_mode",
   "self_paced_stream","adjacent_targets_allowed",
   "min_isi_ms","output_latency_ms",
   "n_pen_samples","achieved_rate_hz","n_strokes",
   "n_taps_left","n_taps_right","n_taps_single","alternation_pct",
-  "palm_rejection_affected","prioritization_given",
+  "tones_presented","responses_made","omissions","omission_rate","omission_window_ms",
+  "adhoc","palm_rejection_affected","prioritization_given",
   "count_reported","count_presented","count_error","count_mode","count_of",
   "count_presented_scheduled",
   "voice_consented","voice_recorded","voice_audio_id","voice_mime",
@@ -4021,7 +4293,7 @@ function mkRow(meta,o){
 // Tones of the counted class that actually sounded. Tasks with stopMode "drawEnd" are
 // meant to be cut short, so scoring a count against the whole scheduled stream marks a
 // valid trial wrong by however many tones were never played. countOf "all" counts every
-// tone -- SP_DEC has no targets at all, so counting targets there would score every
+// tone -- a count-every-tone task has no targets, so counting targets would score every
 // trial against zero.
 function countedHeard(seq, cutMs, countOf){
   if(!seq) return null;
@@ -4038,7 +4310,7 @@ function csvRows(rec){
   const P=rec.participant, pm=rec.parameters||{}, sp=pm.spiral||{}, tapp=pm.tap||{}, au=pm.audio||{};
   const S=rec.spiral_rendered||{}, seq=rec.sequence, tp=rec.tapping||{};
   const ct=rec.counting||{}, V=rec.voice||{}, vb=rec.verbal||{};
-  const VL=V.level||{}, VC=V.constraints_applied||{};
+  const VL=V.level||{}, VC=V.constraints_applied||{}, OM=rec.omissions||{};
   const pts=(rec.strokes||[]).flat();
   const dur=pts.length>1?(pts[pts.length-1].t-pts[0].t):0;
   const rate=dur>0?((pts.length-1)/(dur/1000)).toFixed(1):"";
@@ -4069,7 +4341,7 @@ function csvRows(rec){
     rec.sound_check?rec.sound_check.volume_steps:"",
     sp.pitch_mm??"", sp.turns??"", S.radius??"", S.direction??"", S.pathMM?Math.round(S.pathMM):"",
     sp.template_style??"", tapp.zone_mm??"", tapp.zones??"",
-    au.key??"", au.durS??"", au.isi??"", au.jit??"", au.ptg??"", au.tone??"",
+    au.key??"", au.durS??"", au.floorMs??"", au.meanMs??"", au.ptg??"", au.tone??"",
     au.f_standard??"", au.f_target??"", au.level??"", au.seed??"", au.seed_mode??"",
     seq?seq.n_tones:"", seq?seq.n_targets:"",
     seq?(seq.n_tones_played??""):"", seq?(seq.n_targets_played??""):"",
@@ -4080,7 +4352,9 @@ function csvRows(rec){
     pts.length, rate, (rec.strokes||[]).length,
     num(tp.nL), num(tp.nR), num(tp.nS),
     Number.isFinite(tp.altPct)?tp.altPct.toFixed(1):"",
-    bit(rec.input_limits?rec.input_limits.palm_rejection:false),
+    OM.tones_presented??"", OM.responses_made??"", OM.omissions??"",
+    OM.omission_rate??"", OM.window_ms??"",
+    bit(rec.adhoc), bit(rec.input_limits?rec.input_limits.palm_rejection:false),
     bit(rec.instructions?rec.instructions.prioritization_given:false),
     rec.counting?(ct.reported??""):"", rec.counting?(ct.presented??""):"",
     rec.counting?(ct.error??""):"", rec.counting?(ct.mode??""):"", rec.counting?(ct.of??""):"",
@@ -4112,7 +4386,7 @@ function csvRows(rec){
       lag_corrected_ms:a.lagCorrected!=null?(+a.lagCorrected).toFixed(2):""})); });
   if(seq) seq.onsets_ms.forEach((on,i)=>out.push(mkRow(meta,
     {row_type:"tone",t_ms:(+on).toFixed(2),tone_index:i+1,tone_type:seq.tone_type[i]})));
-  // A trial with no pen samples, no taps and no tones -- an abandoned SP_VRB, say --
+  // A trial with no pen samples, no taps and no tones -- an abandoned PEN_MATH, say --
   // would otherwise vanish from the CSV entirely.
   if(!out.length) out.push(mkRow(meta,{row_type:"trial"}));
   return out;
@@ -4317,13 +4591,13 @@ function exportAllJSON(){
       started_iso:r.started_iso, mime_type:r.mime_type,
       bytes:r.bytes ?? (r.blob?r.blob.size:null) }));
     save(`${fileStem()}.json`, JSON.stringify({
-      schema:"motiq_prototype/7", build:BUILD, exported_iso:new Date().toISOString(),
+      schema:"motiq_prototype/8", build:BUILD, exported_iso:new Date().toISOString(),
       note:"trials are per trial; screening is per participant administration; audio_index lists the voice clips held in IndexedDB on the device that produced this file, and the clip bytes are downloaded separately.",
       trials, screening, audio_index:audio
     },null,2),"application/json");
   }).catch(()=>{
     save(`${fileStem()}.json`, JSON.stringify({
-      schema:"motiq_prototype/7", build:BUILD, exported_iso:new Date().toISOString(),
+      schema:"motiq_prototype/8", build:BUILD, exported_iso:new Date().toISOString(),
       note:"the voice clip store could not be read, so audio_index is empty; the clips may still exist on the device.",
       trials, screening, audio_index:[]
     },null,2),"application/json");
@@ -4350,7 +4624,7 @@ document.addEventListener("touchmove", e=>{
 // on two tap zones and has to keep working, and a finger drawing the spiral is one
 // legitimate touch off-zone. Two touches off-zone is a pinch.
 //
-// One off-zone touch is allowed so that SPF_ODT still works -- a finger drawing while the
+// One off-zone touch is allowed so a finger-drawn task still works -- a finger drawing while the
 // other hand taps a zone. That leaves a pinch with exactly one finger on a zone able to
 // get through; the viewport scale monitor below catches it, marks the trial invalid and
 // says so, so it cannot pass silently.
@@ -4443,7 +4717,7 @@ const STATE_KEY="motiq_state";
 const STATE_FIELDS=["pid","grp","sex","byear","bmonth","domhand","notes",
                     "visitno","sessnum","sessnote","instr","tmpl","implement",
                     "pitch_pen","turns_pen","pitch_finger","turns_finger",
-                    "startdia","endang","split","tapdia","zonegap",
+                    "startdia","endang","split","tapdia","zonegap","longtrial",
                     "fstd","ftgt","lvl","seedmode","idle","ppmm","spest"];
 function saveState(){
   try{
@@ -4489,7 +4763,8 @@ function restoreState(){
           hands:allowed.includes(old.hands)?old.hands:allowed[0],
           lengthS:len,
           oneHand:old.oneHand==="nondominant"?"nondominant":"dominant",
-          verbalType:c.verbal?VERBAL_KEY(old.verbalType):null };
+          verbalType:c.verbal?VERBAL_KEY(old.verbalType,c.verbal):null,
+          adhocHand:old.adhocHand==="nondominant"?"nondominant":"dominant" };
       });
     }
     PLAN=fresh;
