@@ -267,8 +267,12 @@
         <div><label for="domhand">Dominant hand</label>
           <select id="domhand"><option value="right">Right</option><option value="left">Left</option>
             <option value="ambidextrous">Ambidextrous</option></select></div>
+        <div id="ambiBox" class="hidden"><label for="ambihand">Use which hand as dominant?</label>
+          <select id="ambihand"><option value="right">Right</option>
+            <option value="left">Left</option></select></div>
       </div>
       <div id="agenote" class="note"></div>
+      <div id="ambinote"></div>
       <label class="checkrow" for="voiceconsent">
         <input id="voiceconsent" type="checkbox" onchange="onVoiceConsentChange()">
         <span><b>Voice recording consented.</b> The participant has agreed to be audio-recorded
@@ -1693,7 +1697,7 @@ function screenRecordBase(which){
     started_iso:iso,
     participant:{ id:pid, group:$("grp").value, sex:$("sex").value||null,
       birth_year:b.birth_year, birth_month:b.birth_month, age_years:b.age_years,
-      dominant_hand:$("domhand").value },
+      dominant_hand:$("domhand").value, dominant_side_used:dominantSide() },
     session_key:SESSION_KEY, session_id:`${pid}-v${visitNo()}-s${sessNo()}`,
     visit_number:visitNo(), session_number:sessNo(),
     calibration:{ css_px_per_mm:parseFloat($("ppmm").value)||null,
@@ -1762,7 +1766,19 @@ updateAgeNote();
 $("pid").addEventListener("input",()=>{ deriveNumbers(); });
 // Which physical side "dominant" resolves to changes with this answer, and the plan table
 // prints that side, so it has to be redrawn when the answer changes.
-$("domhand").addEventListener("change",()=>{ if(typeof PLAN!=="undefined" && PLAN) renderPlan(); });
+function renderAmbiHand(){
+  const on=$("domhand").value==="ambidextrous";
+  $("ambiBox").classList.toggle("hidden", !on);
+  if($("ambinote")) $("ambinote").innerHTML = on
+    ? `<div class="note">Recorded as <b>ambidextrous</b>. Tasks set to the dominant hand run
+       on the <b>${dominantSide()}</b> hand. Both the answer and the nominated side are
+       written into every trial record.</div>` : "";
+}
+["domhand","ambihand"].forEach(id=>$(id).addEventListener("change",()=>{
+  renderAmbiHand();
+  if(typeof PLAN!=="undefined" && PLAN) renderPlan();
+}));
+renderAmbiHand();
 
 /* ------------------------------------------------------- voice consent */
 const voiceConsented = () => !!($("voiceconsent") && $("voiceconsent").checked);
@@ -2387,8 +2403,18 @@ function renderNextUpParams(){
 }
 const handWord=h=> h==="both"?"both":h==="dominant"?"dominant":"non-dominant";
 // dominant/non-dominant resolve to a physical side only at run time
+// Which physical side counts as dominant. For a right- or left-handed participant that is
+// their own answer. For an ambidextrous one there is no answer to read, so the examiner
+// nominates a side and it is recorded -- this previously resolved to the right hand with
+// nothing on screen or in the record saying so.
+function dominantSide(){
+  const d=$("domhand").value;
+  if(d==="left") return "left";
+  if(d==="ambidextrous") return ($("ambihand")&&$("ambihand").value==="left")?"left":"right";
+  return "right";
+}
 function physHand(h){
-  const dom=$("domhand").value==="left"?"left":"right";
+  const dom=dominantSide();
   if(h==="both") return "both";
   return h==="dominant"?dom:(dom==="right"?"left":"right");
 }
@@ -2445,6 +2471,7 @@ function newParticipant(){
   ["pid","grp","byear","notes","sessnote"].forEach(id=>{ if($(id)) $(id).value=""; });
   ["sex","bmonth"].forEach(id=>{ if($(id)) $(id).value=""; });
   if($("domhand")) $("domhand").value="right";
+  if($("ambihand")) $("ambihand").value="right";
   // the pen check, sound check, screening screens and consent belong to the person,
   // not the device
   Object.keys(PENCHECK).forEach(k=>delete PENCHECK[k]);
@@ -4084,7 +4111,11 @@ function buildRecord(){
     param_signature:sig, parameters:params,
     participant:{ id:$("pid").value, group:$("grp").value, sex:$("sex").value||null,
       birth_year:b.birth_year, birth_month:b.birth_month, age_years:b.age_years,
-      dominant_hand:$("domhand").value },
+      // For an ambidextrous participant the examiner nominates the side; for anyone else
+      // this restates their own answer, so a trial's hand assignment never has to be
+      // inferred from the handedness field.
+      dominant_hand:$("domhand").value, dominant_side_used:dominantSide(),
+      dominant_side_nominated:$("domhand").value==="ambidextrous" },
     notes:$("notes").value||null,
     calibration:{ css_px_per_mm:LAST.ppmm, device_pixel_ratio:window.devicePixelRatio,
       screen:[screen.width,screen.height], safe_area_mm:LAST.layoutSafe,
@@ -4295,6 +4326,7 @@ const CSV_HEAD=[
   "session_number","trial_number","session_note","parameter_exploration","series_number",
   "repeat_number","hand_label","plan_position","plan_total",
   "participant_id","group","sex","birth_year","birth_month","age_years","dominant_hand",
+  "dominant_side_used","dominant_side_nominated",
   "task","hand_role","draw_hand","tap_hand","implement","instruction",
   "notes","started_iso","stopped_early","idle_ended","untimed","self_paced",
   "viewport_scale_start","viewport_scale_max","zoomed_during_trial","geometry_valid",
@@ -4371,6 +4403,7 @@ function csvRows(rec){
     rec.plan?.position??"", rec.plan?.planned_total??"",
     P.id||"unnamed", P.group??"", P.sex??"", P.birth_year??"", P.birth_month??"",
     P.age_years??"", P.dominant_hand??"",
+    P.dominant_side_used??"", P.dominant_side_nominated==null?"":(P.dominant_side_nominated?1:0),
     pm.task??"", pm.hand_role??"", pm.draw_hand??"", pm.tap_hand??"",
     pm.implement??"", sp.instruction??"",
     rec.notes??"", rec.trial.started_iso, rec.trial.stopped_early?1:0, rec.trial.idle_ended?1:0,
@@ -4760,7 +4793,7 @@ function noteTrialScale(){
 // Refreshing was the only escape from a stuck zoom, and it wiped the participant. Keep the
 // working state on the device so a reload is recoverable.
 const STATE_KEY="motiq_state";
-const STATE_FIELDS=["pid","grp","sex","byear","bmonth","domhand","notes",
+const STATE_FIELDS=["pid","grp","sex","byear","bmonth","domhand","ambihand","notes",
                     "visitno","sessnum","sessnote","instr","tmpl","implement",
                     "pitch_pen","turns_pen","pitch_finger","turns_finger",
                     "startdia","endang","split","tapdia","zonegap","longtrial",
@@ -4790,6 +4823,10 @@ function restoreState(){
     Object.entries(st.fields).forEach(([id,v])=>{ if($(id)) $(id).value=v; });
     if(st.sessionKey) SESSION_KEY=st.sessionKey;
     if($("paramexplore")) $("paramexplore").checked=!!st.paramExplore;
+    // A session saved before this field existed carries no nominated side. It keeps the
+    // handedness it recorded and falls back to the right hand, which is what the app was
+    // already doing silently. Nothing already written is rewritten.
+    renderAmbiHand();
     SELF_PACED_EST_S=clamp(Number(st.selfPacedEstS)||Number(st.fields.spest)||20,5,180);
     if($("spest")) $("spest").value=SELF_PACED_EST_S;
 
