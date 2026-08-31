@@ -166,6 +166,8 @@
                 padding:10px 14px; font-size:14px; line-height:1.45;
                 display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   #zoombanner button { margin:0; }
+  #tosession { font-size:13px !important; padding:9px 14px !important; min-width:0 !important;
+               background:#fff; color:var(--accent); border:1px solid var(--accent); }
   #quit { font-size:13px !important; padding:9px 14px !important; min-width:0 !important;
           background:#fff; color:var(--muted); border:1px solid var(--line); }
 </style>
@@ -697,6 +699,7 @@
     <div class="spacer"></div>
 
     <div id="reminder"></div>
+    <button id="tosession" onclick="backToSession()">Session</button>
     <button id="quit" onclick="abandonTrial()">Abandon trial</button>
   </div>
   <div id="overlay">
@@ -3299,49 +3302,51 @@ function showVerbalSetup(c, done){
         ${promptsFor(fam).map(([k,v])=>
           `<option value="${k}" ${planned===k?"selected":""}>${v.label}</option>`).join("")}
       </select>
-      <label for="vbText" style="font-size:15px;margin-top:14px">Exact prompt used</label>
-      <input id="vbText" type="text" style="font-size:19px">
       <div id="vbHelp" class="note" style="font-size:15px"></div>
     </div>`,
     [{ label:"Use this", onClick:()=>{
-        const type=$("vbType").value, text=($("vbText").value||"").trim();
-        const pr=ALL_PROMPTS()[type];
+        const type=$("vbType").value, pr=ALL_PROMPTS()[type];
+        // The wording is derived from the prompt and the drawn number rather than typed:
+        // there is one prompt per type, and the number is the only part that varies.
+        const text = fam==="word" ? pr.label.toLowerCase() : `start at ${VERBAL_SUGGEST}`;
         const v={ type, family:fam, prompt_type_label:pr.label, prompt_text:text,
-                  start_number: pr.range ? (parseInt(text,10) || null) : null,
+                  start_number: pr.range ? VERBAL_SUGGEST : null,
                   step:  pr.step  ?? null,
                   range: pr.range ?? null,
-                  category: fam==="word" ? (text||pr.label) : null,
+                  category: fam==="word" ? pr.label.toLowerCase() : null,
                   category_equivalence: fam==="word" ? pr.equivalence : null,
-                  fluency_window_s: fam==="word" ? 60 : null,
-                  suggested_start: pr.range ? VERBAL_SUGGEST : null };
+                  fluency_window_s: fam==="word" ? 60 : null };
         TRIAL.verbal=v; TRIAL.verbalType=type;
         hideOverlay(); done();
-      }}]);
+      }},
+     { label:"Back to session", ghost:true, onClick:()=>backToSession() }]);
   verbalTypeChanged();
 }
 function verbalTypeChanged(){
-  const t=$("vbType").value, box=$("vbText"), help=$("vbHelp");
+  const t=$("vbType").value, help=$("vbHelp");
   const pr=ALL_PROMPTS()[t];
   if(pr.family==="word"){
-    VERBAL_SUGGEST=null; box.value=pr.label.toLowerCase(); box.placeholder=pr.label.toLowerCase();
-    help.innerHTML=`Say the category exactly as it is typed here. Scored over a fixed
-      <b>60 s</b> window, which is why this task cannot be self-paced: fluency output is
-      steeply front-loaded (roughly 40–45% of words in the first 15 s), so words per second
-      cannot be compared between windows of different length.
+    VERBAL_SUGGEST=null;
+    help.innerHTML=`<div style="font-size:22px;color:var(--ink);margin:10px 0">
+        Say: <b>“Name as many ${pr.label.toLowerCase()} as you can.”</b></div>
+      Scored over a fixed <b>60 s</b> window, which is why this task cannot be self-paced:
+      fluency output is steeply front-loaded (roughly 40–45% of words in the first 15 s), so
+      words per second cannot be compared between windows of different length.
       <br><br><b>${pr.label}</b> — ${pr.equivalence}.`;
   } else {
     // A new number is drawn each time the prompt changes, and once per trial, so no two
     // administrations share a start.
     VERBAL_SUGGEST=randomVerbalStart(t);
-    box.value=String(VERBAL_SUGGEST); box.placeholder=String(pr.range[0]);
-    help.innerHTML=`Suggested start for this trial: <b>${VERBAL_SUGGEST}</b>
-      (drawn from ${pr.range[0]}–${pr.range[1]}). Reads as
-      <b>${verbalExample(t,VERBAL_SUGGEST)} …</b>
-      A new one is drawn every trial, so there are unlimited alternate forms and nothing
-      carries over between visits. Change it if you have a reason to; whatever is in the
-      box is what gets recorded.`;
+    help.innerHTML=`<div style="font-size:22px;color:var(--ink);margin:10px 0">
+        Say: <b>“Start at ${VERBAL_SUGGEST} and ${pr.step>0?"count up":"count down"}
+        ${Math.abs(pr.step)===1?"one at a time":"in "+(Math.abs(pr.step)===2?"twos":"threes")}.”</b></div>
+      Reads as <b>${verbalExample(t,VERBAL_SUGGEST)} …</b>
+      Drawn from ${pr.range[0]}–${pr.range[1]}, fresh every trial, so there are unlimited
+      alternate forms and nothing carries over between visits. The number used is written
+      into the trial record.`;
   }
 }
+
 
 function toggleDrawRules(){
   const el=$("drawRules"); if(el) el.classList.toggle("hidden");
@@ -3384,7 +3389,8 @@ function showInstructionScreen(seq,c,returnToReady){
   showOverlay(`<h3>${TRIAL.task} — ${c.label}</h3>` + instructionHTML(ins) + rulesNote + soundBtns + palmNote + voiceNote +
     `<p style="font-size:16px;color:#5d6570;margin-top:10px">${ins.length}</p>`,
     [{label:"Ready", onClick:()=>{ hideOverlay(); LAST_TASK=TRIAL.task;
-        readyTrial(returnToReady?returnToReady.seq:seq, c); }}]);
+        readyTrial(returnToReady?returnToReady.seq:seq, c); }},
+     {label:"Back to session", ghost:true, onClick:()=>backToSession()}]);
 }
 
 function reminderText(){
@@ -3411,6 +3417,11 @@ function readyTrial(seq,c){
   $("reminder").innerHTML=reminderText();
   $("recdot").textContent = c.voice ? (TRIAL.voiceFailure ? "no mic" : "mic ready") : "";
   $("recdot").style.color = c.voice && TRIAL.voiceFailure ? "#8c2020" : "#5d6570";
+  // Shown for the whole of any voice task, not only once a recording is running. Absent,
+  // it is impossible to tell a silent participant from a meter that never appeared.
+  $("levelmeter").classList.toggle("on", !!c.voice);
+  if(c.voice){ $("levelbar").firstElementChild.style.width="0%";
+    $("leveltxt").textContent = TRIAL.voiceFailure ? "no signal" : "waiting"; }
   $("ctrl").innerHTML="";
 
   // What changed since the last trial is the thing that gets missed once the instruction
@@ -3428,7 +3439,8 @@ function readyTrial(seq,c){
       : `Now tap with the <b>${handNow.toUpperCase()}</b> index finger`;
     showOverlay(`<h3 style="font-size:34px;line-height:1.3">${what}</h3>
       <p style="font-size:19px;color:#5d6570">${TRIAL.task}${TRIAL.adhoc?" · run now":` · trial ${TRIAL.index+1} of ${QUEUE.length}`}</p>`,
-      [{label:"Ready", onClick:hideOverlay}]);
+      [{label:"Ready", onClick:hideOverlay},
+       {label:"Back to session", ghost:true, onClick:()=>backToSession()}]);
   } else hideOverlay();
 
   const start=document.createElement("button"); start.textContent="START";
@@ -3524,7 +3536,7 @@ function runTrial(seq,c){
           try{
             RUN.levels=[]; RUN.meter=makeLevelMeter(RECORDER.stream);
             $("levelmeter").classList.add("on");
-          }catch(e){ RUN.meter=null; }
+          }catch(e){ RUN.meter=null; $("leveltxt").textContent="meter failed"; }
         }catch(e){
           RUN.voice.failure="recorder_start_failed";
           RUN.voice.failure_detail=String((e&&(e.name+": "+e.message))||e);
@@ -3651,7 +3663,6 @@ function endRecording(){
   if(!RUN.voice.attempted){ RECORDER.release(gen); return; }
   RUN.voice.recorder_stop_ms = RUN.perf0 ? +(performance.now()-RUN.perf0).toFixed(2) : null;
   if(RUN.meter){ try{ RUN.meter.stop(); }catch(e){} RUN.meter=null; }
-  $("levelmeter").classList.remove("on");
   if(RUN.levels && RUN.levels.length){
     const st=levelStats(RUN.levels), need=usableThresholdDbfs();
     const below=RUN.levels.filter(d=>d<need).length/RUN.levels.length;
@@ -3712,6 +3723,18 @@ function stopTrial(auto){
   if(RUN.viewport){ noteTrialScale(); RUN.viewport.scale_at_end=viewportScale(); }
   RUN.stoppedEarly=!auto; finish();
 }
+// Leaves the stage and returns to the session page from wherever the examiner happens to
+// be. Available on the admin bar and in the footer of every overlay that would otherwise
+// have no way out, so no screen is a dead end.
+function backToSession(){
+  const running = RUN && !RUN.ready && !RUN.saved;
+  if(running && !confirm("Leave this trial and go back to the session page?\n\nIt has NOT been saved and will be lost. The participant, the plan and all saved trials are kept.")) return;
+  if(RUN){ clearTimeout(RUN.timer); if(RUN.teardown) RUN.teardown(); endRecording(); }
+  else RECORDER.release();
+  cancelAnimationFrame(RAF); stopAudio();
+  hideOverlay(); stageOn(false); RUN=null; goPage(3);
+}
+
 // Abandons the trial on screen only. Participant details, the plan and every saved
 // trial are untouched -- clearing those is "Start a new session" on the Session page.
 function abandonTrial(){
@@ -3832,7 +3855,10 @@ function askCount(seq){
         RUN.reportedCount = v===""?null:+v;
         hideOverlay();
         finish();                   // re-enter now that the count exists
-      }}]);
+      }},
+     { label:"Back to session", ghost:true, onClick:()=>{
+        if(!confirm("Leave without recording the count?\n\nThe trial is lost, including the number the participant gave.")) return;
+        backToSession(); }}]);
 }
 
 function showEndControls(seq,c,pts,rate,att,tp){
