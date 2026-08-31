@@ -266,9 +266,9 @@
             <option value="7">July</option><option value="8">August</option>
             <option value="9">September</option><option value="10">October</option>
             <option value="11">November</option><option value="12">December</option></select></div>
-        <div><label for="domhand">Which hand do you write with?</label>
+        <div><label for="domhand">Dominant hand</label>
           <select id="domhand"><option value="right">Right</option><option value="left">Left</option>
-            <option value="either">Either</option></select></div>
+            <option value="ambidextrous">Ambidextrous</option></select></div>
       </div>
       <div id="agenote" class="note"></div>
       <label class="checkrow" for="voiceconsent">
@@ -2983,8 +2983,11 @@ function layout(){
   } else if(c.spiral){ dx0=ux0; dw=uw; }
   else if(c.zones===2){ const gap=(+$("zonegap").value)*p, mid=ux0+uw/2;
     zones=[{id:"left",cx:mid-gap/2},{id:"right",cx:mid+gap/2}]; }
-  else if(c.zones===1){ tapCx = c.audio ? ux0+uw/2
-    : (TRIAL.tapHand==="left" ? ux0+uw*0.28 : ux0+uw*0.72); }
+  // Centered for every tapping-only task. It used to be offset toward the tapping hand
+  // when there were no tones, which put TAP_FAST's zone at 72% of the width while
+  // TAP_TONE's sat in the middle -- so any comparison between those two also compared
+  // reach distance. One position for both removes that.
+  else if(c.zones===1){ tapCx = ux0+uw/2; }
 
   L={p,W,H,g,ux0,uy0,uw,uh,dw,dx0,tapCx,zones,splitX,spiralOn:!!c.spiral,
      cx:dx0+dw/2,cy,safeAreaMM:sa,topPad};
