@@ -3351,14 +3351,17 @@ function showInstructionScreen(seq,c,returnToReady){
   const ins=instructionFor(TRIAL.task,{implement:TRIAL.implement, verbal:TRIAL.verbal});
   const a=AUDIO_DEFAULTS[TRIAL.task];
   // Let the participant hear the tones before the trial, not for the first time inside it.
-  const soundBtns = c.audio ? `<div style="margin-top:14px">
-      <button class="ghost" style="font-size:18px;padding:14px 26px;margin:4px"
-        onclick="demo('std')">Play the LOW beep</button>` +
-      (a && a.ptg>0 ? `<button class="ghost" style="font-size:18px;padding:14px 26px;margin:4px"
-        onclick="demo('tgt')">Play the HIGH beep</button>
-      <button class="ghost" style="font-size:18px;padding:14px 26px;margin:4px"
-        onclick="demo('alt')">Play both</button>` : ``) +
-      `<div class="note" style="margin-top:6px">Play these before starting.</div></div>` : ``;
+  // A stream with no targets has ONE tone, so there is no low and no high -- naming it "the
+  // LOW beep" invites the participant to listen for a second one that never comes.
+  const twoTones = !!(a && a.ptg>0);
+  const btn = (w,txt)=>`<button class="ghost" style="font-size:18px;padding:14px 26px;margin:4px"
+        onclick="demo('${w}')">${txt}</button>`;
+  const soundBtns = c.audio ? `<div style="margin-top:14px">` +
+      (twoTones
+        ? btn("std","Play the LOW beep") + btn("tgt","Play the HIGH beep") + btn("alt","Play both")
+        : btn("std","Play the beep")) +
+      `<div class="note" style="margin-top:6px">Play ${twoTones?"these":"this"} before
+        starting.</div></div>` : ``;
   const palmNote = palmRejectionAffected(c) ? `<div style="margin-top:16px;padding:14px 18px;
       border:1px solid #e9b7b7;border-radius:9px;background:#fdecec;color:#8c2020;
       max-width:660px;text-align:left;font-size:17px;line-height:1.55">
