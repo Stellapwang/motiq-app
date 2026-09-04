@@ -1,4 +1,4 @@
-v001 | 2026-08-27 | 41 lines
+v002 | 2026-09-04 | 42 lines
 
 # BACKLOG — motiq-app
 
@@ -39,3 +39,4 @@ block in chat is temporary and holds items only until they are flushed here.
 
 | ID | Status | Category | Item | Raised | Closed-by |
 |---|---|---|---|---|---|
+| BL-001 | open | infra | `v10.01` is reachable on main (`c3520b7`..`1bd459b`) but has no tag. Determine whether it was ever deployed to a branch URL and used to collect data. If it was, tag `a47074f` as `v10.01`; if it was never a release, record that in SCOPE.md so the gap is explained rather than left as an apparent omission. | 2026-09-04 |  |
