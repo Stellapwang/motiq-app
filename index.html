@@ -145,6 +145,11 @@
   #hud { font-size:16px; font-weight:600; color:var(--muted);
          font-variant-numeric:tabular-nums; min-width:64px; padding-left:6px; }
   #hud.cue { color:var(--warm); }
+  /* The countdown on a timed trial. Large and dark because the participant has to be able
+     to read it from their side of the iPad -- a maximal-rate trial cannot be paced against
+     a clock too small to see. */
+  #hud.big { font-size:40px; font-weight:700; color:var(--ink); min-width:132px;
+             line-height:1; letter-spacing:-0.5px; }
   #reminder { font-size:14px; color:var(--muted); text-align:right; max-width:50%; line-height:1.35; }
   /* The recording indicator has to be legible from the examiner's side of the iPad
      without competing with the trial itself. */
@@ -166,6 +171,9 @@
                 padding:10px 14px; font-size:14px; line-height:1.45;
                 display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
   #zoombanner button { margin:0; }
+  /* Confirms the press landed. The examiner is looking at the participant, not the
+     button, so the count in the label is the real feedback and this is the glance check. */
+  #evbtn.lit { background:#fdecec; border-color:#8c2020; color:#8c2020; }
   #quit { font-size:13px !important; padding:9px 14px !important; min-width:0 !important;
           background:#fff; color:var(--muted); border:1px solid var(--line); }
 </style>
@@ -246,13 +254,14 @@
       <legend>Participant</legend>
       <div class="r3">
         <div><label for="pid">Participant ID</label>
-          <input id="pid" type="text" placeholder="P0001" maxlength="5"></div>
+          <input id="pid" type="text"></div>
         <div><label for="grp">Group / note</label><input id="grp" type="text" placeholder="control"></div>
         <div><label for="sex">Sex</label>
           <select id="sex"><option value="">—</option><option value="female">Female</option>
             <option value="male">Male</option><option value="other">Other</option>
             <option value="undisclosed">Prefer not to say</option></select></div>
       </div>
+      <div id="pidnote"></div>
       <div class="r3">
         <div><label for="byear">Birth year</label>
           <input id="byear" type="number" min="1900" max="2020" placeholder="1948"></div>
@@ -273,6 +282,13 @@
       </div>
       <div id="agenote" class="note"></div>
       <div id="ambinote"></div>
+      <div class="r3">
+        <div><label for="lang">Administration language</label>
+          <select id="lang" onchange="onLanguageChange()"></select></div>
+        <div id="langOtherBox" class="hidden"><label for="langother">Which language?</label>
+          <input id="langother" type="text" oninput="onLanguageChange()"></div>
+      </div>
+      <div id="langnote"></div>
       <label class="checkrow" for="voiceconsent">
         <input id="voiceconsent" type="checkbox" onchange="onVoiceConsentChange()">
         <span><b>Voice recording consented.</b> The participant has agreed to be audio-recorded
@@ -712,7 +728,7 @@
 
 <script>
 "use strict";
-const BUILD = "v11.01 2026-08-31";
+const BUILD = "v11.02 2026-09-07";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -844,6 +860,27 @@ const PALM_WARNING = "Pen and finger do not work at the same time in Safari on i
 // starting points, editable on the Parameters page, and expected to change.
 // TAP_TONE and PEN_TONE are a single-task and dual-task pair, seeded identically; pairWith
 // makes that explicit, and the Parameters page says so loudly if they are made to drift.
+// ---------------------------------------------------------------------------
+// Administration language. One entry, deliberately: the point of the registry is that a
+// second language is a row here and nothing else -- no UI change, no new branch in the
+// trial code. Everything language-dependent must read from this table rather than carry
+// its own constant, or the constant becomes an English assumption nobody can find later.
+//
+// countFloorMs   the shortest interval a counting task may use, set by how long it takes
+//                to say one number out loud. 800 ms is an ENGLISH estimate. Mandarin
+//                digits are monosyllabic and far shorter, so this is language-dependent
+//                whether or not the app admits it.
+// fluencyNorms   whether published category-fluency norms exist for this language. The
+//                animals / fruits-and-vegetables equivalence in WORD_PROMPTS is one of
+//                them and does not transfer.
+const LANGUAGES = { en: { label:"English", countFloorMs:800, fluencyNorms:true } };
+// The recorded language, which is NOT required to be a registry key -- see setLanguage().
+let ADMIN_LANG="en";
+const langEntry = code => LANGUAGES[code] || null;
+// Falls back to the English figure for an unregistered language, and the record says so
+// rather than implying the number was chosen for the language actually used.
+const countFloorMs = () => (langEntry(ADMIN_LANG) || LANGUAGES.en).countFloorMs;
+
 const AUDIO_DEFAULTS = {
   TAP_TONE: { durS:40, floorMs:600, meanMs:1200, ptg:0,    tone:50, lead:500,
               pairWith:"PEN_TONE",
@@ -851,9 +888,11 @@ const AUDIO_DEFAULTS = {
   PEN_TONE: { durS:45, floorMs:600, meanMs:1200, ptg:0,    tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3, selfPacedDurS:180,
               pairWith:"TAP_TONE",
               label:"Dual task — tap to every tone while drawing" },
-  // Longer floor: a spoken number takes 600-800 ms to articulate, so a shorter floor
-  // would ask for the next response before the previous one had finished.
-  PEN_VCNT: { durS:45, floorMs:800, meanMs:1600, ptg:0,    tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
+  // Longer floor: a spoken number takes time to articulate, so a shorter floor would ask
+  // for the next response before the previous one had finished. How much time is a fact
+  // about the language, so the number comes from LANGUAGES.countFloorMs and is re-applied
+  // whenever the administration language changes -- see applyLanguageDefaults().
+  PEN_VCNT: { durS:45, floorMs:LANGUAGES.en.countFloorMs, meanMs:1600, ptg:0,    tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
               label:"Dual task — count every tone out loud while drawing" },
   // Faster and denser ON PURPOSE. Only a quarter of tones need a response, so monitoring
   // stays continuous while the motor interruptions stay sparse -- that density is the
@@ -895,10 +934,18 @@ const VERBAL_PROMPTS = {
 // PEN_WORD categories. Animals and fruits & vegetables have published equivalence as
 // alternate forms; JOBS DOES NOT, so a jobs trial is not interchangeable with the other
 // two and must not be pooled with them as if it were.
+//
+// THAT EQUIVALENCE IS AN ENGLISH RESULT. It was published on English category norms and
+// does not transfer: category size, word frequency and the number of high-frequency
+// exemplars all differ by language, so two categories that are alternate forms in English
+// are not alternate forms in another language until someone has shown it in that language.
+// The same applies to any fluency norm used to score these trials. LANGUAGES.fluencyNorms
+// records whether norms exist for the language a session was administered in; a trial run
+// in a language with no norms is scoreable as a raw count and nothing more.
 const WORD_PROMPTS = {
-  animals: { label:"Animals",             family:"word", equivalence:"published as an alternate form with fruits & vegetables" },
-  fruitveg:{ label:"Fruits & vegetables", family:"word", equivalence:"published as an alternate form with animals" },
-  jobs:    { label:"Jobs",                family:"word", equivalence:"NO published equivalence with the other two — not interchangeable" }
+  animals: { label:"Animals",             family:"word", equivalence:"published as an alternate form with fruits & vegetables", equivalence_language:"en", equivalence_note:"English norms only — not established in any other language" },
+  fruitveg:{ label:"Fruits & vegetables", family:"word", equivalence:"published as an alternate form with animals", equivalence_language:"en", equivalence_note:"English norms only — not established in any other language" },
+  jobs:    { label:"Jobs",                family:"word", equivalence:"NO published equivalence with the other two — not interchangeable", equivalence_language:null, equivalence_note:"no published equivalence in any language" }
 };
 const ALL_PROMPTS = () => Object.assign({}, VERBAL_PROMPTS, WORD_PROMPTS);
 // Plans and saved sessions written before the split used these keys.
@@ -1188,6 +1235,82 @@ function renderAudioCheck(){
     Headphones raise the level but do not correct impaired frequency discrimination. Run the
     tasks that need no sound and omit the rest, recording the reason.</div>`;
   $("soundnote").innerHTML=msg;
+}
+
+// ---------------------------------------------------------------------------
+// AUDIO ROUTE WATCH
+//
+// What the Delivery dropdown above records is what the EXAMINER declared once, on the
+// Sound check panel, before the session. It is not measured, it is not per trial, and
+// nothing re-reads it: buildRecord takes $("audioroute").value at save time, so a session
+// declared "speaker" reports "speaker" on every trial no matter what the device did.
+//
+// That matters because the endpoint is within-trial variability of reaction time. Built-in
+// speaker and wired headphones have different output latencies, and iOS switches between
+// them the instant a plug moves -- a USB-C headphone bumped loose mid-trial falls back to
+// the speaker with a latency step. A step change in latency sits inside the RT variance
+// for that trial and reads as participant variability, which is exactly the quantity the
+// study is trying to measure.
+//
+// So the declared route is kept -- it is the examiner's statement of intent -- and a
+// measured fingerprint is sampled alongside it. HONEST LIMITS: iOS Safari does not
+// enumerate audio OUTPUT devices, so there is no API that names the current route. What
+// IS observable is composed below, and a CHANGE in it during a trial is the signal worth
+// flagging even when the states either side cannot be named. A null fingerprint means the
+// platform exposed nothing; it is recorded as null rather than as "no change".
+function routeFingerprint(){
+  const parts=[];
+  try{
+    const a = (typeof ctx!=="undefined" && ctx) ? ctx : null;
+    if(a){
+      // Output latency is the direct consequence of the route, and the one number that
+      // actually moves when it changes. Safari often reports 0; that is still a value, and
+      // a 0 -> non-zero transition is a change.
+      if(typeof a.outputLatency==="number") parts.push("ol:"+a.outputLatency.toFixed(5));
+      if(typeof a.baseLatency==="number")   parts.push("bl:"+a.baseLatency.toFixed(5));
+      if(a.sampleRate) parts.push("sr:"+a.sampleRate);
+      if(typeof a.sinkId==="string") parts.push("sink:"+a.sinkId);
+    }
+    // The recording route moves with the playback route on iOS: plugging a headset in
+    // changes the input device too, and the input side IS labelled once the microphone has
+    // been granted. Only available on voice trials.
+    const st = RECORDER && RECORDER.stream;
+    if(st){ const tr=st.getAudioTracks()[0];
+      if(tr){ parts.push("in:"+(tr.label||"")); 
+        const g = tr.getSettings ? tr.getSettings() : null;
+        if(g){ if(g.deviceId) parts.push("did:"+g.deviceId); if(g.groupId) parts.push("gid:"+g.groupId); } } }
+  }catch(e){ return null; }
+  return parts.length ? parts.join("|") : null;
+}
+// Fires on plug and unplug where the platform supports it. It does not fire for every
+// route change on every browser, which is why the fingerprint is ALSO sampled in the trial
+// loop; the two are belt and braces for the same event.
+function noteRouteSample(){
+  if(!RUN || RUN.ready || !RUN.route) return;
+  const R=RUN.route, fp=routeFingerprint();
+  // Nothing observable this sample. Counted, not treated as "unchanged": a trial whose
+  // fingerprint was null throughout is unwatched, and must not read as watched-and-clean.
+  if(fp==null){ R.samples_null++; return; }
+  R.samples++;
+  if(R.fingerprint_at_start==null){ R.fingerprint_at_start=fp; R.fingerprint_last=fp; return; }
+  if(fp!==R.fingerprint_last){
+    R.change_count++;
+    R.fingerprint_last=fp;
+    if(!R.changed){
+      R.changed=true;
+      R.change_first_ms=RUN.perf0 ? +(performance.now()-RUN.perf0).toFixed(1) : null;
+      R.fingerprint_at_change=fp;
+      // Examiner-facing and immediate: the trial is still worth finishing, but whoever is
+      // running it needs to know before they move on to the next one.
+      const el=$("reminder");
+      if(el) el.innerHTML=`<span style="color:var(--warm)"><b>AUDIO ROUTE CHANGED mid-trial.</b>
+        Check the headphone connection. This trial is flagged and its reaction times are not
+        comparable with the rest.</span>`;
+    }
+  }
+}
+if(navigator.mediaDevices && navigator.mediaDevices.addEventListener){
+  try{ navigator.mediaDevices.addEventListener("devicechange", noteRouteSample); }catch(e){}
 }
 
 function safeAreaMM(){
@@ -1692,7 +1815,7 @@ function screenRecordBase(which){
   const b=birthInfo(), pid=$("pid").value||"";
   const iso=new Date().toISOString();
   return {
-    schema:"motiq_prototype/8", build:BUILD, record_type:"screening", screen:which,
+    schema:"motiq_prototype/9", build:BUILD, record_type:"screening", screen:which,
     screen_uid:`${iso.replace(/[:.]/g,"-")}_${pid||"unnamed"}_${which}`,
     started_iso:iso,
     participant:{ id:pid, group:$("grp").value, sex:$("sex").value||null,
@@ -1763,7 +1886,41 @@ function updateAgeNote(){
 }
 ["byear","bmonth"].forEach(id=>$(id).addEventListener("input",updateAgeNote));
 updateAgeNote();
-$("pid").addEventListener("input",()=>{ deriveNumbers(); });
+$("pid").addEventListener("input",()=>{ deriveNumbers(); renderPidNote(); });
+
+// Every participant ID that already has a record on THIS DEVICE. Read from the storage
+// keys rather than by parsing each record: a trial record carries its whole stroke array,
+// and parsing all of them on every keystroke would stall the field being typed into.
+//   trial key   motiq_trial:<iso>_<pid>_v<visit>s<session>_<task>_<hand><rep>_<series>
+//   screen key  motiq_screen:<iso>_<pid>_<mini_trail_b|dot_tap>
+// The ISO stamp contains no underscore, so the first one ends it; the pid is taken
+// non-greedily up to the first visit/session marker, which is what lets a pid that itself
+// contains an underscore still resolve.
+function knownPids(){
+  const out=new Set();
+  const tr=/^motiq_trial:[^_]+_(.+?)_v\d+s\d+_/;
+  const sc=/^motiq_screen:[^_]+_(.+)_(?:mini_trail_b|dot_tap)$/;
+  const take=k=>{ const m=k.match(tr)||k.match(sc); if(m&&m[1]) out.add(m[1]); };
+  try{ for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i);
+    if(k && (k.startsWith(STORE_PREFIX)||k.startsWith(SCREEN_PREFIX))) take(k); } }catch(e){}
+  try{ Object.keys(MEM).forEach(take); }catch(e){}
+  return out;
+}
+// WARNS, NEVER BLOCKS. A second visit legitimately reuses the ID -- that is the whole
+// point of a participant ID -- so this exists to catch the typo that lands one
+// participant's trials under another's, not to stop a repeat visit.
+function renderPidNote(){
+  const el=$("pidnote"); if(!el) return;
+  const v=$("pid").value.trim();
+  if(!v){ el.innerHTML=""; return; }
+  let hit=false; try{ hit=knownPids().has(v); }catch(e){ hit=false; }
+  el.innerHTML = hit
+    ? `<div class="warn"><b>${esc(v)} already has records on this device.</b> If this is a
+       repeat visit that is correct and nothing needs changing — check the visit and session
+       numbers below. If it is a different participant, change the ID now: trials filed under
+       one ID cannot be told apart afterwards.</div>`
+    : "";
+}
 // Which physical side "dominant" resolves to changes with this answer, and the plan table
 // prints that side, so it has to be redrawn when the answer changes.
 function renderAmbiHand(){
@@ -1779,6 +1936,66 @@ function renderAmbiHand(){
   if(typeof PLAN!=="undefined" && PLAN) renderPlan();
 }));
 renderAmbiHand();
+
+/* ------------------------------------------------------- administration language */
+// The select is built from the registry, so adding a language to LANGUAGES puts it on
+// screen with no change here. "Other" exists because refusing to record a language the
+// registry does not know would mean the first non-English session is filed as English,
+// and the export would state something false. Recording it is always better than
+// silently defaulting it -- but the trial then runs on English timing, and both the
+// screen and the record say so.
+const LANG_OTHER="__other__";
+function fillLanguages(){
+  const el=$("lang"); if(!el) return;
+  el.innerHTML = Object.keys(LANGUAGES)
+      .map(k=>`<option value="${k}">${esc(LANGUAGES[k].label)}</option>`).join("")
+    + `<option value="${LANG_OTHER}">Other (not in the registry)…</option>`;
+  el.value="en";
+}
+// The recorded language: a registry key, or whatever was typed for "Other".
+function currentLanguage(){
+  const el=$("lang"); if(!el) return "en";
+  if(el.value!==LANG_OTHER) return el.value;
+  const t=($("langother")?$("langother").value:"").trim();
+  return t || LANG_OTHER;
+}
+const languageRegistered = () => !!langEntry(currentLanguage());
+// PEN_VCNT's floor is an articulation estimate, so it belongs to the language and is
+// re-applied whenever the language changes. It stays editable on the Parameters page
+// afterwards -- this sets the starting point, it does not lock the field.
+function applyLanguageDefaults(){
+  ADMIN_LANG=currentLanguage();
+  AUDIO_DEFAULTS.PEN_VCNT.floorMs = countFloorMs();
+  if(typeof renderAudioTable==="function") try{ renderAudioTable(); }catch(e){}
+  if(typeof planSummary==="function") try{ planSummary(); }catch(e){}
+}
+function onLanguageChange(){
+  const other = $("lang") && $("lang").value===LANG_OTHER;
+  if($("langOtherBox")) $("langOtherBox").classList.toggle("hidden", !other);
+  applyLanguageDefaults();
+  renderLanguageNote();
+  saveState();
+}
+function renderLanguageNote(){
+  const el=$("langnote"); if(!el) return;
+  const code=currentLanguage(), ent=langEntry(code);
+  if(ent){
+    const norms = ent.fluencyNorms ? "" : ", and no published fluency norms are recorded for this language";
+    el.innerHTML=`<div class="note">Administered in <b>${esc(ent.label)}</b>. Counting tasks
+      use a ${ent.countFloorMs} ms response floor${norms}. Written into every trial record as
+      <code>administration_language</code>.</div>`;
+    return;
+  }
+  const named = code!==LANG_OTHER;
+  const how = named ? "It is recorded as entered"
+                    : "Type the language so it is recorded rather than filed as English";
+  el.innerHTML=`<div class="warn"><b>${named?esc(code):"This language"} is not in the language
+    registry.</b> ${how}, but every timing parameter on this session is an <b>English default</b> —
+    the ${LANGUAGES.en.countFloorMs} ms counting floor is how long an English number takes to
+    say, and the category-fluency equivalence between animals and fruits &amp; vegetables is an
+    English result. Neither has been established for this language. The record carries
+    <code>language_in_registry: false</code> so these trials can be found again.</div>`;
+}
 
 /* ------------------------------------------------------- voice consent */
 const voiceConsented = () => !!($("voiceconsent") && $("voiceconsent").checked);
@@ -3053,12 +3270,27 @@ function buildZones(c){
 }
 function onZoneDown(e){
   e.preventDefault(); e.stopPropagation();
-  if(!RUN || RUN.ready || !RUN.perf0) return;          // only during a running trial
+  if(!RUN || RUN.ready || RUN.ended || !RUN.perf0) return;   // only during a running trial
   const z=e.currentTarget.dataset.zone;
-  const t=performance.now()-RUN.perf0;
+  const now=performance.now();
+  const t=now-RUN.perf0;
   TAPS.push({t:+t.toFixed(2), zone:z, pointerType:e.pointerType});
-  RUN.lastContact=performance.now();
-  if(RUN.firstContactMs===null) RUN.firstContactMs=+t.toFixed(2);
+  RUN.lastContact=now;
+  if(RUN.firstContactMs===null){
+    RUN.firstContactMs=+t.toFixed(2);
+    // The response-locked window opens HERE, on the first tap, not when START was pressed.
+    // Tap timestamps keep their START-plus-lead-in origin so they stay on the same clock as
+    // the pen, the tones and the recorder; window_start_ms is what re-bases them, and it is
+    // in the record. This tap is the first response inside the window, by construction at
+    // offset zero.
+    if(RUN.responseLocked && RUN.windowStart===null){
+      RUN.windowStart=now;
+      // The window is open, so the ceiling no longer applies and the full length starts
+      // running from this instant. Exactly durMs -- no grace.
+      clearTimeout(RUN.ceilTimer); RUN.ceilTimer=null;
+      RUN.timer=setTimeout(()=>stopTrial(true), RUN.durMs);
+    }
+  }
   const el=e.currentTarget;
   el.classList.add("lit");
   setTimeout(()=>el.classList.remove("lit"), FLASH_MS);
@@ -3124,6 +3356,11 @@ function drawScene(){
 /* ------------------------------------------------------- trial engine */
 let RUN=null,RAF=null,LAST=null;
 const INSTRUCTED=new Set();      // tasks already explained this session
+// How long a response-locked trial waits for its first tap before giving up. Generous on
+// purpose -- it is a backstop against an unattended trial, not a response deadline, and it
+// must not cut off a participant who is simply slow to start, which is the very thing the
+// response-locked window exists to stop penalising.
+const RESP_CEILING_MS=20000;
 
 function storageUsed(){
   const ts=listTrials();
@@ -3456,7 +3693,7 @@ function reminderText(){
 }
 
 function readyTrial(seq,c){
-  $("hud").classList.remove("cue");
+  $("hud").classList.remove("cue"); $("hud").classList.remove("big");
   $("hud").textContent = (TRIAL.lengthS===null && !c.audio) ? "" : (TRIAL.lengthS??"")+" s";
   $("reminder").innerHTML=reminderText();
   $("recdot").textContent = c.voice ? (TRIAL.voiceFailure ? "no mic" : "mic ready") : "";
@@ -3546,12 +3783,44 @@ function runTrial(seq,c){
   const untimed = TRIAL.lengthS===null || !!c.spiral;
   const durMs = seq ? seq.durationMs : (TRIAL.lengthS||10)*1000;
 
+  // ---- RESPONSE-LOCKED START -------------------------------------------------------
+  // The unpaced tapping tasks -- a fixed window, no tone stream, no spiral: TAP_FAST,
+  // TAP_BMIN, TAP_BANT. Their window used to open 200 ms after the examiner pressed
+  // START, so every second the participant spent getting ready was taken out of the ten
+  // they had to tap in. That penalty is largest in the participants slowest to initiate
+  // a movement, and slowness to initiate is itself a parkinsonian sign -- so the lost
+  // time ran along the group contrast rather than across it, and the task under-measured
+  // exactly the people it exists to detect.
+  //
+  // The window now opens on the FIRST TAP IN THE ZONE and runs its full length from
+  // there. The first tap is a response and is inside the window, not a starting gun
+  // outside it. Time from START to that tap is not thrown away -- it is initiation
+  // latency, a measure in its own right, and is recorded as one.
+  const responseLocked = !!(c.tap && !c.audio && !c.spiral && TRIAL.lengthS!=null);
+  // Nothing to wait for on a paced trial: the clock and the stream start together.
+  const windowStart = responseLocked ? null : perf0;
+
   const scale0=viewportScale();
   RUN={ seq,task:TRIAL.task,perf0,outLat,baseLat,durMs,leadMs,untimed,cfg:cfgL,
         startedISO:new Date().toISOString(),firstContactMs:null,toneClockDone:false,
         lastContact:null,saved:false,c,voice:null,voicePending:null,fluencyCueMs:null,
+        responseLocked, windowStart, noResponseCeiling:false, ceilTimer:null, ended:false,
+        measuredDurationMs:null,
+        // A press means the examiner intervened -- prompted a participant who had gone
+        // quiet, or marked an interruption. Offsets are on the trial clock.
+        examinerEvents:[],
+        // Route is watched, not read once. See routeFingerprint().
+        route:{ declared:$("audioroute").value, changed:false, change_first_ms:null,
+                change_count:0, samples:0, samples_null:0,
+                fingerprint_at_start:null, fingerprint_last:null, fingerprint_at_change:null },
         viewport:{ scale_at_start:scale0, scale_at_end:null,
-                   scale_max:scale0, scale_min:scale0 } };
+                   scale_max:scale0, scale_min:scale0,
+                   // A plain window resize rebuilt the canvas and re-scaled the template
+                   // under the participant's pen and nothing recorded it. The geometry is
+                   // frozen for the duration of a trial now; if a resize happens anyway it
+                   // is recorded here and invalidates the trial the same way a zoom does.
+                   resized_during_trial:false, resize_first_ms:null, resize_count:0 } };
+  noteRouteSample();
 
   // Voice capture window. Tone tasks: from the start of the tone stream (perf0) to the
   // end of the trial. A task with no tones has its origin at the trial start, which is
@@ -3624,6 +3893,15 @@ function runTrial(seq,c){
   eb.onclick=()=>stopTrial(false); $("ctrl").appendChild(eb);
   const rb=document.createElement("button"); rb.textContent="Reset"; rb.className="ghost";
   rb.onclick=()=>resetTrial(); $("ctrl").appendChild(rb);
+  // Examiner intervention marker. A reminder to a participant who has gone quiet, or an
+  // interruption in the room, changes the load the trial was measuring -- a trial where one
+  // happened is not comparable with one where none did. Nothing recorded it before, so a
+  // prompted trial and an unprompted one arrived in the export looking identical.
+  // Deliberately not a prompt or a text box: it has to be one press, because the examiner
+  // presses it while attending to the participant.
+  const ev=document.createElement("button"); ev.id="evbtn"; ev.className="ghost";
+  ev.textContent="Event"; ev.title="Timestamp an examiner intervention or an interruption";
+  ev.onclick=()=>markExaminerEvent(); $("ctrl").appendChild(ev);
 
   cancelAnimationFrame(RAF);
   const idleMs=(+$("idle").value||5)*1000;
@@ -3632,9 +3910,26 @@ function runTrial(seq,c){
     ? TRIAL.verbal.fluency_window_s*1000 : null;
   const loop=()=>{ drawScene();
     noteTrialScale();
+    noteRouteSample();
     if(RUN.meter){ const db=RUN.meter.read(); RUN.levels.push(db); updateLevelMeter(db); }
     const now=performance.now();
-    const left=(perf0+durMs-now)/1000;
+    // The window clock. On a paced trial this is perf0 and nothing below changes. On a
+    // response-locked trial it does not exist until the participant taps.
+    const wStart=RUN.windowStart;
+    const left=((wStart==null?perf0:wStart)+durMs-now)/1000;
+
+    // Ceiling on a response-locked trial. Without one, a participant who never taps
+    // leaves the trial open indefinitely and the examiner has to notice and press END,
+    // which is a judgment call landing inside the data. Twenty seconds from START, then
+    // stop and flag it -- a no-response trial is a finding, not a failed recording.
+    if(RUN.responseLocked && wStart==null && now-perf0 >= RESP_CEILING_MS){
+      RUN.noResponseCeiling=true; stopTrial(true); return;
+    }
+    // Response-locked trials end exactly one window after the first tap. The old
+    // setTimeout(leadMs+durMs+600) is deliberately not used for them: with the window
+    // opening on a response the lead-in is not part of it, and the 600 ms grace made a
+    // "10 second" trial 10.6 seconds of counted taps.
+    if(RUN.responseLocked && wStart!=null && now >= wStart+durMs){ stopTrial(true); return; }
     if(left<=0&&!RUN.toneClockDone){ RUN.toneClockDone=true; if(untimed) stopAudio(); }
 
     // Adaptive stream end: once drawing has stopped for tailS, and at least floorS of
@@ -3668,22 +3963,52 @@ function runTrial(seq,c){
       $("reminder").innerHTML=`<span style="color:var(--warm)">Trial running
         <b>${Math.round(RUN.longNoted)} s</b>. The trial continues until END is pressed.</span>`;
     }
-    if(c.tap||c.audio||c.verbal) $("hud").textContent = fluencyWinMs
-      ? (RUN.fluencyCueMs===null
+    // A task with no tone stream used to show elapsed time counting UP, which tells a
+    // participant nothing they can act on: you cannot pace a maximal-rate trial you cannot
+    // see the end of. Anything with a definite window now shows time REMAINING, large
+    // enough to read from the participant's side of the iPad. An untimed task has no
+    // remaining time to show, so it keeps the elapsed count.
+    if(c.tap||c.audio||c.verbal){
+      const hud=$("hud");
+      let txt, big=false;
+      if(fluencyWinMs){
+        txt = RUN.fluencyCueMs===null
           ? "naming "+Math.max(0,(fluencyWinMs-(now-perf0))/1000).toFixed(1)+" s"
-          : "naming done")
-      : !seq
-      ? ((now-perf0)/1000).toFixed(1)+" s"
-      : untimed
-      ? (left>0?left.toFixed(1)+" s":"tones done")
-      : Math.max(0,left).toFixed(1)+" s";
+          : "naming done";
+      } else if(!seq){
+        if(untimed) txt=((now-perf0)/1000).toFixed(1)+" s";
+        else if(wStart==null){
+          // Waiting for the response that opens the window. Show the length they are about
+          // to get, so it is not mistaken for a clock that has already started.
+          txt=(durMs/1000).toFixed(0)+" s — TAP TO START"; big=true;
+        } else { txt=Math.max(0,left).toFixed(1); big=true; }
+      } else if(untimed){
+        txt = left>0 ? left.toFixed(1)+" s" : "tones done";
+      } else { txt=Math.max(0,left).toFixed(1); big=true; }
+      hud.textContent=txt;
+      hud.classList.toggle("big", big);
+    }
 
     if(untimed && RUN.firstContactMs!==null && (!RUN.seq||RUN.toneClockDone)
        && RUN.lastContact && performance.now()-RUN.lastContact>idleMs){
       RUN.idleEnded=true; stopTrial(true); return; }
     RAF=requestAnimationFrame(loop); };
   loop();
-  if(!untimed) RUN.timer=setTimeout(()=>stopTrial(true), leadMs+durMs+600);
+  // Every automatic stop is a TIMER with the animation loop as a second check, never the
+  // loop alone. requestAnimationFrame is throttled to a standstill when the page is not
+  // visible, so a trial whose only stop condition lived in the loop would run forever if
+  // the examiner switched apps mid-trial -- and would then report a measured duration of
+  // however long it took someone to notice.
+  if(!untimed && !responseLocked){
+    RUN.timer=setTimeout(()=>stopTrial(true), leadMs+durMs+600);
+  } else if(responseLocked){
+    // Nothing to time yet: the window opens on the first tap. Until then the only clock
+    // running is the ceiling. Measured from the START press, hence the lead-in.
+    RUN.ceilTimer=setTimeout(()=>{
+      if(!RUN || RUN.windowStart!=null) return;
+      RUN.noResponseCeiling=true; stopTrial(true);
+    }, leadMs+RESP_CEILING_MS);
+  }
 }
 
 // The examiner can see a participant going inaudible while there is still time to prompt
@@ -3738,10 +4063,21 @@ function endRecording(){
   });
 }
 
+// Multiple presses per trial. Offsets are on the trial clock (START plus the lead-in),
+// the same origin as taps, pen samples and tone onsets, so an intervention can be placed
+// against what the participant was doing at that moment.
+function markExaminerEvent(){
+  if(!RUN || RUN.ready || RUN.ended || !RUN.perf0) return;
+  RUN.examinerEvents.push(+(performance.now()-RUN.perf0).toFixed(1));
+  const b=$("evbtn");
+  if(b){ b.textContent="Event ("+RUN.examinerEvents.length+")";
+         b.classList.add("lit"); setTimeout(()=>b.classList.remove("lit"), FLASH_MS); }
+}
+
 function resetTrial(){
   if(!RUN) return;
   if(!confirm("Reset this trial?\n\nThe drawing, taps and any recording made so far are discarded and NOT saved. The trial restarts with the same settings.")) return;
-  clearTimeout(RUN.timer); cancelAnimationFrame(RAF); stopAudio();
+  clearTimeout(RUN.timer); clearTimeout(RUN.ceilTimer); cancelAnimationFrame(RAF); stopAudio();
   endRecording();
   if(RUN.voicePending) RUN.voicePending.then(()=>{ if(RUN&&RUN.voice) RUN.voice.blob=null; });
   if(RUN.teardown) RUN.teardown();
@@ -3753,7 +4089,7 @@ function resetTrial(){
 function stopTrial(auto){
   if(!RUN) { stageOn(false); return; }
   if(RUN.ready){ cancelAnimationFrame(RAF); stageOn(false); RUN=null; return; }
-  clearTimeout(RUN.timer); cancelAnimationFrame(RAF);
+  clearTimeout(RUN.timer); clearTimeout(RUN.ceilTimer); cancelAnimationFrame(RAF);
   // Any ending that silences a stream still running is a cut, not just the adaptive
   // drawEnd one: END, the idle auto-stop and abandon all land here. Without this,
   // streamCutMs stays null and n_tones_played falls back to the whole schedule --
@@ -3765,6 +4101,19 @@ function stopTrial(auto){
   endRecording();
   if(RUN.teardown) RUN.teardown();
   if(RUN.viewport){ noteTrialScale(); RUN.viewport.scale_at_end=viewportScale(); }
+  // What the trial ACTUALLY lasted, measured, as against trial_length_s which is only what
+  // was planned. On a response-locked trial the window may have opened seconds after START;
+  // on any trial END can be pressed early or late. Null when the window never opened --
+  // there was no window to measure, and zero would be a lie.
+  noteRouteSample();
+  RUN.measuredDurationMs = RUN.windowStart!=null
+    ? +(performance.now()-RUN.windowStart).toFixed(1) : null;
+  // Closes the response window for good. The tap zones are DOM elements and stay on the
+  // stage through the end-of-trial screen, with the participant's hand still resting on the
+  // glass -- and a stray touch was being appended to TAPS after the trial was over. finish()
+  // has already frozen the summary counts by then, so that tap appeared as an extra tap row
+  // in the CSV that n_taps_single did not count. The two disagreeing is worse than either.
+  RUN.ended=true;
   RUN.stoppedEarly=!auto; finish();
 }
 // The single way off the stage, on the admin bar and in the footer of every overlay that
@@ -3776,7 +4125,8 @@ function stopTrial(auto){
 function backToSession(){
   const running = RUN && !RUN.ready && !RUN.saved;
   if(running && !confirm("Leave this trial and go back to the session page?\n\nIt has NOT been saved and will be lost. The participant, the plan and all saved trials are kept.")) return;
-  if(RUN){ clearTimeout(RUN.timer); if(RUN.teardown) RUN.teardown(); endRecording(); }
+  if(RUN){ clearTimeout(RUN.timer); clearTimeout(RUN.ceilTimer);
+           if(RUN.teardown) RUN.teardown(); endRecording(); }
   else RECORDER.release();
   cancelAnimationFrame(RAF); stopAudio();
   hideOverlay(); stageOn(false); RUN=null; goPage(3);
@@ -3861,7 +4211,7 @@ function finish(){
   RUN.saved=false;
 
   cancelAnimationFrame(RAF); drawScene();
-  $("hud").classList.remove("cue");
+  $("hud").classList.remove("cue"); $("hud").classList.remove("big");
   $("hud").textContent = RUN.idleEnded?"finished":"";
   $("reminder").innerHTML=`<span style="color:var(--warm)">not saved yet</span>`;
   $("ctrl").innerHTML="";
@@ -3938,6 +4288,15 @@ function renderResult(seq,c,pts,rate,att,tp){
         <th>Actually presented</th><td class="num">${heardScheduled??"–"}</td></tr>`
       :`<tr><th>Taps</th><td class="num">${TAPS.length}</td>
         <th>First contact</th><td class="num">${RUN.firstContactMs??"–"} ms</td></tr>`}
+    <tr><th>${RUN.responseLocked?"Window (from first tap)":"Planned length"}</th>
+        <td class="num">${RUN.untimed?"open-ended":(RUN.durMs/1000).toFixed(1)+" s"}</td>
+        <th>Measured</th><td class="num">${RUN.measuredDurationMs==null
+          ? "–" : (RUN.measuredDurationMs/1000).toFixed(2)+" s"}</td></tr>
+    ${RUN.responseLocked?`<tr><th>Initiation latency</th>
+        <td class="num">${RUN.firstContactMs==null?"no tap":RUN.firstContactMs+" ms"}</td>
+        <th>Examiner events</th><td class="num">${RUN.examinerEvents.length}</td></tr>`
+      :`<tr><th>Examiner events</th><td class="num">${RUN.examinerEvents.length}</td>
+        <th></th><td></td></tr>`}
     ${c.verbal&&TRIAL.verbal?`<tr><th>Spoken task</th><td>${esc(TRIAL.verbal.prompt_type_label)}</td>
         <th>Prompt used</th><td>${esc(TRIAL.verbal.prompt_text)||"–"}</td></tr>
       ${TRIAL.verbal.fluency_window_s?`<tr><th>Fluency window</th>
@@ -3961,6 +4320,30 @@ function renderResult(seq,c,pts,rate,att,tp){
        from the calibration, so at this scale it was rendered at the wrong physical size and
        the millimeter measures are not comparable with other trials. The record is flagged
        <code>geometry_valid: false</code>. Clear the zoom and repeat the trial.</div>`:""}
+  ${RUN.viewport&&RUN.viewport.resized_during_trial
+    ? `<div class="bad"><b>Trial invalid: the window resized during the trial</b>
+       (first at ${(RUN.viewport.resize_first_ms/1000).toFixed(1)} s${RUN.viewport.resize_count>1
+         ? `, ${RUN.viewport.resize_count} times in all`:""}). The drawing area was deliberately
+       left as it was, so every millimeter in this record is on one scale — but the participant
+       was working on an area that no longer matched the screen. The record is flagged
+       <code>geometry_valid: false</code>. Restore the window and repeat the trial.</div>`:""}
+  ${RUN.route&&RUN.route.changed
+    ? `<div class="bad"><b>The audio route changed during this trial</b>
+       (at ${(RUN.route.change_first_ms/1000).toFixed(1)} s). Built-in speaker and wired
+       headphones have different output latencies, so a change mid-trial is a step in the
+       offset that lands inside this trial's reaction-time variability. Check the headphone
+       connection and repeat the trial.</div>`:""}
+  ${RUN.noResponseCeiling
+    ? `<div class="warn"><b>No tap in ${RESP_CEILING_MS/1000} s — the trial was stopped.</b>
+       The response window never opened, so there is no window to score. This is recorded as
+       <code>no_response_ceiling</code> rather than as an empty trial: a participant who did
+       not begin is a finding, not a failed recording.</div>`:""}
+  ${RUN.examinerEvents.length
+    ? `<div class="warn"><b>${RUN.examinerEvents.length} examiner
+       event${RUN.examinerEvents.length===1?"":"s"}</b> at
+       ${RUN.examinerEvents.map(v=>(v/1000).toFixed(1)+" s").join(", ")}. A trial that was
+       prompted or interrupted is not comparable with one that was not; the offsets are in the
+       record.</div>`:""}
   ${RUN.omissions?`<div class="${RUN.omissions.omission_rate>0.2?"warn":"good"}">
       <b>${RUN.omissions.omissions}</b> omission${RUN.omissions.omissions===1?"":"s"} of
       ${RUN.omissions.tones_presented} tones
@@ -4088,7 +4471,7 @@ function buildRecord(){
   const heard = c.count ? countedHeard(R.seq, R.streamCutMs, c.countOf) : null;
   const scheduled = R.seq ? (c.countOf==="all" ? R.seq.n : R.seq.t) : null;
   return {
-    schema:"motiq_prototype/8", build:BUILD, record_type:"trial",
+    schema:"motiq_prototype/9", build:BUILD, record_type:"trial",
     note:"PROTOTYPE. Browser mm and browser timing are approximations.",
     trial_id:R.trialId, trial_uid:R.trialUid,
     session_key:SESSION_KEY,
@@ -4117,12 +4500,31 @@ function buildRecord(){
       dominant_hand:$("domhand").value, dominant_side_used:dominantSide(),
       dominant_side_nominated:$("domhand").value==="ambidextrous" },
     notes:$("notes").value||null,
+    // Session-level. Recorded even when it is not a registry key, because a session run in
+    // a language the app does not know is still a session run in that language, and filing
+    // it as English would make the export state something false.
+    administration_language: ADMIN_LANG,
+    language_in_registry: languageRegistered(),
+    language_timing_source: languageRegistered() ? ADMIN_LANG : "en",
+    language_note: languageRegistered()
+      ? "timing parameters for this session come from the LANGUAGES entry for this language"
+      : "this language is NOT in the app's language registry. Every timing parameter on this session is an ENGLISH default, including the counting response floor, and the published animals / fruits-and-vegetables fluency equivalence is an English result that has not been established for this language. The UI and the instruction text were also English.",
     calibration:{ css_px_per_mm:LAST.ppmm, device_pixel_ratio:window.devicePixelRatio,
       screen:[screen.width,screen.height], safe_area_mm:LAST.layoutSafe,
       source:CAL.source, device_label:CAL.deviceLabel, card_confirmed:$("cardok").checked },
     pen_check:PENCHECK,
     sound_check:{ confirmed:$("soundok").checked, route:$("audioroute").value,
-                  volume_steps:$("volstep").value },
+                  volume_steps:$("volstep").value,
+                  route_source:"declared by the examiner on the Sound check panel, once per session. NOT measured." },
+    // Watched for the whole trial rather than read once, because the endpoint is
+    // within-trial variability of reaction time and a route change is a step change in
+    // output latency landing inside it. See routeFingerprint() for what is and is not
+    // observable here.
+    audio_route_watch: R.route ? { ...R.route,
+      watched: R.route.fingerprint_at_start!=null,
+      note: R.route.fingerprint_at_start==null
+        ? "the platform exposed nothing to fingerprint on this trial, so the route was NOT watched. This is not evidence that the route held."
+        : "a change means the audio route moved mid-trial -- built-in speaker and wired headphones have different output latencies, so reaction times either side of change_first_ms are on different offsets and the within-trial variability of this trial is not comparable with an unchanged trial. iOS Safari does not enumerate audio output devices, so the states either side cannot always be named; the change itself is what is detectable." } : null,
     // Once per session, from the Sound check panel. A voice level means nothing without
     // the noise floor it has to sit above, so the floor travels with every trial.
     room_check: ROOMCHECK.floor_dbfs!=null ? {...ROOMCHECK} : null,
@@ -4131,14 +4533,44 @@ function buildRecord(){
       long_trial_notice_at_s: R.longNoted ?? null,
       length_s:R.durMs/1000, lead_in_ms:R.leadMs,
       first_contact_ms:R.firstContactMs,
+      // PLANNED length is length_s. This is what the trial measured out to be, wall clock,
+      // from the instant the response window opened to the instant it stopped.
+      measured_duration_ms: R.measuredDurationMs ?? null,
+      // Response-locked tasks only. window_start_ms is the offset of the window from t_zero,
+      // so subtracting it from a tap time re-bases that tap onto the window; it is 0 on a
+      // paced trial, where the window and the clock start together.
+      response_locked: !!R.responseLocked,
+      window_start_ms: R.windowStart!=null && R.perf0
+        ? +(R.windowStart-R.perf0).toFixed(2) : null,
+      // Time from t_zero to the first tap. On a response-locked trial this is no longer
+      // time taken out of the window, so it is kept as what it is: how long the participant
+      // took to initiate the movement, which is a measure and not an overhead.
+      initiation_latency_ms: R.responseLocked ? R.firstContactMs : null,
+      initiation_latency_note: R.responseLocked
+        ? "ms from t_zero to the first tap. The response window opens at this instant and runs length_s from there, so this time was NOT taken out of the trial. Add lead_in_ms to get the time from the START press itself."
+        : null,
+      // A trial the participant never began. A finding, not a failed recording.
+      no_response_ceiling: !!R.noResponseCeiling,
+      no_response_ceiling_ms: R.noResponseCeiling ? RESP_CEILING_MS : null,
+      // Multiple presses per trial, ms from t_zero. A trial carrying any of these had its
+      // load interrupted and is not comparable with one that did not.
+      examiner_events:{ count:(R.examinerEvents||[]).length,
+        offsets_ms:R.examinerEvents||[],
+        note:"examiner interventions timestamped during the trial -- prompting a participant who had gone quiet, or marking an interruption. A trial with one or more of these is not comparable with a trial that had none." },
       t_zero:"START pressed plus the lead-in; pen, tap, tone and recorder times share this origin" },
     // A zoomed page renders the spiral at the wrong physical size, so millimeters in this
     // record would not be the millimeters the participant drew. Recorded rather than
     // guessed at, and flagged rather than left for someone to notice later.
     viewport: R.viewport ? { ...R.viewport,
       zoomed_during_trial: !!(R.viewport.scale_max>1+ZOOM_TOL || R.viewport.scale_min<1-ZOOM_TOL),
-      geometry_valid: !(R.viewport.scale_max>1+ZOOM_TOL || R.viewport.scale_min<1-ZOOM_TOL),
-      note:"scale 1.0 means the page was not zoomed. Anything else means the spiral was rendered at the wrong physical size, so the millimeter measures on this trial are not comparable with other trials." } : null,
+      // Two ways the millimeters in a record can stop meaning one thing: the page was
+      // zoomed, so they were rendered at the wrong physical size; or the window resized, so
+      // they were not all measured against the same frame. Either one invalidates the
+      // geometry, and they share this field so nothing downstream has to know which
+      // happened to know the trial cannot be pooled.
+      geometry_valid: !(R.viewport.scale_max>1+ZOOM_TOL || R.viewport.scale_min<1-ZOOM_TOL)
+                      && !R.viewport.resized_during_trial,
+      note:"scale 1.0 means the page was not zoomed. Anything else means the spiral was rendered at the wrong physical size, so the millimeter measures on this trial are not comparable with other trials. resized_during_trial means the window changed size mid-trial; the layout was deliberately NOT rebuilt, so the coordinate frame held, but the drawing area no longer matched the screen the participant was working on." } : null,
     audio_runtime: R.seq ? { output_latency_ms:R.outLat, base_latency_ms:R.baseLat,
       sample_rate:ctx?ctx.sampleRate:null } : null,
     sequence: R.seq ? { n_tones:R.seq.n, n_targets:R.seq.t, seed:R.seq.seed,
@@ -4330,10 +4762,16 @@ const CSV_HEAD=[
   "task","hand_role","draw_hand","tap_hand","implement","instruction",
   "notes","started_iso","stopped_early","idle_ended","untimed","self_paced",
   "viewport_scale_start","viewport_scale_max","zoomed_during_trial","geometry_valid",
-  "trial_length_s","lead_in_ms",
+  "resized_during_trial","resize_first_ms","resize_count",
+  "trial_length_s","measured_duration_ms","lead_in_ms",
+  "response_locked","window_start_ms","initiation_latency_ms",
+  "no_response_ceiling","examiner_event_count","examiner_event_ms",
   "first_contact_ms","css_px_per_mm","device_label","calibration_source","card_confirmed",
   "pen_check_rate_right_hz","pen_check_rate_left_hz",
   "sound_confirmed","audio_route","volume_steps",
+  "audio_route_watched","audio_route_changed","audio_route_change_first_ms",
+  "audio_route_change_count",
+  "administration_language","language_in_registry",
   "pitch_mm","turns","radius_mm","direction","template_path_mm","template_style","tap_zone_mm","zones",
   "audio_key","stream_duration_s","floor_ms","mean_interval_ms","p_target","tone_ms",
   "f_standard_hz","f_target_hz","tone_level","seed","seed_mode",
@@ -4389,6 +4827,7 @@ function csvRows(rec){
   const S=rec.spiral_rendered||{}, seq=rec.sequence, tp=rec.tapping||{};
   const ct=rec.counting||{}, V=rec.voice||{}, vb=rec.verbal||{};
   const VL=V.level||{}, VC=V.constraints_applied||{}, OM=rec.omissions||{};
+  const EV=(rec.trial&&rec.trial.examiner_events)||{};
   const pts=(rec.strokes||[]).flat();
   const dur=pts.length>1?(pts[pts.length-1].t-pts[0].t):0;
   const rate=dur>0?((pts.length-1)/(dur/1000)).toFixed(1):"";
@@ -4411,13 +4850,27 @@ function csvRows(rec){
     rec.viewport?rec.viewport.scale_at_start:"", rec.viewport?rec.viewport.scale_max:"",
     rec.viewport?bit(rec.viewport.zoomed_during_trial):"",
     rec.viewport?bit(rec.viewport.geometry_valid):"",
-    rec.trial.length_s, rec.trial.lead_in_ms,
+    rec.viewport?bit(rec.viewport.resized_during_trial):"",
+    rec.viewport?(rec.viewport.resize_first_ms??""):"",
+    rec.viewport?(rec.viewport.resize_count??""):"",
+    rec.trial.length_s, rec.trial.measured_duration_ms??"", rec.trial.lead_in_ms,
+    bit(rec.trial.response_locked), rec.trial.window_start_ms??"",
+    rec.trial.initiation_latency_ms??"",
+    bit(rec.trial.no_response_ceiling),
+    EV.count??"",
+    // Semicolons, not commas: a comma here would split the row across columns.
+    (EV.offsets_ms&&EV.offsets_ms.length)?EV.offsets_ms.join(";"):"",
     rec.trial.first_contact_ms??"", rec.calibration.css_px_per_mm,
     rec.calibration.device_label??"", rec.calibration.source??"",
     bit(rec.calibration.card_confirmed),
     pc.right?pc.right.rate:"", pc.left?pc.left.rate:"",
     rec.sound_check?(rec.sound_check.confirmed?1:0):"", rec.sound_check?rec.sound_check.route:"",
     rec.sound_check?rec.sound_check.volume_steps:"",
+    rec.audio_route_watch?bit(rec.audio_route_watch.watched):"",
+    rec.audio_route_watch?bit(rec.audio_route_watch.changed):"",
+    rec.audio_route_watch?(rec.audio_route_watch.change_first_ms??""):"",
+    rec.audio_route_watch?(rec.audio_route_watch.change_count??""):"",
+    rec.administration_language??"", bit(rec.language_in_registry),
     sp.pitch_mm??"", sp.turns??"", S.radius??"", S.direction??"", S.pathMM?Math.round(S.pathMM):"",
     sp.template_style??"", tapp.zone_mm??"", tapp.zones??"",
     au.key??"", au.durS??"", au.floorMs??"", au.meanMs??"", au.ptg??"", au.tone??"",
@@ -4670,13 +5123,13 @@ function exportAllJSON(){
       started_iso:r.started_iso, mime_type:r.mime_type,
       bytes:r.bytes ?? (r.blob?r.blob.size:null) }));
     save(`${fileStem()}.json`, JSON.stringify({
-      schema:"motiq_prototype/8", build:BUILD, exported_iso:new Date().toISOString(),
+      schema:"motiq_prototype/9", build:BUILD, exported_iso:new Date().toISOString(),
       note:"trials are per trial; screening is per participant administration; audio_index lists the voice clips held in IndexedDB on the device that produced this file, and the clip bytes are downloaded separately.",
       trials, screening, audio_index:audio
     },null,2),"application/json");
   }).catch(()=>{
     save(`${fileStem()}.json`, JSON.stringify({
-      schema:"motiq_prototype/8", build:BUILD, exported_iso:new Date().toISOString(),
+      schema:"motiq_prototype/9", build:BUILD, exported_iso:new Date().toISOString(),
       note:"the voice clip store could not be read, so audio_index is empty; the clips may still exist on the device.",
       trials, screening, audio_index:[]
     },null,2),"application/json");
@@ -4794,6 +5247,7 @@ function noteTrialScale(){
 // working state on the device so a reload is recoverable.
 const STATE_KEY="motiq_state";
 const STATE_FIELDS=["pid","grp","sex","byear","bmonth","domhand","ambihand","notes",
+                    "lang","langother",
                     "visitno","sessnum","sessnote","instr","tmpl","implement",
                     "pitch_pen","turns_pen","pitch_finger","turns_finger",
                     "startdia","endang","split","tapdia","zonegap","longtrial",
@@ -4866,8 +5320,16 @@ function restoreState(){
     if(st.audio) Object.entries(st.audio).forEach(([k,v])=>{
       if(AUDIO_DEFAULTS[k] && v && typeof v==="object") Object.assign(AUDIO_DEFAULTS[k],v); });
 
+    // The language is restored from STATE_FIELDS like any other field. Its side effects
+    // are not, so they are re-run here. Deliberately NOT applyLanguageDefaults(): the saved
+    // AUDIO_DEFAULTS were applied a few lines above, and re-deriving the counting floor from
+    // the language now would overwrite a floor the examiner had edited by hand before the
+    // reload. The language sets the starting value; it does not own the field forever.
+    ADMIN_LANG=currentLanguage();
+    if($("langOtherBox")) $("langOtherBox").classList.toggle("hidden", $("lang").value!==LANG_OTHER);
+    renderLanguageNote();
     applyCal(); updateAgeNote(); renderSecureNote(); onVoiceConsentChange();
-    onParamExploreChange();
+    onParamExploreChange(); renderPidNote();
     renderStatus(); renderPlan(); renderQueue(); renderAudioTable();
     const done=QUEUE.filter(q=>q.status==="done").length;
     if($("statusbar")) $("statusbar").insertAdjacentHTML("beforeend",
@@ -4894,14 +5356,49 @@ function clearState(){ try{ localStorage.removeItem(STATE_KEY); }catch(e){} }
 document.addEventListener("change", e=>{ if(STATE_FIELDS.includes(e.target.id)) saveState(); });
 document.addEventListener("input",  e=>{ if(STATE_FIELDS.includes(e.target.id)) saveState(); });
 
+// GEOMETRY IS FROZEN FOR THE DURATION OF A TRIAL.
+//
+// This used to call layout() unconditionally whenever the stage was on. layout() rebuilds
+// the canvas and the whole coordinate frame from window.innerWidth/innerHeight and the
+// millimeter calibration, which re-scales and re-positions the spiral template and the tap
+// zones underneath a participant who is mid-stroke. Every millimeter already recorded was
+// measured against the old frame and every one after it against the new one, in a single
+// record that says nothing about the change. A zoom invalidates a trial through
+// geometry_valid; a plain resize -- rotation, iPad Split View, a keyboard opening, an
+// external display -- was tracked by nothing at all.
+//
+// So during a running trial the layout is left exactly as it is. A frozen frame that no
+// longer matches the window is visibly wrong, which is the point: it is recoverable, and
+// the record says the trial is not comparable. Between trials, and on the START screen
+// before one begins, the old behavior is unchanged.
 window.addEventListener("resize",()=>{
+  const running = RUN && !RUN.ready;
+  if(running){ noteTrialResize(); return; }
   if($("stage").classList.contains("on")){ layout(); drawScene(); }
   else if(!$("pg2").classList.contains("hidden")){ mtbBegin(!!MTB.practice); dotReset(); }
 });
+// Recorded on the same footing as a mid-trial zoom, and invalidating the trial through the
+// same geometry_valid field, because the consequence is the same: the millimeters in this
+// record were not all measured against one frame.
+function noteTrialResize(){
+  if(!RUN || RUN.ready || !RUN.viewport) return;
+  const V=RUN.viewport;
+  V.resize_count++;
+  if(!V.resized_during_trial){
+    V.resized_during_trial=true;
+    V.resize_first_ms=RUN.perf0 ? +(performance.now()-RUN.perf0).toFixed(1) : null;
+    const el=$("reminder");
+    if(el) el.innerHTML=`<span style="color:var(--warm)"><b>THE WINDOW RESIZED mid-trial.</b>
+      The drawing area has been left as it was so the millimeters stay on one scale, and it
+      no longer fills the screen. This trial is flagged <code>geometry_valid: false</code>.
+      Finish or END it, restore the window, and repeat the trial.</span>`;
+  }
+}
 // ?reset in the address clears saved state before anything reads it -- the way back if
 // the app will not start.
 if(/[?&]reset\b/.test(location.search)){ clearState(); }
 
+fillLanguages(); onLanguageChange();
 renderPlan(); renderAudioTable(); renderSaved(); renderScreens(); renderStatus();
 renderSecureNote(); onVoiceConsentChange(); mtbReset(); dotReset(); renderAudioStore();
 renderZoomBanner();
