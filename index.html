@@ -226,13 +226,22 @@
         page. <b>PEN_TONE</b> and <b>PEN_FAST</b> are affected: tap responses are not
         recorded while the pen is down, so these do not run as true dual tasks in this
         prototype. Trials still record, and the limitation is flagged in the data.</p>
-        <p style="margin:0 0 8px"><b>2. Voice recording requires an https address.</b>
+        <p style="margin:0 0 8px"><b>2. Pencil hover height cannot be measured from a web page.</b>
+        An Apple Pencil is detected while its nib is roughly 1&ndash;12&nbsp;mm above the
+        display. A web page can be told <i>where</i> the pen is hovering, but nothing in the
+        web platform reports <i>how high</i> it is: there is no standard property for the
+        distance above the glass, and the Pointer Events proposal to add one is unresolved.
+        A web build therefore knows the pen is somewhere in that 12&nbsp;mm band, not where in
+        it. Hesitation before a participant starts to draw can be timed and located here; its
+        height profile cannot be recovered afterwards, because it was never captured. The
+        native build is where that measurement becomes possible.</p>
+        <p style="margin:0 0 8px"><b>3. Voice recording requires an https address.</b>
         Microphone access is available only over <code>https</code>, or from
         <code>localhost</code> and <code>127.0.0.1</code>. When the app is opened from a
         plain <code>http://</code> address on a local network, the spoken tasks run but
         record no audio. This depends on the address the page was opened from, not on the
         device.</p>
-        <p style="margin:0"><b>3. This is a prototype instrument.</b> Millimeters are derived
+        <p style="margin:0"><b>4. This is a prototype instrument.</b> Millimeters are derived
         from a card calibration and timing from the browser clock. Both are approximate and
         should be reported as such.</p>
       </div>
@@ -857,6 +866,62 @@ const CATALOGUE = [
    simultaneous streams, so the native instrument can run these tasks properly.
    This limit is one of the concrete reasons the native build exists.
    --------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------
+   PENCIL HOVER -- a platform limit, and a specification for the native build
+
+   An Apple Pencil is detected while its nib is roughly 1-12 mm above the display.
+   The palm-rejection note above records the visible consequence: a finger tap
+   registers while the pen HOVERS and is discarded once the pen is down, so the
+   system plainly knows the difference.
+
+   WHAT THE WEB PLATFORM GIVES, AND WHAT IT DOES NOT
+
+   Pointer Events delivers hovering as ordinary pointermove events with
+   pointerType "pen", pressure 0 and buttons 0 -- so hover POSITION is expressible.
+   Hover DISTANCE is not. No standard property carries height above the glass;
+   altitudeAngle is the pen's TILT from the plane of the screen and is a different
+   quantity entirely. The W3C Pointer Events proposal for pens reporting hover
+   distance is unresolved, so there is no property to read and no vendor-prefixed
+   substitute to fall back on.
+
+   NOT YET VERIFIED ON DEVICE: whether iPadOS Safari actually delivers those hover
+   pointermove events to a web page for a Pencil. That question is answered by the
+   pointer probe, run on the iPad with a Pencil -- a run on a Mac with a mouse
+   produces no pen events and answers nothing. Until it has been run, this app
+   captures no hover at all, and the trial handler discards hovering pointermove
+   because no stroke exists for that pointer.
+
+   WHAT THE NATIVE BUILD IS FOR
+
+   The measure being given up is initiation hesitation. In tremor and parkinsonism a
+   participant may hold the pen over the start point for a long time before
+   committing to the first stroke, and that pause is a measure rather than dead
+   time. From a web build it could at best be timed and located in x and y. Its
+   HEIGHT PROFILE -- whether the pen descends steadily, stalls partway down, or
+   repeatedly approaches and withdraws -- cannot be recovered afterwards from data
+   that never recorded it.
+
+   For the native iPadOS build, the intent is:
+     - hover onset, so time from trial start to first hover is recorded;
+     - hover dwell before the first contact, separately from time-to-first-contact,
+       so hesitation WITH the pen raised is distinguishable from hesitation with the
+       pen nowhere near the surface;
+     - the height profile through that dwell, sampled over the descent;
+     - pen lifts during drawing as first-class events -- count and duration -- since
+       the instruction is not to lift, rather than inferred from stroke boundaries
+       as they are here.
+
+   UIKit exposes a hover gesture recognizer that reports a z-offset for the pencil,
+   which is the mechanism for the third item. VERIFY THE EXACT API AND PROPERTY NAME
+   against current UIKit documentation when the native build is written -- it is not
+   asserted here, because a symbol name written from memory into a specification is
+   how a wrong one gets implemented.
+
+   This is the second concrete reason the native build exists, alongside palm
+   rejection. The two are independent: palm rejection blocks a task from running at
+   all, this one blocks a measurement from being taken within tasks that do run.
+   --------------------------------------------------------------------------- */
+
 const palmRejectionAffected = c =>
   !!(c && c.spiral && c.tap && (c.implement||"pen")==="pen");
 const PALM_WARNING = "Pen and finger do not work at the same time in Safari on iPadOS: "+
@@ -4599,6 +4664,12 @@ function buildRecord(){
       // Time from t_zero to the first tap. On a response-locked trial this is no longer
       // time taken out of the window, so it is kept as what it is: how long the participant
       // took to initiate the movement, which is a measure and not an overhead.
+      //
+      // Not housekeeping. In Koppelmans et al. 2023 (J Alzheimers Dis 95:1233-52) "Initial
+      // Reaction Time" was one of the two measures with the largest effect sizes separating
+      // AD and MCI from controls. Their design leaves the window running from the cue, so a
+      // slow initiator loses tapping time and the two quantities are confounded in one
+      // number; recording them separately is strictly better and costs nothing.
       initiation_latency_ms: R.responseLocked ? R.firstContactMs : null,
       initiation_latency_note: R.responseLocked
         ? "ms from t_zero to the first tap. The response window opens at this instant and runs length_s from there, so this time was NOT taken out of the trial. Add lead_in_ms to get the time from the START press itself."
