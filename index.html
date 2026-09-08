@@ -165,6 +165,24 @@
                 background:#176b42; transition:width .06s linear; }
   #levelbar.low i { background:#b4531f; }
   #levelbar.quiet i { background:#8c2020; }
+  /* Fills the drawing area the instant a timed window closes. It has to be readable from
+     the participant's side of the iPad without being looked for, so it covers the stage
+     rather than sitting in the admin bar where the hidden clock used to be. Below the
+     admin bar (z-index 2) so END and Reset stay reachable, and pointer-events:none so it
+     cannot swallow a press. */
+  #stopsign { position:absolute; inset:86px 0 0 0; z-index:1; display:none;
+              align-items:center; justify-content:center; pointer-events:none;
+              background:#8c2020; }
+  #stopsign.on { display:flex; animation:stopin .12s ease-out; }
+  /* The zones are hidden while STOP is up. Taps are already rejected once the window has
+     closed, but a zone still sitting there looks tappable, and it out-stacks the sign. */
+  #zones.off { display:none; }
+  #stopsign span { color:#fff; font-size:min(28vw,220px); font-weight:800; letter-spacing:.06em;
+                   line-height:1; }
+  @keyframes stopin { from { opacity:.4; } to { opacity:1; } }
+  /* Respects a reduced-motion preference: the signal still appears at full strength, it
+     simply does not fade in. */
+  @media (prefers-reduced-motion:reduce){ #stopsign.on { animation:none; } }
   /* Sits above the stage (z-index 60) so it is reachable during a trial. */
   #zoombanner { position:fixed; left:0; right:0; top:0; z-index:200;
                 background:#fdecec; border-bottom:2px solid #8c2020; color:#8c2020;
@@ -720,6 +738,9 @@
     <div id="reminder"></div>
     <button id="quit" onclick="backToSession()">Back to session</button>
   </div>
+  <!-- End-of-window signal for a timed trial. The participant is given no clock while the
+       trial runs, so the end has to be unmissable rather than inferred. -->
+  <div id="stopsign" aria-hidden="true"><span>STOP</span></div>
   <div id="overlay">
     <div id="ovBody"></div>
     <div id="ovFoot"></div>
@@ -3361,6 +3382,26 @@ const INSTRUCTED=new Set();      // tasks already explained this session
 // must not cut off a participant who is simply slow to start, which is the very thing the
 // response-locked window exists to stop penalising.
 const RESP_CEILING_MS=20000;
+// How long the end-of-window STOP stays up. Long enough that nobody mid-tap can miss it,
+// short enough that it has cleared before the examiner needs the canvas underneath.
+const STOP_SIGN_MS=1800;
+let STOP_TIMER=null;
+// The participant is deliberately given no clock during a timed trial, so the end of the
+// window has to announce itself. Timed trials only: a self-paced spiral has no window to
+// end, and covering the drawing the moment the pen lifts would hide the thing just drawn.
+function showStopSign(){
+  const el=$("stopsign"); if(!el) return;
+  el.classList.add("on");
+  if($("zones")) $("zones").classList.add("off");
+  clearTimeout(STOP_TIMER);
+  STOP_TIMER=setTimeout(()=>{ el.classList.remove("on");
+    if($("zones")) $("zones").classList.remove("off"); }, STOP_SIGN_MS);
+}
+function hideStopSign(){
+  const el=$("stopsign"); if(!el) return;
+  clearTimeout(STOP_TIMER); STOP_TIMER=null; el.classList.remove("on");
+  if($("zones")) $("zones").classList.remove("off");
+}
 
 function storageUsed(){
   const ts=listTrials();
@@ -3740,6 +3781,7 @@ function readyTrial(seq,c){
   $("ctrl").appendChild(lst);
 
   RUN={ready:true};
+  hideStopSign();
   cancelAnimationFrame(RAF);
   const loop=()=>{ drawScene(); RAF=requestAnimationFrame(loop); }; loop();
 }
@@ -3963,30 +4005,36 @@ function runTrial(seq,c){
       $("reminder").innerHTML=`<span style="color:var(--warm)">Trial running
         <b>${Math.round(RUN.longNoted)} s</b>. The trial continues until END is pressed.</span>`;
     }
-    // A task with no tone stream used to show elapsed time counting UP, which tells a
-    // participant nothing they can act on: you cannot pace a maximal-rate trial you cannot
-    // see the end of. Anything with a definite window now shows time REMAINING, large
-    // enough to read from the participant's side of the iPad. An untimed task has no
-    // remaining time to show, so it keeps the elapsed count.
+    // NO RUNNING CLOCK ON A TIMED TRIAL, of either kind -- not elapsed, not remaining.
+    //
+    // A visible clock is not neutral information: it lets the participant pace themselves,
+    // holding back early or sprinting into the last seconds, and the within-trial decrement
+    // is exactly what TAP_FAST measures. A countdown is the worse of the two, because it
+    // tells them precisely when to sprint. So a timed trial shows the participant nothing
+    // while it runs, and an unmistakable STOP the instant the window closes.
+    //
+    // The untimed self-paced spiral trials keep their elapsed readout. That is examiner
+    // information on a task with no window to pace against, and D7's long-trial notice
+    // depends on it.
     if(c.tap||c.audio||c.verbal){
       const hud=$("hud");
-      let txt, big=false;
+      let txt="", big=false;
       if(fluencyWinMs){
+        // Examiner cue on a task the participant is not racing. Left as it was.
         txt = RUN.fluencyCueMs===null
           ? "naming "+Math.max(0,(fluencyWinMs-(now-perf0))/1000).toFixed(1)+" s"
           : "naming done";
-      } else if(!seq){
-        if(untimed) txt=((now-perf0)/1000).toFixed(1)+" s";
-        else if(wStart==null){
-          // Waiting for the response that opens the window. Show the length they are about
-          // to get, so it is not mistaken for a clock that has already started.
-          txt=(durMs/1000).toFixed(0)+" s — TAP TO START"; big=true;
-        } else { txt=Math.max(0,left).toFixed(1); big=true; }
       } else if(untimed){
-        txt = left>0 ? left.toFixed(1)+" s" : "tones done";
-      } else { txt=Math.max(0,left).toFixed(1); big=true; }
+        txt=((now-perf0)/1000).toFixed(1)+" s";
+      } else if(!seq && wStart==null){
+        // Before the window opens the participant needs the one instruction that starts it.
+        // This is not a clock -- nothing is counting.
+        txt="TAP TO START"; big=true;
+      }
+      // Everything else -- any trial actually running against a window -- shows nothing.
       hud.textContent=txt;
       hud.classList.toggle("big", big);
+      hud.classList.remove("stop");
     }
 
     if(untimed && RUN.firstContactMs!==null && (!RUN.seq||RUN.toneClockDone)
@@ -4114,7 +4162,13 @@ function stopTrial(auto){
   // has already frozen the summary counts by then, so that tap appeared as an extra tap row
   // in the CSV that n_taps_single did not count. The two disagreeing is worse than either.
   RUN.ended=true;
-  RUN.stoppedEarly=!auto; finish();
+  RUN.stoppedEarly=!auto;
+  // Shown for every timed trial however it ended, including an early END: the participant
+  // has no clock, so "the trial is over" must come from the screen rather than be inferred
+  // from the examiner's body language. Not shown when the window never opened -- there was
+  // nothing to stop.
+  if(!RUN.untimed && !RUN.noResponseCeiling) showStopSign();
+  finish();
 }
 // The single way off the stage, on the admin bar and in the footer of every overlay that
 // would otherwise be a dead end. It replaces a separate "Abandon trial" button that did
@@ -4129,7 +4183,7 @@ function backToSession(){
            if(RUN.teardown) RUN.teardown(); endRecording(); }
   else RECORDER.release();
   cancelAnimationFrame(RAF); stopAudio();
-  hideOverlay(); stageOn(false); RUN=null; goPage(3);
+  hideStopSign(); hideOverlay(); stageOn(false); RUN=null; goPage(3);
 }
 
 
