@@ -935,13 +935,22 @@ const CATALOGUE = [
    one. Any hover-derived measure -- in this build or the native one -- is unavailable
    on the M1 iPad. If initiation hesitation matters, the sessions have to run on the M2.
 
-   AND THE TWO DEVICES DIFFER IN SOFTWARE, which changes what is recorded independently
-   of hover. The M1 ran Safari 26.6.1 and reported altitudeAngle and azimuthAngle,
-   populated and varying. The M2 ran Safari 16.6 and reported neither. Pen ALTITUDE and
-   AZIMUTH are inputs to the spiral kinematics, so as things stand the device that can
-   measure hesitation is the device that cannot measure pen orientation, and vice versa.
-   Updating the M2's iPadOS should resolve it and give one device with both; until that
-   is confirmed, do not assume a trial record carries the same fields on both iPads.
+   THE TWO DEVICES BRIEFLY DIFFERED IN SOFTWARE, and the episode is kept here because the
+   failure mode it exposed is permanent even though this instance is fixed. The M2 shipped
+   on Safari 16.6, which reports neither altitudeAngle nor azimuthAngle; the M1 was on
+   26.6.1, which reports both. Pen altitude and azimuth feed the spiral kinematics, so for
+   a time the device that could measure hesitation was the device that could not measure
+   pen orientation.
+
+   RESOLVED 2026-09-11: the M2 was updated and now reports altitudeAngle on every event
+   and azimuthAngle whenever the pen is in contact, alongside hover at the same ~59 Hz.
+   One device now does both, and it is the M2 that the pilot runs on.
+
+   The general point survives the fix. TWO IPADS RUNNING THE SAME BUILD CAN WRITE RECORDS
+   WITH DIFFERENT FIELDS POPULATED, because which pointer properties exist is a property
+   of the OS and not of this code. That is why user_agent is exported on every row: without
+   it, a column that is populated in some rows and empty in others is unattributable, and
+   looks like a recording fault rather than an OS difference.
 
    What IS delivered on the device tested, and is worth knowing because the spiral
    kinematics use it: pressure, tiltX and tiltY, altitudeAngle and azimuthAngle, all
