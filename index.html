@@ -5141,7 +5141,13 @@ const STATE_FIELDS=["pid","grp","sex","byear","bmonth","domhand","ambihand","not
                     "pitch_pen","turns_pen","pitch_finger","turns_finger",
                     "startdia","endang","split","tapdia","zonegap","longtrial",
                     "fstd","ftgt","lvl","seedmode","idle","ppmm","spest"];
+// Start-up runs the same change handlers the UI does, and those handlers persist. Until
+// restoreState() has had its chance to read what is on the device, persisting would write
+// the empty start-up DOM straight over a saved session -- which is how a reload came to
+// destroy the thing a reload exists to recover. Nothing saves before the boot completes.
+let BOOTED=false;
 function saveState(){
+  if(!BOOTED) return;
   try{
     const f={}; STATE_FIELDS.forEach(id=>{ if($(id)) f[id]=$(id).value; });
     localStorage.setItem(STATE_KEY, JSON.stringify({
@@ -5293,8 +5299,11 @@ renderSecureNote(); onVoiceConsentChange(); dotReset(); renderAudioStore();
 renderZoomBanner();
 
 // Nothing below start-up should be able to leave a blank page.
-try { if(restoreState()) goPage(3); }
+// restoreState() reads first, THEN saving is armed. Both branches arm it: a session that
+// could not be restored still has to be able to save the one being entered now.
+try { if(restoreState()) goPage(3); BOOTED=true; }
 catch(e){
+  BOOTED=true;
   clearState();
   if($("statusbar")) $("statusbar").innerHTML =
     `<span style="color:var(--warm)">Start-up recovered from a bad saved session, which has
