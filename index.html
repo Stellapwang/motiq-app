@@ -779,7 +779,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.01 2026-09-11";
+const BUILD = "v12.02 2026-09-11";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -3684,12 +3684,36 @@ function sessionComplete(){
 function audioCfgFor(task){
   const c=byId(task); if(!c.audio) return null;
   const a=AUDIO_DEFAULTS[task]; if(!a) return null;
+
+  // A SUSTAINED TRIAL IS NOT SELF-PACED, whatever lengthS says. Spiral conditions carry
+  // lengthS null because they have no fixed TRIAL length, and that null used to imply
+  // self-paced -- which selects stopMode "drawEnd", the adaptive cut that ends the stream
+  // once drawing has stopped for tailS seconds past a floorS minimum.
+  //
+  // On a sustained window that is exactly wrong. The pen lifts between spirals, and PEN_VCNT
+  // and PEN_VODD carry tailS 0, so the stream would have ended at the FIRST lift after 20 s
+  // and the participant would have drawn the rest of a 60 s window with no cognitive load at
+  // all. The dual task would have quietly become a single task partway through, on the trials
+  // the primary endpoint is measured from, and nothing in the record would have said so
+  // beyond a stream_cut_ms that looks like a normal adaptive cut.
+  //
+  // A sustained trial has a definite window, so its stream is bounded by that window and
+  // ends with it: stopMode "fixed", generated to the window length. endWindow() stops the
+  // audio when the window closes.
+  const sustained = !!(c.spiral && TRIAL.sustainedS>0);
+  if(sustained){
+    return { ...a, key:task,
+      durS: TRIAL.sustainedS,
+      stopMode: "fixed",
+      floorS: a.floorS ?? 20, tailS: a.tailS ?? 3,
+      self_paced: false, window_bound: true };
+  }
   const selfPaced = TRIAL.lengthS==null;
   return { ...a, key:task,
     durS: selfPaced ? (a.selfPacedDurS ?? a.durS) : TRIAL.lengthS,
     stopMode: selfPaced ? "drawEnd" : (a.stopMode || "fixed"),
     floorS: a.floorS ?? 20, tailS: a.tailS ?? 3,
-    self_paced: selfPaced };
+    self_paced: selfPaced, window_bound: false };
 }
 
 // A fresh start number every trial, drawn uniformly inside the range the prompt declares.
