@@ -212,12 +212,17 @@
        border-radius:8px;padding:9px 13px;margin:0 0 12px;font-size:14px;color:var(--ink)"></div>
 
   <div class="steps">
+    <!-- The number in the label is the STEP, and the id is the page. They stopped matching
+         when the checks were split out: the checks page is element 7 but step 3. Renumbering
+         the elements instead would have meant rewriting seventeen goPage() calls whose
+         numbers are load-bearing, and one of them being missed is a dead button. -->
     <span id="s1" class="on" onclick="goPage(1)">1 · Screen</span>
-    <span id="s2" onclick="goPage(2)">2 · Participant &amp; checks</span>
-    <span id="s3" onclick="goPage(3)">3 · Session</span>
-    <span id="s4" onclick="goPage(4)">4 · Parameters</span>
-    <span id="s5" onclick="goPage(5)">5 · Instructions</span>
-    <span id="s6" onclick="goPage(6)">6 · Results &amp; data</span>
+    <span id="s2" onclick="goPage(2)">2 · Participant</span>
+    <span id="s7" onclick="goPage(7)">3 · Checks</span>
+    <span id="s3" onclick="goPage(3)">4 · Session</span>
+    <span id="s4" onclick="goPage(4)">5 · Parameters</span>
+    <span id="s5" onclick="goPage(5)">6 · Instructions</span>
+    <span id="s6" onclick="goPage(6)">7 · Results &amp; data</span>
   </div>
 
   <!-- ===================== 1 CALIBRATION ===================== -->
@@ -409,6 +414,19 @@
       <div><label for="notes">Notes</label>
         <textarea id="notes" rows="3" placeholder="Glasses, tremor, fatigue, interruptions, protocol deviations."></textarea></div>
     </fieldset>
+
+    <div class="navrow">
+      <button class="big ghost" onclick="goPage(1)">Back</button>
+      <button class="big" onclick="goPage(7)">Next</button></div>
+  </div>
+
+  <!-- ===================== DEVICE AND PARTICIPANT CHECKS =====================
+       Split from the Participant page in v12.05. They were one page because they are
+       done in one sitting, but they are different KINDS of thing: who the participant
+       is, versus whether this device and this person can produce usable data today.
+       The first is typed once and rarely revisited; the second is worked through with
+       the participant in front of you, and two of the three write their own records. -->
+  <div id="pg7" class="hidden">
     <fieldset>
       <legend>Pen check <span style="font-weight:400;color:var(--muted)">— per participant</span></legend>
       <p class="note" style="margin-top:0">Ask the participant to draw the spiral below, once
@@ -507,9 +525,8 @@
         <div id="roomresult"></div>
       </div>
     </fieldset>
-
     <div class="navrow">
-      <button class="big ghost" onclick="goPage(1)">Back</button>
+      <button class="big ghost" onclick="goPage(2)">Back</button>
       <button class="big" onclick="goPage(3)">Next</button></div>
   </div>
 
@@ -815,7 +832,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.04 2026-09-11";
+const BUILD = "v12.05 2026-09-11";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1411,13 +1428,15 @@ const TRACE_SPEEDS_CM_S=[2,4,6];   // slow and careful, through to brisk
 function spiralPathMM(pitch,turns){ return pitch*Math.PI*turns*turns; }
 
 /* ------------------------------------------------------------------ pages */
+const PAGE_IDS=[1,2,7,3,4,5,6];        // element ids, in the order the tabs present them
 function goPage(n){
-  [1,2,3,4,5,6].forEach(i=>$("pg"+i).classList.toggle("hidden", i!==n));
-  [1,2,3,4,5,6].forEach(i=>$("s"+i).classList.toggle("on", i===n));
+  PAGE_IDS.forEach(i=>$("pg"+i).classList.toggle("hidden", i!==n));
+  PAGE_IDS.forEach(i=>$("s"+i).classList.toggle("on", i===n));
   // The screening canvases size themselves from clientWidth, which is not final in the
   // same tick the page is unhidden -- laying them out then can give a pad a fraction of
   // its real width. Measure on the next frame instead.
-  if(n===2){ onVoiceConsentChange(); requestAnimationFrame(()=>{ dotReset(); }); }
+  if(n===2) onVoiceConsentChange();
+  if(n===7){ onVoiceConsentChange(); requestAnimationFrame(()=>{ dotReset(); }); }
   if(n===3){ renderPlan(); renderQueue(); }
   renderStatus();
   if(n===4){ renderAudioTable(); updateGeo(); }
@@ -2353,10 +2372,21 @@ const tierBadge = c => { const t=tierOf(c);
     letter-spacing:.02em">${t.label}</span>`; };
 
 // D5. Display grouping only. Administration order stays governed by `order`.
+// Kept for the one place that still names a task's family in prose. It is NOT what the plan
+// table groups by any more: grouping by id prefix silently DROPPED any task whose code did
+// not start with one of these three, which is exactly what happened to VOC_VODD -- it was in
+// the catalogue, had a plan entry, and could never be ticked because no family claimed it.
 const FAMILIES=[ { key:"TAP_", label:"Tapping" },
                  { key:"PEN_", label:"Stylus drawing" },
-                 { key:"FIN_", label:"Finger drawing" } ];
+                 { key:"FIN_", label:"Finger drawing" },
+                 { key:"VOC_", label:"Voice only" } ];
 const familyOf = id => (FAMILIES.find(f=>id.startsWith(f.key)) || FAMILIES[2]).label;
+// The plan table groups by TIER and orders within a tier by the administration sequence,
+// so what the examiner reads down the page is the order the session runs in. Every task has
+// a tier, so nothing can fall outside the grouping the way it could with prefixes.
+const TIER_GROUPS=[ { key:"core",   label:"Core" },
+                    { key:"second", label:"Secondary" },
+                    { key:"expl",   label:"Exploratory" } ];
 
 // One toggle per tier, combinable in any order: Core alone, Core and Exploratory, all
 // three, none. Selection only -- repeats, lengths and prompts are untouched.
@@ -2460,12 +2490,15 @@ function renderPlan(){
   renderStatus();
   let h=`<tr><th></th><th>Task</th><th>Repeats</th><th>Hands</th><th>Length</th><th>Uses</th><th></th></tr>`;
   const ordered=CATALOGUE.slice().sort((a,b)=>a.order-b.order);
-  FAMILIES.forEach(fam=>{
-    const rows=ordered.filter(c=>c.id.startsWith(fam.key));
+  const seen=new Set();
+  TIER_GROUPS.forEach(grp=>{
+    const rows=ordered.filter(c=>c.tier===grp.key);
     if(!rows.length) return;
+    rows.forEach(c=>seen.add(c.id));
     h+=`<tr><td colspan="7" style="background:#f2f5f8;font-weight:600;font-size:12px;
         text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:7px 9px">
-        ${fam.label}</td></tr>`;
+        ${grp.label} <span style="font-weight:400;text-transform:none;letter-spacing:0">—
+        ${rows.length} condition${rows.length===1?"":"s"}, in administration order</span></td></tr>`;
     rows.forEach(c=>{
       const s2=PLAN[c.id], blocked=taskBlocked(c);
       if(blocked && s2.include) s2.include=false;
@@ -2498,6 +2531,13 @@ function renderPlan(){
       </tr>`;
     });
   });
+  // The failure this grouping replaced was a SILENT one: a task nobody had a group for
+  // simply never rendered. If a tier is ever added without a group, say so loudly rather
+  // than losing the row again.
+  const orphan=ordered.filter(c=>!seen.has(c.id));
+  if(orphan.length) h+=`<tr><td colspan="7" class="bad" style="padding:8px 9px">
+      <b>Not shown above:</b> ${orphan.map(c=>esc(c.id)+" (tier "+esc(c.tier)+")").join(", ")}
+      — no group matches that tier, so these cannot be selected. This is a bug.</td></tr>`;
   $("planTable").innerHTML=h;
   renderTierButtons();
   if($("presetNote")) $("presetNote").innerHTML = PRESET_NOTE
@@ -6199,7 +6239,7 @@ window.addEventListener("resize",()=>{
   const running = RUN && !RUN.ready;
   if(running){ noteTrialResize(); return; }
   if($("stage").classList.contains("on")){ layout(); drawScene(); }
-  else if(!$("pg2").classList.contains("hidden")){ dotReset(); }
+  else if(!$("pg7").classList.contains("hidden")){ dotReset(); }
 });
 // Recorded on the same footing as a mid-trial zoom, and invalidating the trial through the
 // same geometry_valid field, because the consequence is the same: the millimeters in this
