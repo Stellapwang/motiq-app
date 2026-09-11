@@ -354,7 +354,12 @@
              never in an unrunnable state, and the record marks it as nominated. -->
         <div id="ambiBox" class="hidden"><label for="ambihand">Preferred dominant hand
             <span style="color:#8c2020">✱ required</span></label>
-          <select id="ambihand"><option value="right">Right</option>
+          <!-- Starts UNSET. It used to default to Right, so an examiner who never looked at
+               this field still produced a definite side in the data with nothing recording
+               that it had been defaulted rather than decided. An empty option makes "not
+               answered" visible to the app, and no trial list builds until it is answered. -->
+          <select id="ambihand"><option value="">— choose —</option>
+            <option value="right">Right</option>
             <option value="left">Left</option></select></div>
       </div>
       <div id="agenote" class="note"></div>
@@ -688,8 +693,10 @@
         <div><label for="ftgt">Target (Hz)</label><input id="ftgt" type="number" value="2000" step="50"></div>
         <div><label for="lvl">Tone level (digital, 0–1)</label><input id="lvl" type="number" value="0.5" step="0.05" min="0.05" max="1"></div>
         <div><label for="seedmode">Sequence</label>
-          <select id="seedmode"><option value="random" selected>New random each trial</option>
-            <option value="fixed">Fixed seed</option></select></div>
+          <select id="seedmode">
+            <option value="matched" selected>Matched — same stream for every participant</option>
+            <option value="random">New random each trial</option>
+            <option value="fixed">Fixed seed (one stream everywhere)</option></select></div>
       </div>
       <div class="note"><b>Tone level is not the volume.</b> It is the digital amplitude of the
       synthesised tone before the iPad's own volume control: 1.0 is the loudest undistorted
@@ -820,7 +827,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.06 2026-09-11";
+const BUILD = "v12.07 2026-09-11";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -893,12 +900,12 @@ const CATALOGUE = [
   // anchored on its first stroke while this starts on the clock, so the two are not
   // time-matched and a naive difference score between them is not a dual-task cost. Its
   // job is to show the participant can do the task at all without competing motor demand.
-  { id:"VOC_VODD", label:"Counting the high tones aloud, no drawing", order:50, tier:"expl", spiral:0, tap:0, audio:1, zones:0, hands:"none", repeats:1, lengthS:60,
+  { id:"VOC_VODD", label:"Counting the high tones aloud, no drawing", order:50, tier:"core", spiral:0, tap:0, audio:1, zones:0, hands:"none", repeats:1, lengthS:60,
                    count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1 },
 
   // --- Block D: drawing, then drawing under load -----------------------------------
   { id:"PEN_SPRL", label:"Spiral",                        order:60,  tier:"core",   spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:2, lengthS:null, implement:"pen", sustainedS:60 },
-  { id:"PEN_VODD", label:"Spiral + counting the high tones aloud", order:70, tier:"expl", spiral:1, tap:0, audio:1, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
+  { id:"PEN_VODD", label:"Spiral + counting the high tones aloud", order:70, tier:"core", spiral:1, tap:0, audio:1, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
                    selfPaceable:1, fixedS:60, count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1 },
   // "Both, alternating" with one trial per hand. The battery table gives the hand as
   // alternating and the trial count as 1; read as 1 PER HAND, since a single trial cannot
@@ -2038,10 +2045,14 @@ function renderPidNote(){
 function renderAmbiHand(){
   const on=$("domhand").value==="ambidextrous";
   $("ambiBox").classList.toggle("hidden", !on);
-  if($("ambinote")) $("ambinote").innerHTML = on
-    ? `<div class="note">Recorded as <b>ambidextrous</b>. Tasks set to the dominant hand run
-       on the <b>${dominantSide()}</b> hand. Both the answer and the nominated side are
-       written into every trial record.</div>` : "";
+  if($("ambinote")) $("ambinote").innerHTML = !on ? ""
+    : ambiHandMissing()
+      ? `<div class="warn">Recorded as <b>ambidextrous</b>, and no preferred dominant hand has
+         been chosen yet. Most of the battery runs on "the dominant hand", so no trial list can
+         be built until one is nominated.</div>`
+      : `<div class="note">Recorded as <b>ambidextrous</b>. Tasks set to the dominant hand run
+         on the <b>${dominantSide()}</b> hand. Both the answer and the nominated side are
+         written into every trial record.</div>`;
 }
 ["domhand","ambihand"].forEach(id=>$(id).addEventListener("change",()=>{
   renderAmbiHand();
@@ -2637,7 +2648,19 @@ function planSummary(){
 
 // Build the ordered trial list. Hands alternate dominant-first within a task,
 // which keeps hand from confounding with practice and fatigue.
+// An ambidextrous participant has no dominant hand until one is nominated, and most of the
+// battery is specified as "the dominant hand". Guessing would put an arbitrary choice into
+// the data unrecorded, so this blocks the same way a missing participant ID does.
+function ambiHandMissing(){
+  return $("domhand").value==="ambidextrous" && !($("ambihand") && $("ambihand").value);
+}
+const AMBI_PROMPT="Choose the preferred dominant hand before starting.\n\n"+
+  "This participant is recorded as ambidextrous, and most of the battery is specified as "+
+  "\"the dominant hand\". Without a nominated side there is no hand to run those trials on, "+
+  "and defaulting to one would put an arbitrary choice into the data with nothing recording "+
+  "that it was arbitrary.";
 function buildQueue(){
+  if(ambiHandMissing()){ alert(AMBI_PROMPT); goPage(2); return; }
   if(!$("pid").value.trim()){
     alert("Enter a participant ID before building the trial list.\n\nWithout one, trials save as \"unnamed\" and cannot be told apart later.");
     goPage(2); return;
@@ -2872,10 +2895,16 @@ const handWord=h=> h==="both"?"both":h==="dominant"?"dominant":"non-dominant";
 // their own answer. For an ambidextrous one there is no answer to read, so the examiner
 // nominates a side and it is recorded -- this previously resolved to the right hand with
 // nothing on screen or in the record saying so.
+// Null for an ambidextrous participant whose side has not been nominated. The callers that
+// start a trial check ambiHandMissing() first, so nothing reaches the stage in that state --
+// and a null here is far better than a silent "right", which is what this used to return.
 function dominantSide(){
   const d=$("domhand").value;
   if(d==="left") return "left";
-  if(d==="ambidextrous") return ($("ambihand")&&$("ambihand").value==="left")?"left":"right";
+  if(d==="ambidextrous"){
+    const n=$("ambihand") && $("ambihand").value;
+    return n==="left" ? "left" : n==="right" ? "right" : null;
+  }
   return "right";
 }
 function physHand(h){
@@ -3189,11 +3218,37 @@ updateGeo();
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
   t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
 let LAST_SEED=null;
+// SEQUENCE SEEDING. Three modes, and the default is the one that removes stimulus variance
+// from the between-group comparison.
+//
+// "matched"  the seed is derived from the TASK and the REPEAT NUMBER, and from nothing else.
+//            So every participant hears the identical stream on TAP_TONE repeat 1, and a
+//            different identical stream on repeat 2 -- but no two TASKS ever share a stream.
+//            This is what makes a group difference a difference in the participants rather
+//            than partly a difference in the tones they happened to get. Repeat number is in
+//            the seed because two repeats of one task should not be the same stream: the
+//            second would be partly a memory test.
+// "random"   a new stream every trial. Fine for piloting, wrong for a group comparison --
+//            stimulus variance goes straight into the between-subject variance.
+// "fixed"    seed 1 for everything. NOT the same as matched: every task gets the same
+//            stream as every other task, so TAP_TONE and PEN_VODD become the same sequence
+//            and any comparison between them is confounded with having heard it twice.
 function drawSeed(){
-  LAST_SEED = $("seedmode").value==="fixed" ? 1
-            : (Math.floor(Math.random()*2147483647)+1);
+  const mode=$("seedmode").value;
+  if(mode==="fixed"){ LAST_SEED=1; return LAST_SEED; }
+  if(mode==="random"){ LAST_SEED=Math.floor(Math.random()*2147483647)+1; return LAST_SEED; }
+  // Matched. The repeat is the one this trial is ABOUT to become, read the same way
+  // nextIds() will assign it at save time, so the seed matches the repeat it is filed under.
+  const pid=$("pid").value||"unnamed";
+  const H = TRIAL.hand==="both" ? "B" : (TRIAL.drawHand||TRIAL.tapHand)==="left" ? "L" : "R";
+  const nextRepeat=(REPEATS[`${pid}|${TRIAL.task}|${H}`]||0)+1;
+  // Participant id is deliberately NOT in the hash -- that is the whole point.
+  LAST_SEED = (hash32(`${TRIAL.task}#${H}#${nextRepeat}`) % 2147483646) + 1;
   return LAST_SEED;
 }
+// djb2, returned as a 32-bit unsigned integer. Same string, same number, on every device and
+// every run -- which is what "matched across participants" depends on.
+function hash32(str){ let h=5381; for(let i=0;i<str.length;i++) h=((h<<5)+h+str.charCodeAt(i))>>>0; return h>>>0; }
 /* ---------------------------------------------------------------------------
    Interval timing: a floor plus an exponential tail, not uniform jitter.
 
@@ -3769,6 +3824,7 @@ let LAST_TASK=null, LAST_HAND=null;      // what the participant was last shown
 // adhoc:true -- a trial run while tuning a parameter must never look like a protocol trial
 // in the export.
 function runAdhoc(taskId){
+  if(ambiHandMissing()){ alert(AMBI_PROMPT); goPage(2); return; }
   if(!$("pid").value.trim()){
     alert("Enter a participant ID before running a trial.\n\nWithout one the trial saves as \"unnamed\" and cannot be told apart later.");
     goPage(2); return;
