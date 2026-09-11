@@ -1733,7 +1733,7 @@ function screenRecordBase(which){
   const b=birthInfo(), pid=$("pid").value||"";
   const iso=new Date().toISOString();
   return {
-    schema:"motiq_prototype/9", build:BUILD, record_type:"screening", screen:which,
+    schema:"motiq_prototype/10", build:BUILD, record_type:"screening", screen:which,
     screen_uid:`${iso.replace(/[:.]/g,"-")}_${pid||"unnamed"}_${which}`,
     started_iso:iso,
     participant:{ id:pid, group:$("grp").value, sex:$("sex").value||null,
@@ -3189,7 +3189,22 @@ const idbDel  = id  => idbTx("readwrite", st=>st.delete(id));
 const idbClear= ()  => idbTx("readwrite", st=>st.clear());
 
 /* ------------------------------------------------------- layout + draw */
-let L=null,SPIRAL=null,STROKES=[],TAPS=[],TAPFLASH=null;
+let L=null,SPIRAL=null,STROKES=[],TAPS=[],TAPFLASH=null,HOVER=[];
+// Hover arrives at about 59 Hz, measured on an 11-inch iPad Pro 4th generation. A stored
+// hover row costs 49 bytes, measured on a real saved record rather than estimated, so a
+// 45 s trial spent ENTIRELY hovering would be ~2650 rows and ~128 KB against roughly 5 MB
+// of localStorage shared by every trial on the device.
+//
+// That worst case does not occur: during a spiral the pen is in contact almost all of the
+// time, and hover happens only before the first stroke and between lifts. A realistic trial
+// carrying a few seconds of initiation hover costs single-digit KB -- the test trial here
+// held 49 rows for 2.4 KB against a 9.7 KB record. The cap exists for the case nobody
+// foresaw, not for the expected one.
+//
+// It does NOT truncate silently. On reaching the cap recording stops and the record says
+// so, because a hover stream that stopped early and one that ended naturally are otherwise
+// indistinguishable in the data.
+const HOVER_MAX_ROWS=8000;
 const FLASH_MS=260;
 let TRIAL=null;                   // the queue item being run
 
@@ -3500,7 +3515,7 @@ function openTrial(showInstruction){
     catch(e){ alert("Cannot build the stream for this trial:\n\n"+e.message); return; }
     audio();
   }
-  STROKES=[]; TAPS=[]; TAPFLASH=null;
+  STROKES=[]; TAPS=[]; TAPFLASH=null; HOVER=[];
   TRIAL.voiceFailure=null;
   stageOn(true);
   layout(); drawScene();
@@ -3800,6 +3815,14 @@ function runTrial(seq,c){
         startedISO:new Date().toISOString(),firstContactMs:null,toneClockDone:false,
         lastContact:null,saved:false,c,voice:null,voicePending:null,fluencyCueMs:null,
         responseLocked, windowStart, noResponseCeiling:false, ceilTimer:null, ended:false,
+        // Initiation measures taken BEFORE the pen ever touches. On a spiral task the
+        // interval between the pen appearing above the glass and committing to the first
+        // stroke is the hesitation itself, not dead time waiting for the trial to start.
+        firstHoverMs:null, hoverTruncated:false, hoverSeen:0,
+        // Lifts during drawing. Recoverable from stroke boundaries, but the instruction is
+        // NOT to lift, so how often and for how long the pen left the paper is a measure in
+        // its own right rather than something to be reconstructed by whoever reads the file.
+        lifts:[], lastLiftAt:null,
         measuredDurationMs:null,
         // A press means the examiner intervened -- prompted a participant who had gone
         // quiet, or marked an interruption. Offsets are on the trial clock.
@@ -3871,16 +3894,77 @@ function runTrial(seq,c){
     const st=[]; STROKES.push(st); strokeFor.set(e.pointerId,st); addPoint(st,e,t);
     if(RUN.firstContactMs===null) RUN.firstContactMs=+t.toFixed(2);
   };
-  const move=e=>{ const st=strokeFor.get(e.pointerId); if(!st) return;
+  // A LIFT IS NOT A HOVER. pointerup, pointerout, pointerleave and pointercancel all arrive
+  // with pressure 0 and buttons 0 -- the pen has just STOPPED touching -- so testing pressure
+  // and buttons alone scores the end of every stroke as a hover. Verified the hard way: the
+  // probe made exactly that mistake and reported a first hover 90 ms BEFORE first contact on
+  // a device delivering no hover at all. Only events reporting a position the pen currently
+  // occupies can be hover.
+  // getCoalescedEvents reports the finer-grained events the platform merged into this one.
+  // It can legitimately return an EMPTY list -- there was nothing to merge -- and iterating
+  // that directly silently drops the event itself. The pen path has always had this shape
+  // and got away with it because real hardware fills the list; nothing guarantees that.
+  const coalesced = e => {
+    if(!e.getCoalescedEvents) return [e];
+    const evs=e.getCoalescedEvents();
+    return (evs && evs.length) ? evs : [e];
+  };
+  const isHoverEv = e => e.pointerType==="pen" && e.pressure===0 && e.buttons===0
+                         && (e.type==="pointermove"||e.type==="pointerover");
+  const addHover=(e,t)=>{
+    RUN.hoverSeen++;
+    if(RUN.firstHoverMs===null) RUN.firstHoverMs=+t.toFixed(2);
+    if(HOVER.length>=HOVER_MAX_ROWS){ RUN.hoverTruncated=true; return; }
+    const m=toMM(e.clientX,e.clientY);
+    HOVER.push({t:+t.toFixed(2),x:+m.x.toFixed(3),y:+m.y.toFixed(3),
+                tx:e.tiltX??null,ty:e.tiltY??null});
+  };
+  const move=e=>{
+    const st=strokeFor.get(e.pointerId);
+    // Hover used to die exactly here: no stroke for this pointer, so return. A hovering pen
+    // never has a stroke, so every hover event the platform sent was discarded unread.
+    if(!st){
+      if(c.spiral && isHoverEv(e)){
+        for(const ev of coalesced(e)) addHover(ev,performance.now()-perf0);
+      }
+      return;
+    }
     RUN.lastContact=performance.now();
-    const evs=e.getCoalescedEvents?e.getCoalescedEvents():[e];
+    const evs=coalesced(e);
     for(const ev of evs) addPoint(st,ev,performance.now()-perf0,evs.length>1); };
-  const up=e=>{ strokeFor.delete(e.pointerId); RUN.lastContact=performance.now();
-    if(strokeFor.size===0) RUN.penUpAt=performance.now(); };
-  cv.addEventListener("pointerdown",down); cv.addEventListener("pointermove",move);
+  // Entry and exit of the hover region, which is not the same as the first hover SAMPLE:
+  // pointerover fires the moment the pen becomes known, before it has moved.
+  const over=e=>{ if(c.spiral && isHoverEv(e)) addHover(e,performance.now()-perf0); };
+  const out=e=>{
+    if(!c.spiral || e.pointerType!=="pen") return;
+    // The pen left the hover band entirely -- lifted clear rather than merely stopped
+    // drawing. Recorded as the end of a hover episode, distinct from a stroke ending.
+    RUN.hoverExits=(RUN.hoverExits||0)+1;
+  };
+  const up=e=>{
+    strokeFor.delete(e.pointerId); RUN.lastContact=performance.now();
+    if(strokeFor.size===0){
+      RUN.penUpAt=performance.now();
+      // A lift only counts once drawing has begun. Before the first stroke there is nothing
+      // to lift from, and counting it would conflate initiation with interruption.
+      if(RUN.firstContactMs!==null) RUN.lastLiftAt=performance.now();
+    } };
+  // Pairs a lift with the touch-down that ends it, so lift DURATION is recorded rather than
+  // only lift count. Wrapped around the existing handler so the drawing path is untouched.
+  const downWrapped=e=>{
+    if(RUN.lastLiftAt!=null && strokeFor.size===0 && drawOK(e.pointerType) && c.spiral){
+      RUN.lifts.push({ at_ms:+(RUN.lastLiftAt-perf0).toFixed(1),
+                       dur_ms:+(performance.now()-RUN.lastLiftAt).toFixed(1) });
+      RUN.lastLiftAt=null;
+    }
+    down(e);
+  };
+  cv.addEventListener("pointerdown",downWrapped); cv.addEventListener("pointermove",move);
+  cv.addEventListener("pointerover",over); cv.addEventListener("pointerout",out);
   cv.addEventListener("pointerup",up); cv.addEventListener("pointercancel",up);
-  RUN.teardown=()=>{ cv.removeEventListener("pointerdown",down);
+  RUN.teardown=()=>{ cv.removeEventListener("pointerdown",downWrapped);
     cv.removeEventListener("pointermove",move); cv.removeEventListener("pointerup",up);
+    cv.removeEventListener("pointerover",over); cv.removeEventListener("pointerout",out);
     cv.removeEventListener("pointercancel",up); };
 
   $("ctrl").innerHTML="";
@@ -4082,7 +4166,7 @@ function resetTrial(){
   endRecording();
   if(RUN.voicePending) RUN.voicePending.then(()=>{ if(RUN&&RUN.voice) RUN.voice.blob=null; });
   if(RUN.teardown) RUN.teardown();
-  STROKES=[]; TAPS=[]; TAPFLASH=null;
+  STROKES=[]; TAPS=[]; TAPFLASH=null; HOVER=[];
   // Re-open rather than rebuilding in place: a fresh stream, a fresh sequence, and the
   // microphone acquired again inside this button press, which is where Safari allows it.
   RUN=null; openTrial(false);
@@ -4214,7 +4298,7 @@ function finish(){
          sdL:sdOf(iti(lt)),sdR:sdOf(iti(rt)),sdS:sdOf(iti(sg)),
          altPct: c.zones===2&&zs.length>1 ? 100*alt/(zs.length-1) : null };
   }
-  LAST={RUN,STROKES,TAPS,att,SPIRAL,tp,layoutSafe:L.safeAreaMM,ppmm:L.p,trial:{...TRIAL}};
+  LAST={RUN,STROKES,TAPS,HOVER,att,SPIRAL,tp,layoutSafe:L.safeAreaMM,ppmm:L.p,trial:{...TRIAL}};
   RUN.saved=false;
 
   cancelAnimationFrame(RAF); drawScene();
@@ -4478,7 +4562,7 @@ function buildRecord(){
   const heard = c.count ? countedHeard(R.seq, R.streamCutMs, c.countOf) : null;
   const scheduled = R.seq ? (c.countOf==="all" ? R.seq.n : R.seq.t) : null;
   return {
-    schema:"motiq_prototype/9", build:BUILD, record_type:"trial",
+    schema:"motiq_prototype/10", build:BUILD, record_type:"trial",
     note:"PROTOTYPE. Browser mm and browser timing are approximations.",
     trial_id:R.trialId, trial_uid:R.trialUid,
     session_key:SESSION_KEY,
@@ -4605,6 +4689,37 @@ function buildRecord(){
         : R.seq.onsets.filter((o,i)=>o<=R.streamCutMs && R.seq.isTarget[i]).length,
       onsets_ms:R.seq.onsets, tone_type:R.seq.isTarget.map(x=>x?"target":"standard"),
       intervals_ms:R.seq.intervals, min_isi_ms:R.seq.minISI } : null,
+    // PRE-WINDOW INITIATION. On a spiral task the pen is visible above the glass before it
+    // commits, and the gap between those two instants is the hesitation being measured --
+    // not dead time, and not lost drawing time. Requires an M2-or-later iPad: on an M1
+    // there is no hover at all and every field here is null, which is a hardware fact and
+    // not a recording failure. See the PENCIL HOVER comment.
+    hover: R.c && R.c.spiral ? {
+        supported: R.hoverSeen>0,
+        n_samples: (LAST.HOVER||[]).length,
+        n_events_seen: R.hoverSeen,
+        first_hover_ms: R.firstHoverMs,
+        first_contact_ms: R.firstContactMs,
+        // The measure. Null when either end is missing -- a trial where the pen never
+        // hovered and one where it never touched are both uninterpretable here, and must
+        // not be collapsed to zero.
+        hover_to_contact_ms: (R.firstHoverMs!=null && R.firstContactMs!=null)
+          ? +(R.firstContactMs-R.firstHoverMs).toFixed(2) : null,
+        hover_exits: R.hoverExits||0,
+        truncated: !!R.hoverTruncated,
+        truncated_at_rows: R.hoverTruncated ? HOVER_MAX_ROWS : null,
+        note: R.hoverSeen>0
+          ? "hover samples are pen positions with the nib off the glass, on the same clock and the same millimetre frame as the pen samples. HEIGHT above the glass is not available from a web build on any device; only position is. hover_to_contact_ms is the interval between the pen first appearing and the first stroke."
+          : "no hover events were delivered on this device. Apple Pencil hover requires an M2-or-later iPad; on earlier hardware this is expected and is not a recording failure."
+      } : null,
+    // Lifts during drawing. Reconstructable from stroke boundaries, but the instruction is
+    // not to lift, so this is a measure rather than a by-product.
+    pen_lifts: R.c && R.c.spiral ? {
+        count:(R.lifts||[]).length,
+        total_ms:+((R.lifts||[]).reduce((a,l)=>a+l.dur_ms,0)).toFixed(1),
+        lifts:R.lifts||[],
+        note:"a lift is the pen leaving the glass and returning, counted only after the first stroke. The spiral instruction is to draw without lifting, so count and duration are outcome measures."
+      } : null,
     // Recoverable from the data later: which trials were run under a platform limit that
     // makes the dual task not a dual task.
     input_limits: palmRejectionAffected(c) ? {
@@ -4655,6 +4770,7 @@ function buildRecord(){
       note:"identical on every dual task, participant and visit. Without it, attention allocation varies freely and a motor-impaired participant tends to protect the motor task, which appears as a group difference in dual-task cost that is really a difference in strategy." },
     spiral_rendered:LAST.SPIRAL||null,
     strokes:LAST.STROKES,
+    hover_samples:LAST.HOVER||[],
     strokes_units:"x,y mm from spiral center, y up; t ms from START; p pressure 0-1",
     taps:LAST.TAPS,
     attribution: LAST.att ? { rule:"nearest preceding onset, no upper bound",
@@ -4786,7 +4902,14 @@ const CSV_HEAD=[
   "trial_length_s","measured_duration_ms","lead_in_ms",
   "response_locked","window_start_ms","initiation_latency_ms",
   "no_response_ceiling","examiner_event_count","examiner_event_ms",
-  "first_contact_ms","css_px_per_mm","device_label","calibration_source","card_confirmed",
+  "first_contact_ms",
+  "hover_supported","n_hover_samples","first_hover_ms","hover_to_contact_ms",
+  "hover_truncated","n_pen_lifts","pen_lift_total_ms",
+  // Which OS produced the row. Not cosmetic: iPadOS 16 does not report altitudeAngle or
+  // azimuthAngle and iPadOS 26 does, so two devices running the same build write records
+  // with different fields populated. Without this the difference is unattributable.
+  "user_agent",
+  "css_px_per_mm","device_label","calibration_source","card_confirmed",
   "pen_check_rate_right_hz","pen_check_rate_left_hz",
   "sound_confirmed","audio_route","volume_steps",
   "audio_route_watched","audio_route_changed","audio_route_change_first_ms",
@@ -4849,6 +4972,7 @@ function csvRows(rec){
   const ct=rec.counting||{}, V=rec.voice||{}, vb=rec.verbal||{};
   const VL=V.level||{}, VC=V.constraints_applied||{}, OM=rec.omissions||{};
   const EV=(rec.trial&&rec.trial.examiner_events)||{};
+  const HV=rec.hover||{}, PL=rec.pen_lifts||{};
   const pts=(rec.strokes||[]).flat();
   const dur=pts.length>1?(pts[pts.length-1].t-pts[0].t):0;
   const rate=dur>0?((pts.length-1)/(dur/1000)).toFixed(1):"";
@@ -4881,7 +5005,13 @@ function csvRows(rec){
     EV.count??"",
     // Semicolons, not commas: a comma here would split the row across columns.
     (EV.offsets_ms&&EV.offsets_ms.length)?EV.offsets_ms.join(";"):"",
-    rec.trial.first_contact_ms??"", rec.calibration.css_px_per_mm,
+    rec.trial.first_contact_ms??"",
+    HV.supported==null?"":bit(HV.supported), HV.n_samples??"",
+    HV.first_hover_ms??"", HV.hover_to_contact_ms??"",
+    HV.truncated==null?"":bit(HV.truncated),
+    PL.count??"", PL.total_ms??"",
+    rec.device?.user_agent??"",
+    rec.calibration.css_px_per_mm,
     rec.calibration.device_label??"", rec.calibration.source??"",
     bit(rec.calibration.card_confirmed),
     pc.right?pc.right.rate:"", pc.left?pc.left.rate:"",
@@ -4932,6 +5062,10 @@ function csvRows(rec){
   (rec.strokes||[]).forEach((st,si)=>st.forEach(p=>out.push(mkRow(meta,
     {row_type:"pen",stroke:si+1,t_ms:p.t,x_mm:p.x,y_mm:p.y,pressure:p.p,
      tilt_x:p.tx,tilt_y:p.ty,pointer_type:p.k,coalesced:p.c}))));
+  // Hover rows carry no pressure by definition -- the pen is not touching -- so the
+  // pressure column stays empty rather than being filled with a misleading zero.
+  (rec.hover_samples||[]).forEach(h=>out.push(mkRow(meta,
+    {row_type:"hover",t_ms:h.t,x_mm:h.x,y_mm:h.y,tilt_x:h.tx,tilt_y:h.ty,pointer_type:"pen"})));
   const ar=rec.attribution?rec.attribution.rows:[];
   (rec.taps||[]).forEach((t,i)=>{ const a=ar[i]||{};
     out.push(mkRow(meta,{row_type:"tap",t_ms:t.t,pointer_type:t.pointerType,zone:t.zone,
@@ -4966,7 +5100,7 @@ const SCREEN_HEAD=[
   "mtb_mean_velocity_mm_s","mtb_samples","mtb_node_arrivals_json","mtb_error_log_json",
   "dot_run_duration_ms","dot_lifetime_ms","dots_presented","dots_unscored_at_cutoff",
   "dot_hits","dot_misses","dot_off_target_taps","dot_rt_mean_ms","dot_rt_sd_ms","dots_json",
-  "measure_grade_note","notes"
+  "measure_grade_note","notes","user_agent"
 ];
 function screenRow(r){
   const P=r.participant||{};
@@ -4982,7 +5116,7 @@ function screenRow(r){
     r.run_duration_ms??"", r.dot_lifetime_ms??"", r.dots_presented??"",
     r.dots_unscored_at_cutoff??"", r.hits??"", r.misses??"", r.off_target_taps??"",
     r.rt_mean_ms??"", r.rt_sd_ms??"", r.dots?JSON.stringify(r.dots):"",
-    r.measure_grade_note??"", r.notes??""
+    r.measure_grade_note??"", r.notes??"", r.device?.user_agent??""
   ];
 }
 function screenCSVText(recs){
@@ -5149,13 +5283,13 @@ function exportAllJSON(){
       started_iso:r.started_iso, mime_type:r.mime_type,
       bytes:r.bytes ?? (r.blob?r.blob.size:null) }));
     save(`${fileStem()}.json`, JSON.stringify({
-      schema:"motiq_prototype/9", build:BUILD, exported_iso:new Date().toISOString(),
+      schema:"motiq_prototype/10", build:BUILD, exported_iso:new Date().toISOString(),
       note:"trials are per trial; screening is per participant administration; audio_index lists the voice clips held in IndexedDB on the device that produced this file, and the clip bytes are downloaded separately.",
       trials, screening, audio_index:audio
     },null,2),"application/json");
   }).catch(()=>{
     save(`${fileStem()}.json`, JSON.stringify({
-      schema:"motiq_prototype/9", build:BUILD, exported_iso:new Date().toISOString(),
+      schema:"motiq_prototype/10", build:BUILD, exported_iso:new Date().toISOString(),
       note:"the voice clip store could not be read, so audio_index is empty; the clips may still exist on the device.",
       trials, screening, audio_index:[]
     },null,2),"application/json");
