@@ -142,6 +142,10 @@
               border-bottom:1px solid var(--line); background:#f7f9fb; }
   #adminbar button { font-size:21px; padding:15px 30px; border-radius:10px; min-width:130px; }
   #adminbar .spacer { flex:1; }
+  .flashrow { outline:3px solid #b4531f; outline-offset:4px; border-radius:6px;
+              animation:flashfade 2.2s ease-out; }
+  @keyframes flashfade { 0%,55% { background:#fdf0e6; } 100% { background:transparent; } }
+  @media (prefers-reduced-motion:reduce){ .flashrow { animation:none; background:#fdf0e6; } }
   .racegrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:4px 16px;
               margin-top:4px; }
   .racegrid label { display:flex; align-items:center; gap:7px; font-size:14px; font-weight:400;
@@ -827,7 +831,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.07 2026-09-11";
+const BUILD = "v12.08 2026-09-11";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1124,12 +1128,38 @@ const AUDIO_DEFAULTS = {
               label:"Tones only — tap to every tone" },
   // The oddball with no drawing. Same stream as its dual-task partner so the only
   // difference between them is the drawing.
-  VOC_VODD: { durS:60, floorMs:400, meanMs:800,  ptg:0.25, tone:50, lead:500,
+  // DENSE STANDARDS, RARE TARGETS. Rarity is what makes this a vigilance task: at an 800 ms
+  // mean a target arrived every ~3.2 s, often enough that it reads as a discrimination task
+  // instead, and raising the target rate to get more events would spend the very thing that
+  // made the design worth having. Density comes out of the MEAN instead. At 500 ms over 60 s
+  // that is ~120 tones and ~30 targets, against ~75 and ~19 before.
+  //
+  // Targets are never adjacent -- see makeSequence, where the positions are drawn so that no
+  // two can touch -- so the minimum target-to-target gap is TWO intervals. At a 300 ms floor
+  // that worst case is 610 ms, MEASURED, not the ~1 s it is tempting to assume from the mean.
+  //
+  // A spoken number takes about 800 ms (LANGUAGES.countFloorMs), so on the closest pair the
+  // second target can arrive before the first response is finished. That is rare -- it needs
+  // two floor-length intervals in a row AND targets on both sides of them -- and it costs a
+  // scoreable response rather than corrupting the trial, since the endpoints here are
+  // omission and false-alarm RATE rather than per-target reaction time. It is recorded:
+  // min_target_gap_tones and min_isi_ms are both exported, so how often the worst case
+  // actually occurred is answerable from the data rather than assumed.
+  //
+  // If it turns out to matter, the fix is a minimum target separation of three tones rather
+  // than two, which would put the worst case above 900 ms while keeping the dense standards.
+  // Not done pre-emptively: it is a real constraint on the design and belongs to whoever is
+  // choosing the paradigm, not to whoever is tuning the numbers.
+  //
+  // The usable-window warning on the Parameters page will fire at this floor. It is
+  // calibrated for tapping reaction time in Lewy body dementia and does not describe a
+  // vocally-answered oddball, so read it as information rather than as a fault.
+  VOC_VODD: { durS:60, floorMs:300, meanMs:500,  ptg:0.25, tone:50, lead:500,
               pairWith:"PEN_VODD",
               label:"Tones only — count the high tones aloud" },
   // The manual-response twin of PEN_VODD: same stream, same monitoring load, a tap
   // instead of a spoken count. The pair isolates response channel from monitoring load.
-  PEN_TODD: { durS:60, floorMs:400, meanMs:800,  ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3, selfPacedDurS:180,
+  PEN_TODD: { durS:60, floorMs:300, meanMs:500,  ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3, selfPacedDurS:180,
               pairWith:"PEN_VODD",
               label:"Dual task — tap the high tones while drawing" },
   PEN_TONE: { durS:45, floorMs:600, meanMs:1200, ptg:0,    tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3, selfPacedDurS:180,
@@ -1144,7 +1174,7 @@ const AUDIO_DEFAULTS = {
   // Faster and denser ON PURPOSE. Only a quarter of tones need a response, so monitoring
   // stays continuous while the motor interruptions stay sparse -- that density is the
   // manipulation. About 12 targets in a 40-second drawing.
-  PEN_VODD: { durS:45, floorMs:400, meanMs:800,  ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
+  PEN_VODD: { durS:60, floorMs:300, meanMs:500,  ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
               label:"Dual task — count the high tones out loud while drawing" },
   FIN_VCNT: { durS:45, floorMs:800, meanMs:1600, ptg:0,    tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
               label:"Dual task, finger drawing — count every tone out loud" }
@@ -2110,6 +2140,20 @@ const administeredInParticipantLanguage = () => {
 
 
 /* ------------------------------------------------------- voice consent */
+// Six of the fifteen conditions record voice, so an unticked consent box greys out most of
+// the battery -- and the row only said where the box lived, which on a long page is not the
+// same as being able to reach it. This scrolls to it and marks it, so the block is one tap
+// from being resolved. It does NOT tick it: consent is the participant's, not a formality to
+// be auto-satisfied because it is inconvenient.
+function goConsent(){
+  goPage(2);
+  const box=$("voiceconsent"); if(!box) return;
+  const row=box.closest("label") || box;
+  row.scrollIntoView({block:"center", behavior:"smooth"});
+  row.classList.add("flashrow");
+  setTimeout(()=>row.classList.remove("flashrow"), 2200);
+  try{ box.focus({preventScroll:true}); }catch(e){ box.focus(); }
+}
 const voiceConsented = () => !!($("voiceconsent") && $("voiceconsent").checked);
 const VOICE_TASKS = () => CATALOGUE.filter(c=>c.voice).map(c=>c.id);
 // Shown next to the consent tick, whether or not consent is given, because the cause is
@@ -2400,7 +2444,7 @@ function dependencyNote(c){
 // summary and the queue builder cannot disagree about it.
 function taskBlocked(c){
   if(c.voice && !voiceConsented())
-    return "voice recording consent not given; see the Participant page";
+    return "voice recording consent not yet ticked";
   return null;
 }
 // A HELD task is not a blocked one. Blocked means it cannot run; held means it runs, and
@@ -2475,7 +2519,9 @@ function renderPlan(){
           ${palmRejectionAffected(c)?`<div class="note" style="margin:4px 0 0;color:#8c2020">
               <b>Pen and touch not simultaneous.</b> See Known limitations on the Screen page.</div>`:""}
           ${dep?`<div class="warn" style="margin:5px 0 0;max-width:300px">${dep}</div>`:""}
-          ${blocked?`<div class="note" style="margin:4px 0 0;color:var(--warm)">${blocked}</div>`:""}</td>
+          ${blocked?`<div class="note" style="margin:4px 0 0;color:var(--warm)">${blocked}
+            ${c.voice?`<button class="ghost sm" style="margin-left:6px"
+              onclick="goConsent()">Tick consent</button>`:""}</div>`:""}</td>
         <td><input type="number" min="1" max="20" value="${s2.repeats}" ${blocked?"disabled":""}
              onchange="planSet('${c.id}','repeats',+this.value)"></td>
         <td><select onchange="planSet('${c.id}','hands',this.value)" ${blocked?"disabled":""}>
@@ -3305,8 +3351,15 @@ function makeSequence(durationS,floorMs,meanMs,pTarget,seed){
   }
   const onsets=[0]; for(let i=0;i<n-1;i++) onsets.push(onsets[i]+iv[i]);
   const isTarget=Array(n).fill(false); pos.forEach(p=>isTarget[p]=true);
+  // Adjacency is disallowed BY CONSTRUCTION above: the positions are drawn from a pool of
+  // n-2-t+1 slots and then spread by their own index, which makes two targets touching
+  // impossible rather than merely unlikely. It was never recorded, so the export carried an
+  // empty column where a guarantee belonged.
+  const minTargetGap = pos.length>1
+    ? Math.min(...pos.slice(1).map((v,i)=>v-pos[i])) : null;
   return {n,t,onsets,intervals:iv,isTarget,positions:pos,det,
           distribution:"floor + exponential", floorMs, meanMs,
+          adjacentTargetsAllowed:false, minTargetGapTones:minTargetGap,
           minISI:Math.min(...iv),maxISI:Math.max(...iv),durationMs:durMs,seed};
 }
 
@@ -5324,6 +5377,9 @@ function buildRecord(){
       stop_mode: (R.cfg && R.cfg.stopMode) || "fixed",
       self_paced_stream: !!(R.cfg && R.cfg.self_paced),
       interval_distribution:R.seq.distribution,
+      adjacent_targets_allowed:false,
+      min_target_gap_tones:R.seq.minTargetGapTones ?? null,
+      target_spacing_note:"two targets can never be adjacent; the positions are drawn so that touching is impossible, not merely improbable. min_target_gap_tones is the closest any two targets came, counted in tones.",
       floor_ms:R.seq.floorMs, mean_interval_ms:R.seq.meanMs,
       n_tones_played: R.streamCutMs==null ? R.seq.n
         : R.seq.onsets.filter(o=>o<=R.streamCutMs).length,
