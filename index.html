@@ -815,7 +815,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.03 2026-09-11";
+const BUILD = "v12.04 2026-09-11";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -862,38 +862,65 @@ const BUILD = "v12.03 2026-09-11";
    Audio settings live in AUDIO_DEFAULTS, keyed by the same id.
    ============================================================================ */
 const CATALOGUE = [
-  { id:"TAP_FAST", label:"Tapping, as fast as you can",   order:10,  tier:"core",   spiral:0, tap:1, audio:0, zones:1, hands:"each", repeats:2, lengthS:10 },
-  // Dominant hand only, 3 repeats. The trial-count requirement for a reaction-time
-  // estimate is PER CONDITION, so splitting it across hands halves it; three repeats in
-  // one hand yields about 99 responses. Hand asymmetry is covered by TAP_FAST.
-  { id:"TAP_TONE", label:"Tapping to every tone",         order:20,  tier:"core",   spiral:0, tap:1, audio:1, zones:1, hands:"one",  oneHand:"dominant", repeats:3, lengthS:40 },
-  { id:"PEN_DRAW", label:"Spiral",                        order:30,  tier:"core",   spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:2, lengthS:null, implement:"pen" },
-  { id:"PEN_TONE", label:"Spiral + tapping to every tone",order:40,  tier:"core",   spiral:1, tap:1, audio:1, zones:1, hands:"one",  oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", selfPaceable:1, fixedS:45 },
-  { id:"PEN_VCNT", label:"Spiral + counting the tones aloud", order:50, tier:"core", spiral:1, tap:0, audio:1, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen",
-                   selfPaceable:1, fixedS:45, count:1, countMode:"aloud", countOf:"all", respond:"speak", voice:1 },
-  // PEN_VODD's endpoint is KINEMATIC -- the spiral, not the voice. The spoken count is
-  // there to verify the participant was tracking the stream throughout, which a count
-  // reported only at the end cannot show. It does NOT feed the reaction-time endpoint:
-  // there is no timestamped response channel here, and analyzing it as though there were
-  // Analyzing it as a reaction-time measure would be incorrect.
+  // ORDER FOLLOWS THE ADMINISTRATION SEQUENCE, not the task family. Each step introduces
+  // one new element: tapping alone, then tones with a response already known, then the
+  // vocal effector, then drawing, then drawing under load.
   //
-  // PEN_VCNT and PEN_VODD are a PAIR. VCNT demands a spoken response to every tone; VODD
-  // to roughly a quarter of them while monitoring stays continuous. The contrast separates
-  // response-rate interference with the drawing from monitoring load. Neither alone does.
-  { id:"PEN_VODD", label:"Spiral + counting the high tones aloud", order:60, tier:"core", spiral:1, tap:0, audio:1, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen",
-                   selfPaceable:1, fixedS:45, count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1 },
-  { id:"PEN_FAST", label:"Spiral + tapping as fast as you can", order:70, tier:"second", spiral:1, tap:1, audio:0, zones:1, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen" },
-  { id:"PEN_MATH", label:"Spiral + counting aloud",       order:80,  tier:"second", spiral:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen",
-                   selfPaceable:1, fixedS:60, verbal:"math", respond:"speak", voice:1 },
-  // Fixed 60 s and deliberately NOT self-paceable: fluency output is steeply front-loaded,
-  // so words per second cannot be compared across windows of different length.
-  { id:"PEN_WORD", label:"Spiral + naming words aloud",   order:90,  tier:"expl",   spiral:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:60, implement:"pen",
+  // dataHeld marks a condition whose UI is built and whose trials run, but whose DATA is
+  // not usable as the dual task it is meant to be. It is not the same as a low tier: an
+  // exploratory task is one nobody has decided about, a held task is one the platform
+  // breaks. Every trial of a held task carries the reason in its record.
+
+  // --- Block A: tapping, no tones -------------------------------------------------
+  { id:"TAP_FAST", label:"Tapping, as fast as you can",   order:10,  tier:"core",   spiral:0, tap:1, audio:0, zones:1, hands:"each", repeats:3, lengthS:10 },
+  { id:"TAP_BMIN", label:"Bimanual tapping, in phase",    order:20,  tier:"core",   spiral:0, tap:1, audio:0, zones:2, hands:"both", repeats:3, lengthS:10 },
+  { id:"TAP_BANT", label:"Bimanual tapping, antiphase",   order:30,  tier:"core",   spiral:0, tap:1, audio:0, zones:2, hands:"both", repeats:3, lengthS:10 },
+
+  // --- Block B: tones added, the response already known ---------------------------
+  // 2 x 50 s at a 1000 ms mean, not 3 x 40 s at 1200 ms. Ex-Gaussian fitting needs about
+  // 100 responses per participant and this yields ~100. The FLOOR stays at 600 ms: it
+  // exists so a response completes before the next tone arrives, and tapping RT at 90+
+  // runs 300-400 ms, so density comes out of the mean and never out of the floor.
+  { id:"TAP_TONE", label:"Tapping to every tone",         order:40,  tier:"core",   spiral:0, tap:1, audio:1, zones:1, hands:"one",  oneHand:"dominant", repeats:2, lengthS:50 },
+
+  // --- Block C: the vocal effector, then the new rule ------------------------------
+  // The oddball administered ALONE. Not a cost baseline -- a spiral condition's window is
+  // anchored on its first stroke while this starts on the clock, so the two are not
+  // time-matched and a naive difference score between them is not a dual-task cost. Its
+  // job is to show the participant can do the task at all without competing motor demand.
+  { id:"VOC_VODD", label:"Counting the high tones aloud, no drawing", order:50, tier:"core", spiral:0, tap:0, audio:1, zones:0, hands:"none", repeats:1, lengthS:60,
+                   count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1 },
+
+  // --- Block D: drawing, then drawing under load -----------------------------------
+  { id:"PEN_SPRL", label:"Spiral",                        order:60,  tier:"core",   spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:2, lengthS:null, implement:"pen", sustainedS:60 },
+  { id:"PEN_VODD", label:"Spiral + counting the high tones aloud", order:70, tier:"core", spiral:1, tap:0, audio:1, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
+                   selfPaceable:1, fixedS:60, count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1 },
+  // "Both, alternating" with one trial per hand. The battery table gives the hand as
+  // alternating and the trial count as 1; read as 1 PER HAND, since a single trial cannot
+  // alternate. Confirm if that is not what was meant.
+  { id:"FIN_SPRL", label:"Spiral, finger",                order:80,  tier:"second", spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:1, lengthS:null, implement:"finger", sustainedS:60 },
+
+  // --- Exploratory ------------------------------------------------------------------
+  // The three spiral-plus-TAP conditions are held. Their UI is built and they run, but the
+  // tapping hand's responses are suppressed by palm rejection while the Pencil is down, so
+  // the data is not the dual task it is meant to be. See the PALM REJECTION comment.
+  { id:"PEN_FAST", label:"Spiral + tapping as fast as you can", order:90, tier:"expl", spiral:1, tap:1, audio:0, zones:1, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
+                   dataHeld:"palm rejection" },
+  { id:"PEN_TONE", label:"Spiral + tapping to every tone", order:100, tier:"expl",  spiral:1, tap:1, audio:1, zones:1, hands:"one",  oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
+                   selfPaceable:1, fixedS:60, dataHeld:"palm rejection" },
+  // The same cognitive task as PEN_VODD with a MANUAL response channel instead of a vocal
+  // one, so the pair isolates response channel from monitoring load. Nothing else in the
+  // battery does that, which is why it is built despite being held.
+  { id:"PEN_TODD", label:"Spiral + tapping the high tones", order:110, tier:"expl", spiral:1, tap:1, audio:1, zones:1, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
+                   selfPaceable:1, fixedS:60, dataHeld:"palm rejection" },
+  { id:"PEN_VCNT", label:"Spiral + counting the tones aloud", order:120, tier:"expl", spiral:1, tap:0, audio:1, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
+                   selfPaceable:1, fixedS:60, count:1, countMode:"aloud", countOf:"all", respond:"speak", voice:1 },
+  { id:"PEN_MATH", label:"Spiral + counting backward aloud", order:130, tier:"expl", spiral:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:1, lengthS:null, implement:"pen", sustainedS:60,
+                   verbal:"math", respond:"speak", voice:1 },
+  { id:"PEN_WORD", label:"Spiral + naming words aloud",   order:140, tier:"expl",   spiral:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
                    verbal:"word", respond:"speak", voice:1 },
-  { id:"TAP_BMIN", label:"Bimanual tapping, in phase",    order:100, tier:"expl",   spiral:0, tap:1, audio:0, zones:2, hands:"both", repeats:2, lengthS:10 },
-  { id:"TAP_BANT", label:"Bimanual tapping, antiphase",   order:110, tier:"expl",   spiral:0, tap:1, audio:0, zones:2, hands:"both", repeats:2, lengthS:10 },
-  { id:"FIN_DRAW", label:"Spiral, finger",                order:120, tier:"expl",   spiral:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"finger" },
-  { id:"FIN_VCNT", label:"Spiral (finger) + counting the tones aloud", order:130, tier:"expl", spiral:1, tap:0, audio:1, zones:0, hands:"one", oneHand:"dominant", repeats:1, lengthS:null, implement:"finger",
-                   selfPaceable:1, fixedS:45, count:1, countMode:"aloud", countOf:"all", respond:"speak", voice:1 }
+  { id:"FIN_VCNT", label:"Spiral (finger) + counting the tones aloud", order:150, tier:"expl", spiral:1, tap:0, audio:1, zones:0, hands:"one", oneHand:"dominant", repeats:1, lengthS:null, implement:"finger", sustainedS:60,
+                   selfPaceable:1, fixedS:60, count:1, countMode:"aloud", countOf:"all", respond:"speak", voice:1 }
 ];
 
 /* ---------------------------------------------------------------------------
@@ -1073,9 +1100,23 @@ const langEntry = code => LANGUAGES[code] || null;
 const countFloorMs = () => (langEntry(ADMIN_LANG) || LANGUAGES.en).countFloorMs;
 
 const AUDIO_DEFAULTS = {
-  TAP_TONE: { durS:40, floorMs:600, meanMs:1200, ptg:0,    tone:50, lead:500,
+  // 2 x 50 s at a 1000 ms mean yields about 100 responses, which is what ex-Gaussian
+  // fitting needs. The FLOOR stays 600 ms: it exists so a response completes before the
+  // next tone arrives, and tapping RT at 90+ runs 300-400 ms. Density comes out of the
+  // mean, never out of the floor.
+  TAP_TONE: { durS:50, floorMs:600, meanMs:1000, ptg:0,    tone:50, lead:500,
               pairWith:"PEN_TONE",
               label:"Tones only — tap to every tone" },
+  // The oddball with no drawing. Same stream as its dual-task partner so the only
+  // difference between them is the drawing.
+  VOC_VODD: { durS:60, floorMs:400, meanMs:800,  ptg:0.25, tone:50, lead:500,
+              pairWith:"PEN_VODD",
+              label:"Tones only — count the high tones aloud" },
+  // The manual-response twin of PEN_VODD: same stream, same monitoring load, a tap
+  // instead of a spoken count. The pair isolates response channel from monitoring load.
+  PEN_TODD: { durS:60, floorMs:400, meanMs:800,  ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3, selfPacedDurS:180,
+              pairWith:"PEN_VODD",
+              label:"Dual task — tap the high tones while drawing" },
   PEN_TONE: { durS:45, floorMs:600, meanMs:1200, ptg:0,    tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3, selfPacedDurS:180,
               pairWith:"TAP_TONE",
               label:"Dual task — tap to every tone while drawing" },
@@ -1193,7 +1234,7 @@ const overheadFor = taskId => blockOf(taskId) ? BLOCK_GAP_S : OVERHEAD_S;
 // this, so what you rehearse is what the participant hears.
 // Short lines, plain words, written to be read aloud.
 // ---------------------------------------------------------------------------
-// The drawing rules, in ONE place. PEN_DRAW shows them inline; every dual task built on
+// The drawing rules, in ONE place. PEN_SPRL shows them inline; every dual task built on
 // it shows a short line plus a button that reveals this identical block. The wording a
 // participant is held to is therefore the same in a task and its single-task baseline --
 // which is what stops the instruction itself contributing to dual-task cost -- without a
@@ -1347,7 +1388,13 @@ const quantile=(a,q)=>{ if(!a.length) return NaN; const s=[...a].sort((x,y)=>x-y
 const meanOf=v=>v.length?v.reduce((a,b)=>a+b,0)/v.length:NaN;
 const sdOf=v=>{ if(v.length<2) return NaN; const m=meanOf(v);
   return Math.sqrt(v.reduce((a,b)=>a+(b-m)*(b-m),0)/(v.length-1)); };
-const byId = id => CATALOGUE.find(c=>c.id===id);
+// Task codes renamed in v12.04 to match the study's battery table. The old codes are still
+// on devices -- in saved plans, in queued sessions, and in every trial record written before
+// the rename -- so they are translated rather than orphaned. A record keeps the code it was
+// written with; only lookups are aliased, so nothing already saved is rewritten.
+const TASK_ALIAS={ PEN_DRAW:"PEN_SPRL", FIN_DRAW:"FIN_SPRL", VOC_ODD:"VOC_VODD" };
+const taskId = id => TASK_ALIAS[id] || id;
+const byId = id => CATALOGUE.find(c=>c.id===taskId(id));
 const esc = s => String(s==null?"":s).replace(/[&<>"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
 $("buildstamp").textContent = "Build " + BUILD;
 
@@ -1810,7 +1857,7 @@ function screenRecordBase(which){
   const b=birthInfo(), pid=$("pid").value||"";
   const iso=new Date().toISOString();
   return {
-    schema:"motiq_prototype/12", build:BUILD, record_type:"screening", screen:which,
+    schema:"motiq_prototype/13", build:BUILD, record_type:"screening", screen:which,
     screen_uid:`${iso.replace(/[:.]/g,"-")}_${pid||"unnamed"}_${which}`,
     started_iso:iso,
     participant:{ id:pid, group:$("grp").value||null,
@@ -2282,12 +2329,16 @@ function clearAllSelections(){
 // A dual task always uses two hands, so "both (bimanual)" is meaningless there; a
 // bimanual tapping task has no single-hand form. Offer only what applies.
 function handsAllowed(c){
+  // A task with neither drawing nor tapping has no hand at all -- VOC_VODD is tones and
+  // voice only. Without this it would be offered "each hand" and quietly run twice.
+  if(!c.spiral && !c.tap) return ["none"];
   if(c.zones===2) return ["both"];
   if(c.spiral && c.tap) return ["roles","one"];
   return ["each","one"];
 }
 const HAND_LABEL={ each:"Each hand, alternating", one:"One hand",
-                   both:"Both (bimanual)", roles:"Alternate which hand draws" };
+                   both:"Both (bimanual)", roles:"Alternate which hand draws",
+                   none:"No hand (voice only)" };
 
 // D1. The badge carries the WORD as well as the color -- color alone does not survive
 // color blindness, a printout or a screenshot. Tier lives in the catalogue precisely so
@@ -2347,7 +2398,7 @@ function dependencyNote(c){
   const inc = id => PLAN[id] && PLAN[id].include;
   if(!inc(c.id)) return null;
   if(c.id==="PEN_TONE"){
-    const missing=["PEN_DRAW","TAP_TONE"].filter(id=>!inc(id));
+    const missing=["PEN_SPRL","TAP_TONE"].filter(id=>!inc(id));
     if(!missing.length) return null;
     return `Dual-task cost is measured against a single-task baseline. Without
             ${missing.join(" and ")} there is no baseline for comparison, so this task
@@ -2371,6 +2422,18 @@ function taskBlocked(c){
     return "voice recording consent not given; see the Participant page";
   return null;
 }
+// A HELD task is not a blocked one. Blocked means it cannot run; held means it runs, and
+// records, but the data is not the measure the task is meant to produce. PEN_FAST, PEN_TONE
+// and PEN_TODD are held because palm rejection suppresses the tapping hand while the Pencil
+// is down, so the dual task is not a dual task on this platform. They stay selectable --
+// the UI is built and the trials are worth collecting for everything except the tap channel
+// -- and every trial says so in its record.
+const dataHeldReason = c => {
+  if(!c || !c.dataHeld) return null;
+  if(c.dataHeld==="palm rejection") return PALM_WARNING;
+  return String(c.dataHeld);
+};
+const HELD_SHORT={ "palm rejection":"tap responses suppressed by palm rejection" };
 
 // How long a task's auditory stream is expected to run, for planning only.
 // A fixed-length trial runs its length. A self-paced one is cut when drawing stops, so
@@ -2428,7 +2491,7 @@ function renderPlan(){
               <option value="dominant" ${s2.oneHand==="dominant"?"selected":""}>${c.spiral?"Dominant hand draws":"Dominant"}</option>
               <option value="nondominant" ${s2.oneHand==="nondominant"?"selected":""}>${c.spiral?"Non-dominant hand draws":"Non-dominant"}</option></select>`:""}</td>
         <td>${lengthCell(c,s2,blocked)}${sustainedCell(c,s2,blocked)}</td>
-        <td class="note" style="padding-top:10px">${[c.spiral?"drawing":null,c.tap?"tapping":null,
+        <td class="note" style="padding-top:10px">${c.dataHeld?`<div style="color:#8c2020;font-weight:600;margin-bottom:3px">DATA HELD — ${esc(HELD_SHORT[c.dataHeld]||c.dataHeld)}</div>`:""}${[c.spiral?"drawing":null,c.tap?"tapping":null,
             c.audio?"<b>tones</b>":null, c.count?"count aloud":null,
             c.verbal?"spoken task":null, c.voice?"<b>voice</b>":null].filter(Boolean).join(" · ")}</td>
         <td>${adhocCell(c,s2,blocked)}</td>
@@ -2583,7 +2646,8 @@ function buildQueue(){
       sustainedS:s.sustainedS??null,
       verbalType:c.verbal?VERBAL_KEY(s.verbalType,c.verbal):null,
       status:"pending", skipReason:null });
-    if(s.hands==="each"){ for(let r=0;r<s.repeats;r++){ push("dominant"); push("nondominant"); } }
+    if(s.hands==="none"){ for(let r=0;r<s.repeats;r++) push("none"); }
+    else if(s.hands==="each"){ for(let r=0;r<s.repeats;r++){ push("dominant"); push("nondominant"); } }
     else if(s.hands==="roles"){ for(let r=0;r<s.repeats;r++){ push("dominant","A"); push("nondominant","B"); } }
     else if(s.hands==="both"){ for(let r=0;r<s.repeats;r++) push("both"); }
     else { for(let r=0;r<s.repeats;r++) push(s.oneHand); }
@@ -2974,9 +3038,9 @@ function matchStreamPair(from,to){
    workspace size.
 
    The PEN_ and FIN_ families now differ deliberately in pitch and turns and are
-   therefore NOT comparable as measures. FIN_DRAW exists to test whether a
+   therefore NOT comparable as measures. FIN_SPRL exists to test whether a
    stylus-free configuration is feasible at all, not to produce a number that can
-   sit beside PEN_DRAW.
+   sit beside PEN_SPRL.
 
    Per-implement is exactly the granularity required: a task and its single-task
    baseline always resolve to the same set, so dual-task cost is never confounded
@@ -3979,7 +4043,7 @@ function showInstructionScreen(seq,c,returnToReady){
       border:1px solid #e9b7b7;border-radius:9px;background:#fdecec;color:#8c2020;
       max-width:660px;text-align:left;font-size:17px;line-height:1.55">
       <b>Platform limit.</b> ${PALM_WARNING}</div>` : ``;
-  // The drawing rules, one click away, identical to the ones PEN_DRAW shows inline. The
+  // The drawing rules, one click away, identical to the ones PEN_SPRL shows inline. The
   // dual-task screen stays short so the new demand is what the participant reads first,
   // but the wording they are held to is the same in both.
   const rulesNote = (ins.drawingRules && !ins.rulesShownInline) ? `<div style="margin-top:12px">
@@ -3989,7 +4053,7 @@ function showInstructionScreen(seq,c,returnToReady){
         max-width:660px;margin-left:auto;margin-right:auto">
         <ul style="font-size:19px;line-height:1.6;padding-left:22px">
           ${ins.drawingRules.map(l=>`<li>${l}</li>`).join("")}</ul>
-        <div class="note">Identical to the wording used for PEN_DRAW.</div>
+        <div class="note">Identical to the wording used for PEN_SPRL.</div>
       </div></div>` : ``;
   const voiceNote = c.voice ? (TRIAL.voiceFailure
       ? `<p style="font-size:17px;color:#8c2020"><b>Not being recorded</b> — ${esc(TRIAL.voiceFailure.detail)}</p>`
@@ -5061,7 +5125,7 @@ function buildRecord(){
   const heard = c.count ? countedHeard(R.seq, R.streamCutMs, c.countOf) : null;
   const scheduled = R.seq ? (c.countOf==="all" ? R.seq.n : R.seq.t) : null;
   return {
-    schema:"motiq_prototype/12", build:BUILD, record_type:"trial",
+    schema:"motiq_prototype/13", build:BUILD, record_type:"trial",
     note:"PROTOTYPE. Browser mm and browser timing are approximations.",
     trial_id:R.trialId, trial_uid:R.trialUid,
     session_key:SESSION_KEY,
@@ -5278,6 +5342,12 @@ function buildRecord(){
         applies_to:"pen-drawn tasks that also require finger tapping",
         platform:"iPadOS Safari; not present in a native UIKit build"
       } : { palm_rejection:false },
+    // A held condition produces a record like any other, and that record says why the
+    // measure it was meant to produce is not in it. Without this the trials look ordinary.
+    data_held: R.c && R.c.dataHeld ? { held:true, reason:R.c.dataHeld,
+        detail:dataHeldReason(R.c),
+        note:"this condition runs and records, but the platform prevents it from being the dual task it is designed as. Do not analyse its dual-task contrast; the single-task channel is unaffected." }
+      : { held:false },
     omissions: R.omissions || null,
     tapping:LAST.tp||null,
     counting: c.count ? {
@@ -5479,7 +5549,7 @@ const CSV_HEAD=[
   "n_pen_samples","achieved_rate_hz","n_strokes",
   "n_taps_left","n_taps_right","n_taps_single","alternation_pct",
   "tones_presented","responses_made","omissions","omission_rate","omission_window_ms",
-  "adhoc","palm_rejection_affected","prioritization_given",
+  "adhoc","palm_rejection_affected","prioritization_given","data_held","data_held_reason",
   "count_reported","count_presented","count_error","count_mode","count_of",
   "count_presented_scheduled",
   "voice_consented","voice_recorded","voice_audio_id","voice_mime",
@@ -5605,6 +5675,7 @@ function csvRows(rec){
     OM.omission_rate??"", OM.window_ms??"",
     bit(rec.adhoc), bit(rec.input_limits?rec.input_limits.palm_rejection:false),
     bit(rec.instructions?rec.instructions.prioritization_given:false),
+    bit(rec.data_held?rec.data_held.held:false), rec.data_held?.reason??"",
     rec.counting?(ct.reported??""):"", rec.counting?(ct.presented??""):"",
     rec.counting?(ct.error??""):"", rec.counting?(ct.mode??""):"", rec.counting?(ct.of??""):"",
     rec.counting?(ct.presented_scheduled??""):"",
@@ -5855,13 +5926,13 @@ function exportAllJSON(){
       started_iso:r.started_iso, mime_type:r.mime_type,
       bytes:r.bytes ?? (r.blob?r.blob.size:null) }));
     save(`${fileStem()}.json`, JSON.stringify({
-      schema:"motiq_prototype/12", build:BUILD, exported_iso:new Date().toISOString(),
+      schema:"motiq_prototype/13", build:BUILD, exported_iso:new Date().toISOString(),
       note:"trials are per trial; screening is per participant administration; audio_index lists the voice clips held in IndexedDB on the device that produced this file, and the clip bytes are downloaded separately.",
       trials, screening, audio_index:audio
     },null,2),"application/json");
   }).catch(()=>{
     save(`${fileStem()}.json`, JSON.stringify({
-      schema:"motiq_prototype/12", build:BUILD, exported_iso:new Date().toISOString(),
+      schema:"motiq_prototype/13", build:BUILD, exported_iso:new Date().toISOString(),
       note:"the voice clip store could not be read, so audio_index is empty; the clips may still exist on the device.",
       trials, screening, audio_index:[]
     },null,2),"application/json");
@@ -6030,8 +6101,12 @@ function restoreState(){
     // rebuild the plan from defaults, then overlay whatever the saved plan still fits
     const fresh=defaultPlan();
     if(st.plan && typeof st.plan==="object"){
+      // A plan saved before the rename is keyed by the old code. Read through the alias so
+      // the settings survive rather than silently reverting to defaults.
+      const savedFor = c => st.plan[c.id]
+        || st.plan[Object.keys(TASK_ALIAS).find(k=>TASK_ALIAS[k]===c.id)];
       CATALOGUE.forEach(c=>{
-        const old=st.plan[c.id]; if(!old) return;                  // task added since
+        const old=savedFor(c); if(!old) return;                    // task added since
         const allowed=handsAllowed(c);
         // A self-paceable task may legitimately hold null here, so "no length" is only
         // repaired for tasks that cannot be self-paced.
@@ -6055,6 +6130,9 @@ function restoreState(){
     // reload across the rename does not lose its trial list.
     QUEUE=Array.isArray(st.queue)
       ? st.queue.map(q=>(q && q.cond && !q.task) ? {...q, task:q.cond} : q)
+                // Renamed codes are rewritten here, on the queue only: a session interrupted
+                // across the rename keeps its trial list instead of losing it.
+                .map(q=>(q && TASK_ALIAS[q.task]) ? {...q, task:TASK_ALIAS[q.task]} : q)
                 .filter(q=>q&&byId(q.task))
       : [];
     QPOS=Math.max(0, Math.min(Number(st.qpos)||0, QUEUE.length));
