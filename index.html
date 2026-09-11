@@ -4085,6 +4085,10 @@ function runTrial(seq,c){
   // Signed the way the template is drawn, so tracing it counts up and backtracking counts
   // down. Direction comes from the drawing hand, the same way drawScene picks it.
   if(c.spiral) RUN.angle=makeAngleAccumulator(TRIAL.drawHand==="left"?"ccw":"cw");
+  // A trial whose window opens at START gets its tone stream NOW, exactly as before v12.01.
+  // Only an anchored trial defers the stream, and only because its window is deferred with
+  // it. Missing this call is how TAP_TONE briefly became a silent task.
+  if(!anchored) startToneStream();
 
   // Voice capture window. Tone tasks: from the start of the tone stream (perf0) to the
   // end of the trial. A task with no tones has its origin at the trial start, which is
@@ -4156,6 +4160,7 @@ function runTrial(seq,c){
     if(RUN.penAnchored && RUN.windowStart===null && inStartZone(e)){
       RUN.windowStart=performance.now();
       clearTimeout(RUN.ceilTimer); RUN.ceilTimer=null;
+      if(RUN.startZoneWarned) $("reminder").innerHTML="";
       if(RUN.angle) RUN.angle.reset();
       startToneStream();
       if(RUN.sustained) RUN.timer=setTimeout(()=>endWindow(), RUN.sustainedMs);
@@ -4365,6 +4370,17 @@ function runTrial(seq,c){
     // "10 second" trial 10.6 seconds of counted taps.
     if(RUN.responseLocked && wStart!=null && now >= wStart+durMs){ stopTrial(true); return; }
 
+    // THE WINDOW IS ANCHORED ON THE START ZONE, so a participant who begins drawing just
+    // outside it gets no window, no tones, and a trial that dies at the ceiling with nothing
+    // on screen saying why. The zone is only a few millimetres across and "start in the
+    // middle" is easy to miss by that much. Tell the examiner while it is still fixable --
+    // a later pen-down inside the zone opens the window normally.
+    if(RUN.penAnchored && wStart==null && RUN.firstContactMs!==null && !RUN.startZoneWarned){
+      RUN.startZoneWarned=true;
+      $("reminder").innerHTML=`<span style="color:var(--warm)"><b>NOT STARTED YET.</b>
+        The pen has touched down outside the green start circle, so the trial clock has not
+        begun${seq?" and the tones have not started":""}. Ask them to begin from the middle.</span>`;
+    }
     // Sustained spiral: has this pass reached the end zone with the angle to justify it?
     if(RUN.sustained) checkAdvance();
     // The window closing does NOT end the trial. Recording continues, flagged outside the
