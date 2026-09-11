@@ -235,6 +235,34 @@
         it. Hesitation before a participant starts to draw can be timed and located here; its
         height profile cannot be recovered afterwards, because it was never captured. The
         native build is where that measurement becomes possible.</p>
+        <!-- Developer-facing, deliberately inside the box the examiner already reads rather
+             than in BACKLOG.md, which is a separate file in the repo and invisible from the
+             running app. Whoever builds the native instrument will open THIS file. Kept to
+             the requirement; the full specification is in the PENCIL HOVER comment in the
+             source, which this points at by name. -->
+        <div style="margin:0 0 8px;padding:9px 11px;border:1px solid #e9b7b7;border-radius:7px;
+                    background:#fff6f6">
+          <p style="margin:0 0 6px"><b>→ Required in the native iPadOS build</b></p>
+          <p style="margin:0 0 6px">Items 1 and 2 above are the two reasons the native build
+          exists. Neither is a defect in this prototype and neither can be fixed in a web
+          page. The native instrument must:</p>
+          <ul style="margin:0;padding-left:20px">
+            <li>deliver <b>pencil and touch as separate simultaneous streams</b>, so a
+            spiral-plus-tap condition runs as a genuine dual task (UIKit does this; Safari
+            does not);</li>
+            <li>record <b>hover onset</b>, and <b>hover dwell before first contact</b>
+            separately from time-to-first-contact, so hesitation with the pen raised is
+            distinguishable from hesitation with the pen nowhere near the glass;</li>
+            <li>record the <b>height profile</b> through the descent — whether the pen comes
+            down steadily, stalls partway, or repeatedly approaches and withdraws. This is
+            the measure a web build cannot capture at all;</li>
+            <li>record <b>pen lifts during drawing</b> as first-class events, with count and
+            duration, rather than inferring them from stroke boundaries.</li>
+          </ul>
+          <p style="margin:6px 0 0">Full rationale, and the caveat about verifying the exact
+          UIKit API rather than trusting a remembered symbol name, are in the
+          <code>PENCIL HOVER</code> comment block in this file's source.</p>
+        </div>
         <p style="margin:0 0 8px"><b>3. Voice recording requires an https address.</b>
         Microphone access is available only over <code>https</code>, or from
         <code>localhost</code> and <code>127.0.0.1</code>. When the app is opened from a
