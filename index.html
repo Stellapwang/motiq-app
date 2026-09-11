@@ -232,9 +232,13 @@
         web platform reports <i>how high</i> it is: there is no standard property for the
         distance above the glass, and the Pointer Events proposal to add one is unresolved.
         A web build therefore knows the pen is somewhere in that 12&nbsp;mm band, not where in
-        it. Hesitation before a participant starts to draw can be timed and located here; its
-        height profile cannot be recovered afterwards, because it was never captured. The
-        native build is where that measurement becomes possible.</p>
+        it. <b>Measured on this device on 2026-09-11: iPadOS Safari delivers no hover at all</b>
+        — over 41&nbsp;s of drawing the pen was never reported while out of contact, and
+        <code>pointerover</code> fired exactly once per <code>pointerdown</code>, meaning the
+        pen is undetectable until it touches. So neither the height nor the position of a
+        hovering pen is available here. Hesitation before a participant starts to draw can
+        only be timed from the moment they touch down. The native build is where that
+        measurement becomes possible.</p>
         <!-- Developer-facing, deliberately inside the box the examiner already reads rather
              than in BACKLOG.md, which is a separate file in the repo and invisible from the
              running app. Whoever builds the native instrument will open THIS file. Kept to
@@ -898,12 +902,33 @@ const CATALOGUE = [
    distance is unresolved, so there is no property to read and no vendor-prefixed
    substitute to fall back on.
 
-   NOT YET VERIFIED ON DEVICE: whether iPadOS Safari actually delivers those hover
-   pointermove events to a web page for a Pencil. That question is answered by the
-   pointer probe, run on the iPad with a Pencil -- a run on a Mac with a mouse
-   produces no pen events and answers nothing. Until it has been run, this app
-   captures no hover at all, and the trial handler discards hovering pointermove
-   because no stroke exists for that pointer.
+   MEASURED ON DEVICE, 2026-09-11, iPadOS Safari 26.6.1 with an Apple Pencil:
+   NO HOVER IS DELIVERED. Over 41 seconds and 13 separate touch-and-lift cycles the
+   page received 718 pointermove events and ZERO of them had the pen out of contact.
+
+   The clinching number is not the zero, which could just mean nobody hovered. It is
+   that pointerover fired 13 times and pointerdown fired 13 times -- exactly one for
+   one, and the same for pointerout and pointerup. Where hover is delivered the
+   pointer becomes known on APPROACH, so pointerover necessarily precedes and
+   outnumbers pointerdown. One for one means the pen did not exist as far as the page
+   was concerned until the moment it touched the glass, and stopped existing when it
+   lifted.
+
+   What IS delivered, and is worth knowing because the spiral kinematics use it:
+   pressure, tiltX and tiltY, altitudeAngle and azimuthAngle, all populated and
+   varying. twist was zero throughout. So the Pencil is fully reported while it is in
+   contact; it is only the approach that is invisible.
+
+   Consequently hover capture is NOT BUILDABLE in this web build, and the trial
+   handler's discarding of hovering pointermove costs nothing -- there is nothing to
+   discard. This is a measured finding, not an assumption.
+
+   STILL OPEN, and it decides what the native build can promise: whether this is
+   Safari withholding hover or hardware that has none. Apple Pencil hover is gated on
+   recent iPad hardware and a recent Pencil. If the iPad in use does not support hover
+   at all, the native build cannot capture a height profile either, and the fourth
+   native requirement below has to be re-scoped rather than simply implemented.
+   Confirm the iPad model and Pencil generation before that work is specified.
 
    WHAT THE NATIVE BUILD IS FOR
 
