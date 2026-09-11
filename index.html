@@ -315,7 +315,14 @@
         <div id="langOtherBox" class="hidden"><label for="langother">Which language?</label>
           <input id="langother" type="text" oninput="onLanguageChange()"></div>
       </div>
+      <div class="r3">
+        <div><label for="plang">Participant's strongest language</label>
+          <select id="plang" onchange="onLanguageChange()"></select></div>
+        <div id="plangOtherBox" class="hidden"><label for="plangother">Which language?</label>
+          <input id="plangother" type="text" oninput="onLanguageChange()"></div>
+      </div>
       <div id="langnote"></div>
+      <div id="langmatch"></div>
       <label class="checkrow" for="voiceconsent">
         <input id="voiceconsent" type="checkbox" onchange="onVoiceConsentChange()">
         <span><b>Voice recording consented.</b> The participant has agreed to be audio-recorded
@@ -1792,11 +1799,35 @@ renderAmbiHand();
 // screen and the record say so.
 const LANG_OTHER="__other__";
 function fillLanguages(){
-  const el=$("lang"); if(!el) return;
-  el.innerHTML = Object.keys(LANGUAGES)
-      .map(k=>`<option value="${k}">${esc(LANGUAGES[k].label)}</option>`).join("")
-    + `<option value="${LANG_OTHER}">Other (not in the registry)…</option>`;
-  el.value="en";
+  const opts = Object.keys(LANGUAGES)
+      .map(k=>`<option value="${k}">${esc(LANGUAGES[k].label)}</option>`).join("");
+  const el=$("lang");
+  if(el){ el.innerHTML = opts + `<option value="${LANG_OTHER}">Other (not in the registry)…</option>`;
+          el.value="en"; }
+  // The participant's language is a FACT ABOUT THE PARTICIPANT, not a set of timing
+  // parameters, so it is not constrained to the registry in any meaningful sense -- the
+  // registry entries are offered only as convenient spellings. "Other" is the normal case
+  // for it, not the exception, and the registry never gates what can be recorded here.
+  const pe=$("plang");
+  if(pe){ pe.innerHTML = `<option value="">— not recorded —</option>` + opts
+            + `<option value="${LANG_OTHER}">Other…</option>`;
+          pe.value=""; }
+}
+// Which language the participant is strongest in. Deliberately NOT "native" or "first":
+// someone who emigrated at five may have a first language they are no longer dominant in,
+// and testing them in it would disadvantage them rather than help. What matters for these
+// tasks is the language they perform best in, which is what this asks.
+function participantLanguage(){
+  const el=$("plang"); if(!el || !el.value) return null;
+  if(el.value!==LANG_OTHER) return el.value;
+  const t=($("plangother")?$("plangother").value:"").trim();
+  return t || null;
+}
+// The derived field analysis actually filters on. Null when the participant's language was
+// not recorded -- which is NOT the same as a match, and must never be collapsed into one.
+function administeredInParticipantLanguage(){
+  const p=participantLanguage(); if(!p) return null;
+  return p.toLowerCase()===currentLanguage().toLowerCase();
 }
 // The recorded language: a registry key, or whatever was typed for "Other".
 function currentLanguage(){
@@ -1818,9 +1849,35 @@ function applyLanguageDefaults(){
 function onLanguageChange(){
   const other = $("lang") && $("lang").value===LANG_OTHER;
   if($("langOtherBox")) $("langOtherBox").classList.toggle("hidden", !other);
+  const pother = $("plang") && $("plang").value===LANG_OTHER;
+  if($("plangOtherBox")) $("plangOtherBox").classList.toggle("hidden", !pother);
   applyLanguageDefaults();
   renderLanguageNote();
+  renderLanguageMatchNote();
   saveState();
+}
+// The mismatch is the finding, not either language on its own. Testing someone in a
+// language they are not strongest in depresses performance on exactly the verbal tasks
+// this battery uses -- fluency and serial counting -- and that depression is
+// indistinguishable, in the score alone, from the impairment being looked for. It compounds
+// with the norms problem already recorded on WORD_PROMPTS: an English fluency norm applied
+// to a non-native English speaker is wrong twice over, once for the language and once for
+// the speaker. Warns, never blocks: sometimes there is no examiner who speaks the
+// participant's language, and running the session anyway is the right call as long as the
+// record says so.
+function renderLanguageMatchNote(){
+  const el=$("langmatch"); if(!el) return;
+  const p=participantLanguage();
+  if(!p){ el.innerHTML=""; return; }
+  if(administeredInParticipantLanguage()){ el.innerHTML=""; return; }
+  const admin=langEntry(currentLanguage())?langEntry(currentLanguage()).label:currentLanguage();
+  el.innerHTML=`<div class="warn"><b>Administered in ${esc(admin)}, but the participant is
+    strongest in ${esc(p)}.</b> The spoken tasks — category fluency and serial counting —
+    measure language as well as cognition, so scores from this session are depressed by the
+    mismatch and cannot be compared against norms or against participants tested in their own
+    language. This is recorded as <code>administered_in_participant_language: false</code>.
+    Run the session if there is no alternative; do not score it as if there were no
+    mismatch.</div>`;
 }
 function renderLanguageNote(){
   const el=$("langnote"); if(!el) return;
@@ -4384,6 +4441,13 @@ function buildRecord(){
     // it as English would make the export state something false.
     administration_language: ADMIN_LANG,
     language_in_registry: languageRegistered(),
+    // A fact about the participant, not about the session's timing parameters. Null means
+    // not recorded, which is NOT the same as matching the administration language.
+    participant_language: participantLanguage(),
+    administered_in_participant_language: administeredInParticipantLanguage(),
+    participant_language_note: administeredInParticipantLanguage()===false
+      ? "the session was NOT administered in the participant's strongest language. Category fluency and serial counting measure language as well as cognition, so scores on those tasks are depressed by the mismatch and are not comparable with norms or with participants tested in their own language."
+      : null,
     language_timing_source: languageRegistered() ? ADMIN_LANG : "en",
     language_note: languageRegistered()
       ? "timing parameters for this session come from the LANGUAGES entry for this language"
@@ -4657,6 +4721,7 @@ const CSV_HEAD=[
   "audio_route_watched","audio_route_changed","audio_route_change_first_ms",
   "audio_route_change_count",
   "administration_language","language_in_registry",
+  "participant_language","administered_in_participant_language",
   "pitch_mm","turns","radius_mm","direction","template_path_mm","template_style","tap_zone_mm","zones",
   "audio_key","stream_duration_s","floor_ms","mean_interval_ms","p_target","tone_ms",
   "f_standard_hz","f_target_hz","tone_level","seed","seed_mode",
@@ -4756,6 +4821,7 @@ function csvRows(rec){
     rec.audio_route_watch?(rec.audio_route_watch.change_first_ms??""):"",
     rec.audio_route_watch?(rec.audio_route_watch.change_count??""):"",
     rec.administration_language??"", bit(rec.language_in_registry),
+    rec.participant_language??"", bit(rec.administered_in_participant_language),
     sp.pitch_mm??"", sp.turns??"", S.radius??"", S.direction??"", S.pathMM?Math.round(S.pathMM):"",
     sp.template_style??"", tapp.zone_mm??"", tapp.zones??"",
     au.key??"", au.durS??"", au.floorMs??"", au.meanMs??"", au.ptg??"", au.tone??"",
@@ -5136,7 +5202,7 @@ function noteTrialScale(){
 // working state on the device so a reload is recoverable.
 const STATE_KEY="motiq_state";
 const STATE_FIELDS=["pid","grp","sex","byear","bmonth","domhand","ambihand","notes",
-                    "lang","langother",
+                    "lang","langother","plang","plangother",
                     "visitno","sessnum","sessnote","instr","tmpl","implement",
                     "pitch_pen","turns_pen","pitch_finger","turns_finger",
                     "startdia","endang","split","tapdia","zonegap","longtrial",
@@ -5222,7 +5288,9 @@ function restoreState(){
     // reload. The language sets the starting value; it does not own the field forever.
     ADMIN_LANG=currentLanguage();
     if($("langOtherBox")) $("langOtherBox").classList.toggle("hidden", $("lang").value!==LANG_OTHER);
-    renderLanguageNote();
+    if($("plangOtherBox") && $("plang"))
+      $("plangOtherBox").classList.toggle("hidden", $("plang").value!==LANG_OTHER);
+    renderLanguageNote(); renderLanguageMatchNote();
     applyCal(); updateAgeNote(); renderSecureNote(); onVoiceConsentChange();
     onParamExploreChange(); renderPidNote();
     renderStatus(); renderPlan(); renderQueue(); renderAudioTable();
