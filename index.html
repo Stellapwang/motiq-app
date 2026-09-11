@@ -232,9 +232,41 @@
         web platform reports <i>how high</i> it is: there is no standard property for the
         distance above the glass, and the Pointer Events proposal to add one is unresolved.
         A web build therefore knows the pen is somewhere in that 12&nbsp;mm band, not where in
-        it. Hesitation before a participant starts to draw can be timed and located here; its
-        height profile cannot be recovered afterwards, because it was never captured. The
-        native build is where that measurement becomes possible.</p>
+        it. <b>Hover is also gated on the iPad itself:</b> it arrived with the M2 generation.
+        Measured 2026-09-11 — on an 11-inch iPad Pro <b>3rd generation (M1) there is no hover
+        at all</b>, the pen being undetectable until it touches; on a <b>4th generation (M2)
+        hover works</b>, at about 59&nbsp;Hz. So hesitation before a participant commits to the
+        first stroke can be measured, but <b>only on an M2 iPad</b> — on the M1 it is not
+        merely unmeasured, it is unmeasurable. The height of the pen above the glass is
+        unavailable on both.</p>
+        <!-- Developer-facing, deliberately inside the box the examiner already reads rather
+             than in BACKLOG.md, which is a separate file in the repo and invisible from the
+             running app. Whoever builds the native instrument will open THIS file. Kept to
+             the requirement; the full specification is in the PENCIL HOVER comment in the
+             source, which this points at by name. -->
+        <div style="margin:0 0 8px;padding:9px 11px;border:1px solid #e9b7b7;border-radius:7px;
+                    background:#fff6f6">
+          <p style="margin:0 0 6px"><b>→ Required in the native iPadOS build</b></p>
+          <p style="margin:0 0 6px">Items 1 and 2 above are the two reasons the native build
+          exists. Neither is a defect in this prototype and neither can be fixed in a web
+          page. The native instrument must:</p>
+          <ul style="margin:0;padding-left:20px">
+            <li>deliver <b>pencil and touch as separate simultaneous streams</b>, so a
+            spiral-plus-tap condition runs as a genuine dual task (UIKit does this; Safari
+            does not);</li>
+            <li>record <b>hover onset</b>, and <b>hover dwell before first contact</b>
+            separately from time-to-first-contact, so hesitation with the pen raised is
+            distinguishable from hesitation with the pen nowhere near the glass;</li>
+            <li>record the <b>height profile</b> through the descent — whether the pen comes
+            down steadily, stalls partway, or repeatedly approaches and withdraws. This is
+            the measure a web build cannot capture at all;</li>
+            <li>record <b>pen lifts during drawing</b> as first-class events, with count and
+            duration, rather than inferring them from stroke boundaries.</li>
+          </ul>
+          <p style="margin:6px 0 0">Full rationale, and the caveat about verifying the exact
+          UIKit API rather than trusting a remembered symbol name, are in the
+          <code>PENCIL HOVER</code> comment block in this file's source.</p>
+        </div>
         <p style="margin:0 0 8px"><b>3. Voice recording requires an https address.</b>
         Microphone access is available only over <code>https</code>, or from
         <code>localhost</code> and <code>127.0.0.1</code>. When the app is opened from a
@@ -315,7 +347,14 @@
         <div id="langOtherBox" class="hidden"><label for="langother">Which language?</label>
           <input id="langother" type="text" oninput="onLanguageChange()"></div>
       </div>
+      <div class="r3">
+        <div><label for="plang">Participant's strongest language</label>
+          <select id="plang" onchange="onLanguageChange()"></select></div>
+        <div id="plangOtherBox" class="hidden"><label for="plangother">Which language?</label>
+          <input id="plangother" type="text" oninput="onLanguageChange()"></div>
+      </div>
       <div id="langnote"></div>
+      <div id="langmatch"></div>
       <label class="checkrow" for="voiceconsent">
         <input id="voiceconsent" type="checkbox" onchange="onVoiceConsentChange()">
         <span><b>Voice recording consented.</b> The participant has agreed to be audio-recorded
@@ -359,34 +398,13 @@
     <!-- Screening screens. Unlike the pen and sound checks these DO write a record --
          one per administration, per participant rather than per trial, under their own
          storage prefix and their own export. They are covariates for the analysis, not
-         trials, so they are deliberately not in CATALOGUE and never enter the queue. -->
-    <fieldset>
-      <legend>Mini Trail B <span style="font-weight:400;color:var(--muted)">— screening, per participant</span></legend>
-      <p class="note" style="margin-top:0">Ask the participant to join the circles in order —
-      <b>1, A, 2, B, 3, C, 4, D</b> — in one continuous movement, as quickly as they can without
-      lifting the stylus. The next circle is not indicated: locating it, and alternating
-      between the two sequences, is what this screen measures. A move to an incorrect circle
-      does not connect; direct the participant back to the last correct circle. The layout is
-      identical at every administration, so difficulty does not vary between administrations.
-      Expect approximately 15–20 seconds.</p>
-      <p class="note" style="margin-top:6px"><b>Run the practice first.</b> Four circles, same
-      rules, untimed, and no record is written. Without a practice, the first administration
-      partly measures comprehension of the instruction rather than performance.</p>
-      <div class="r4">
-        <div><label for="mtbhand">Hand</label>
-          <select id="mtbhand"><option value="dominant">Dominant</option>
-            <option value="nondominant">Non-dominant</option></select></div>
-        <div><label for="mtbimpl">Implement</label>
-          <select id="mtbimpl"><option value="pen">Stylus</option><option value="finger">Index finger</option></select></div>
-        <div><label>&nbsp;</label><div class="btnrow" style="margin:0">
-          <button class="ghost" onclick="mtbPractice()">Practice</button></div></div>
-        <div><label>&nbsp;</label><div class="btnrow" style="margin:0">
-          <button class="ghost" onclick="mtbReset()">Start the real one</button></div></div>
-      </div>
-      <canvas id="mtbpad" class="screenpad"></canvas>
-      <div id="mtbresult"></div>
-    </fieldset>
+         trials, so they are deliberately not in CATALOGUE and never enter the queue.
 
+         Mini Trail B was removed in v11.03: it duplicates a trail-making item already in
+         the MoCA, which is administered in the same visit, and two administrations of
+         trail making in one session are not independent -- the second benefits from the
+         first. Records written by earlier builds are still listed and still exported;
+         see SCREEN_LABEL and SCREEN_HEAD. -->
     <fieldset>
       <legend>Dot tap screen <span style="font-weight:400;color:var(--muted)">— screening, per participant</span></legend>
       <p class="note" style="margin-top:0">Ten seconds. A dot appears somewhere in the box; the
@@ -709,9 +727,9 @@
         <button class="ghost" onclick="renderScreens()">Refresh</button>
         <button class="ghost" onclick="delAllScreens()">Delete all screening</button>
       </div>
-      <div class="note">One row per administration rather than per trial. Mini Trail B and the
-      dot tap screen are participant-level covariates and are stored separately from the trial
-      file.</div>
+      <div class="note">One row per administration rather than per trial. The dot tap screen is
+      a participant-level covariate and is stored separately from the trial file. Records from
+      screens that have since been retired are still listed and exported here.</div>
     </fieldset>
 
     <fieldset>
@@ -758,7 +776,7 @@
 
 <script>
 "use strict";
-const BUILD = "v11.02 2026-09-07";
+const BUILD = "v11.03 2026-09-10";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -884,12 +902,60 @@ const CATALOGUE = [
    distance is unresolved, so there is no property to read and no vendor-prefixed
    substitute to fall back on.
 
-   NOT YET VERIFIED ON DEVICE: whether iPadOS Safari actually delivers those hover
-   pointermove events to a web page for a Pencil. That question is answered by the
-   pointer probe, run on the iPad with a Pencil -- a run on a Mac with a mouse
-   produces no pen events and answers nothing. Until it has been run, this app
-   captures no hover at all, and the trial handler discards hovering pointermove
-   because no stroke exists for that pointer.
+   MEASURED, 2026-09-11, iPadOS Safari 26.6.1, iPad Pro 11-inch 3RD GENERATION (M1)
+   with an Apple Pencil 2nd generation: no hover events reached the page. Over 41
+   seconds and 13 touch-and-lift cycles, 718 pointermove events, none with the pen out
+   of contact; pointerover fired exactly once per pointerdown, meaning the pen was
+   undetectable until it touched the glass.
+
+   THAT RESULT PROVES NOTHING ABOUT SAFARI, and must not be read as though it did.
+   Apple Pencil hover is gated on iPad hardware: it arrived with the M2 generation, and
+   the 3rd-generation 11-inch iPad Pro is M1. On that device there is no hover to
+   deliver, so zero hover events is the expected outcome no matter how Safari behaves.
+   The measurement confirms the hardware limit and leaves the web-platform question
+   untouched.
+
+   ANSWERED, same day, 11-inch iPad Pro 4TH GENERATION (M2), same Pencil 2, Safari 16.6:
+   SAFARI DOES EXPOSE HOVER. 423 hover samples in 14.7 s, median gap 17 ms, about
+   59 Hz. pointerover fired 6 times against 3 pointerdowns -- over exceeding down is the
+   signature of a pointer becoming known on approach, and is the mirror image of the
+   one-for-one seen on the M1.
+
+   The measure item 2 exists for showed up immediately and unprompted: first hover at
+   3505 ms, first contact at 5820 ms, so 2315 ms of the pen held above the glass before
+   committing to the first stroke. On the M1 that interval is not merely unmeasured, it
+   is unmeasurable.
+
+   So hover capture IS buildable in the web build, on M2 hardware. What remains
+   unavailable everywhere is hover HEIGHT: the probe found no property carrying distance
+   above the glass on either device, which is the web-platform limit described above and
+   is not device-dependent.
+
+   WHICH IPAD THE PILOT RUNS ON IS NOW A STUDY-DESIGN QUESTION, not only a procurement
+   one. Any hover-derived measure -- in this build or the native one -- is unavailable
+   on the M1 iPad. If initiation hesitation matters, the sessions have to run on the M2.
+
+   THE TWO DEVICES BRIEFLY DIFFERED IN SOFTWARE, and the episode is kept here because the
+   failure mode it exposed is permanent even though this instance is fixed. The M2 shipped
+   on Safari 16.6, which reports neither altitudeAngle nor azimuthAngle; the M1 was on
+   26.6.1, which reports both. Pen altitude and azimuth feed the spiral kinematics, so for
+   a time the device that could measure hesitation was the device that could not measure
+   pen orientation.
+
+   RESOLVED 2026-09-11: the M2 was updated and now reports altitudeAngle on every event
+   and azimuthAngle whenever the pen is in contact, alongside hover at the same ~59 Hz.
+   One device now does both, and it is the M2 that the pilot runs on.
+
+   The general point survives the fix. TWO IPADS RUNNING THE SAME BUILD CAN WRITE RECORDS
+   WITH DIFFERENT FIELDS POPULATED, because which pointer properties exist is a property
+   of the OS and not of this code. That is why user_agent is exported on every row: without
+   it, a column that is populated in some rows and empty in others is unattributable, and
+   looks like a recording fault rather than an OS difference.
+
+   What IS delivered on the device tested, and is worth knowing because the spiral
+   kinematics use it: pressure, tiltX and tiltY, altitudeAngle and azimuthAngle, all
+   populated and varying. twist was zero throughout. The Pencil is fully reported while
+   it is in contact; only the approach is invisible.
 
    WHAT THE NATIVE BUILD IS FOR
 
@@ -1236,7 +1302,7 @@ function goPage(n){
   // The screening canvases size themselves from clientWidth, which is not final in the
   // same tick the page is unhidden -- laying them out then can give a pad a fraction of
   // its real width. Measure on the next frame instead.
-  if(n===2){ onVoiceConsentChange(); requestAnimationFrame(()=>{ mtbReset(); dotReset(); }); }
+  if(n===2){ onVoiceConsentChange(); requestAnimationFrame(()=>{ dotReset(); }); }
   if(n===3){ renderPlan(); renderQueue(); }
   renderStatus();
   if(n===4){ renderAudioTable(); updateGeo(); }
@@ -1534,231 +1600,6 @@ window.addEventListener("resize",()=>{ if(!$("pg2").classList.contains("hidden")
    =========================================================================== */
 const SCREEN_PREFIX="motiq_screen:";
 
-// Fixed Mini Trail B layout. Normalized to the box, so it scales with the canvas but
-// the ARRANGEMENT never varies -- the sequence, the angles between hops and the
-// crossings are identical at every administration on every device. A covariate whose
-// difficulty is randomised is not a covariate.
-//
-// These coordinates are not eyeballed. They were chosen so that on every canvas size
-// the app can produce, the straight line of a CORRECT hop clears every other circle by
-// at least 2.3x the hit radius. That constraint is the whole point: a layout where the
-// right line grazes a wrong circle scores a correct participant as making errors, and
-// the error count is one of the two numbers this screen exists to produce. Circles stay
-// at least 3.4 hit radii apart, and the path crosses itself 8 times so the task still
-// demands visual search rather than following a ring.
-//
-// If these are ever changed, re-check both properties before collecting with them.
-const MTB_NODES=[
-  { label:"1", x:0.899, y:0.161 },
-  { label:"A", x:0.800, y:0.745 },
-  { label:"2", x:0.368, y:0.134 },
-  { label:"B", x:0.252, y:0.920 },
-  { label:"3", x:0.635, y:0.137 },
-  { label:"C", x:0.126, y:0.650 },
-  { label:"4", x:0.551, y:0.714 },
-  { label:"D", x:0.115, y:0.106 }
-];
-// The practice: four circles, 1-A-2-B, same rules, untimed, no record. Deliberately a
-// DIFFERENT arrangement from the test, the way TMT-B's sample form is. Practising on the
-// real positions would teach half the test layout before the timed administration, and a
-// covariate is not comparable across participants if some of them have seen it.
-// Checked to the same constraint: a correct hop clears every other circle by at least
-// 4.6 hit radii at every canvas size, and the path crosses itself once.
-const MTB_PRACTICE_NODES=[
-  { label:"1", x:0.140, y:0.700 },
-  { label:"A", x:0.860, y:0.360 },
-  { label:"2", x:0.140, y:0.140 },
-  { label:"B", x:0.820, y:0.890 }
-];
-const MTB={};
-const mtbNodes = () => MTB.practice ? MTB_PRACTICE_NODES : MTB_NODES;
-
-function mtbGeom(){
-  const cv=$("mtbpad"), dpr=window.devicePixelRatio||1;
-  const w=cv.clientWidth||700, h=Math.round(clamp(w*0.60,240,520));
-  cv.width=w*dpr; cv.height=h*dpr; cv.style.height=h+"px";
-  const g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0);
-  const r=clamp(Math.min(w,h)*0.062,17,34), pad=r+10;
-  const pos=mtbNodes().map(n=>({ label:n.label,
-    x:pad+n.x*(w-2*pad), y:pad+n.y*(h-2*pad) }));
-  return {g,w,h,r,pos};
-}
-function mtbDraw(){
-  const {g,w,h,r,pos}=MTB.geom;
-  g.clearRect(0,0,w,h); g.fillStyle="#fff"; g.fillRect(0,0,w,h);
-  // the participant's own line first, so the circles stay readable over it
-  g.strokeStyle="#1d5fa8"; g.lineWidth=2.4; g.lineCap="round"; g.lineJoin="round";
-  MTB.strokes.forEach(st=>{ if(st.length<2) return;
-    g.beginPath(); st.forEach((p,i)=>i?g.lineTo(p.x,p.y):g.moveTo(p.x,p.y)); g.stroke(); });
-  // The next circle is NOT indicated. Searching the display for it, and alternating
-  // between the number and letter sequences, is the entire cognitive content of Trail B;
-  // cue it and what is left is a visuomotor pointing task, which the dot screen already
-  // measures. Circles already reached stay marked, because that is a record of what has
-  // happened rather than a hint about what comes next.
-  pos.forEach((n,i)=>{
-    const done=i<MTB.next, bad=MTB.flash===i;
-    g.fillStyle   = bad?"#fdecec" : done?"#D9EFD6" : "#f2f5f8";
-    g.strokeStyle = bad?"#8c2020" : done?"#4C8C4A" : "#8a929c";
-    g.lineWidth   = bad?3:1.5;
-    g.beginPath(); g.arc(n.x,n.y,r,0,7); g.fill(); g.stroke();
-    g.fillStyle   = bad?"#8c2020" : done?"#2F6B2D" : "#5d6570";
-    g.font=`600 ${Math.round(r*1.05)}px system-ui`; g.textAlign="center";
-    g.fillText(n.label,n.x,n.y+r*0.37);
-  });
-}
-// A rejected move is shown, briefly, on the circle that was refused -- never on the one
-// that was wanted, which would give the answer away.
-function mtbFlash(i){
-  MTB.flash=i; mtbDraw();
-  clearTimeout(MTB.flashTimer);
-  MTB.flashTimer=setTimeout(()=>{ MTB.flash=null; if(MTB.geom) mtbDraw(); },420);
-}
-function mtbReset(){ mtbBegin(false); }
-function mtbPractice(){ mtbBegin(true); }
-function mtbBegin(practice){
-  if(!$("mtbpad")) return;
-  clearTimeout(MTB.flashTimer);
-  MTB.practice=!!practice; MTB.flash=null;
-  MTB.geom=mtbGeom(); MTB.state="idle"; MTB.next=0; MTB.arrivals=[]; MTB.errors=0;
-  MTB.errorLog=[]; MTB.strokes=[]; MTB.inside=null; MTB.t0=null; MTB.drawing=false;
-  MTB.saved=false;
-  mtbDraw();
-  $("mtbresult").innerHTML = MTB.practice
-    ? `<div class="note" style="margin-top:10px"><b>Practice</b> — four circles,
-       <b>1, A, 2, B</b>. Same rules, not timed, and nothing is saved. Press
-       <b>Start the real one</b> when they have the idea.</div>`
-    : `<div class="note" style="margin-top:10px">Not started. The first touch on <b>1</b>
-       starts the clock. Run the practice first if you have not.</div>`;
-}
-function mtbNodeAt(x,y){
-  const {r,pos}=MTB.geom, hit=r*1.35;
-  for(let i=0;i<pos.length;i++){
-    if(Math.hypot(pos[i].x-x,pos[i].y-y)<=hit) return i;
-  }
-  return null;
-}
-(function initMtb(){
-  const cv=$("mtbpad"); if(!cv) return;
-  const rel=e=>{ const b=cv.getBoundingClientRect(); return {x:e.clientX-b.left,y:e.clientY-b.top}; };
-  const wants=()=>$("mtbimpl").value;
-  const okPointer=t=> wants()==="pen" ? (t==="pen"||t==="mouse") : (t==="touch"||t==="mouse");
-  const sample=(p,t)=>{
-    const st=MTB.strokes[MTB.strokes.length-1]; if(!st) return;
-    st.push({x:p.x,y:p.y,t});
-    const idx=mtbNodeAt(p.x,p.y);
-    if(idx===MTB.inside) return;
-    MTB.inside=idx;
-    if(idx===null || MTB.state==="done") return;
-    const NODES=mtbNodes();
-    if(idx===MTB.next){
-      MTB.arrivals.push({ label:NODES[idx].label, order:idx+1, t_ms:+(t-MTB.t0).toFixed(1) });
-      MTB.next++;
-      if(MTB.next>=NODES.length){ MTB.state="done"; mtbDraw(); mtbFinish(); return; }
-      mtbDraw();
-    } else if(idx<MTB.next){
-      // A circle already joined. Passing back over one, or lifting the stylus and putting
-      // it down again on the one they are working from, is not an error -- that connection
-      // has already been made. Counting it would inflate the error score of anybody who
-      // lifts the pen, which is most older adults, on a measure whose whole point is the
-      // error count.
-    } else {
-      // The connection does not take. The target stays where it is, so the participant
-      // has to come back to the last correct circle and go on from there -- the same
-      // redirection the examiner performs on paper, and the time it costs is the penalty.
-      // The ink is kept: path_length_mm and mean_velocity_mm_s are measures of what the
-      // hand actually did, and erasing the excursion would misreport both.
-      MTB.errors++;
-      MTB.errorLog.push({ t_ms:+(t-MTB.t0).toFixed(1),
-        attempted:NODES[idx].label,
-        expected:NODES[MTB.next].label,
-        from_node: MTB.next>0 ? NODES[MTB.next-1].label : null });
-      mtbFlash(idx);
-    }
-  };
-  cv.addEventListener("pointerdown",e=>{
-    if(MTB.state==="done") return;
-    if(!okPointer(e.pointerType)) return;
-    e.preventDefault();
-    const now=performance.now(), p=rel(e);
-    if(MTB.state==="idle"){ MTB.state="running"; MTB.t0=now; }
-    MTB.drawing=true; MTB.strokes.push([]); MTB.inside=null;
-    sample(p,now);
-  });
-  cv.addEventListener("pointermove",e=>{
-    if(!MTB.drawing) return; e.preventDefault();
-    // An empty coalesced list would drop the sample entirely, and with it the node the
-    // stylus passed through, so fall back to the event itself.
-    let evs=e.getCoalescedEvents?e.getCoalescedEvents():null;
-    if(!evs || !evs.length) evs=[e];
-    const g=MTB.geom.g; g.strokeStyle="#1d5fa8"; g.lineWidth=2.4; g.lineCap="round";
-    for(const ev of evs){
-      const p=rel(ev), st=MTB.strokes[MTB.strokes.length-1];
-      const last=st&&st.length?st[st.length-1]:null;
-      if(last){ g.beginPath(); g.moveTo(last.x,last.y); g.lineTo(p.x,p.y); g.stroke(); }
-      sample(p,performance.now());
-      if(MTB.state==="done") break;
-    }
-  });
-  const end=()=>{ MTB.drawing=false; MTB.inside=null; };
-  cv.addEventListener("pointerup",end);
-  cv.addEventListener("pointercancel",end);
-  cv.addEventListener("pointerleave",end);
-})();
-
-function mtbFinish(){
-  MTB.drawing=false;
-  if(MTB.practice){
-    // A practice is not a measurement. It is untimed and writes nothing, so there is no
-    // chance of a practice row reaching the screening file and being analyzed as one.
-    $("mtbresult").innerHTML=`<div class="good">Practice complete — all four circles joined
-      in order${MTB.errors?`, after ${MTB.errors} wrong move${MTB.errors===1?"":"s"}`:""}.
-      Nothing was saved.</div>
-      <div class="note">Press <b>Start the real one</b> when they are ready. Repeat the
-      practice as many times as it takes.</div>`;
-    return;
-  }
-  const p=parseFloat($("ppmm").value)||3.78;
-  let pathPx=0;
-  MTB.strokes.forEach(st=>{ for(let i=1;i<st.length;i++)
-    pathPx+=Math.hypot(st[i].x-st[i-1].x, st[i].y-st[i-1].y); });
-  const pathMM=pathPx/p;
-  const lastT=MTB.arrivals.length?MTB.arrivals[MTB.arrivals.length-1].t_ms:0;
-  const firstT=MTB.arrivals.length?MTB.arrivals[0].t_ms:0;
-  const completionMs=+lastT.toFixed(1);
-  const velocity = completionMs>0 ? pathMM/(completionMs/1000) : null;
-  const rec={
-    ...screenRecordBase("mini_trail_b"),
-    hand:$("mtbhand").value, implement:$("mtbimpl").value,
-    layout:"fixed 1-A-2-B-3-C-4-D; identical at every administration",
-    layout_nodes:MTB_NODES.map(n=>({label:n.label,x_norm:n.x,y_norm:n.y})),
-    next_node_cued:false,
-    wrong_moves_blocked:true,
-    administration_note:"the next circle is never indicated on screen, and a move to a circle other than the one due does not connect; errors counts those refused moves and the time they cost is carried by completion_time_ms. Re-entering a circle already joined -- including putting the stylus down again on the one being worked from -- is not counted, because that connection has already been made.",
-    completion_time_ms:completionMs,
-    completion_time_clock:"ms from first pen contact to arrival at D",
-    time_first_to_last_node_ms:+(lastT-firstT).toFixed(1),
-    errors:MTB.errors, error_log:MTB.errorLog,
-    node_arrivals_ms:MTB.arrivals,
-    strokes:MTB.strokes.length,
-    path_length_mm:+pathMM.toFixed(1),
-    mean_velocity_mm_s: velocity==null?null:+velocity.toFixed(1),
-    samples:MTB.strokes.reduce((a,s)=>a+s.length,0)
-  };
-  const res=putScreen(rec);
-  MTB.saved=res.ok;
-  const secs=(completionMs/1000).toFixed(1);
-  $("mtbresult").innerHTML=`<div class="${MTB.errors>2||completionMs>40000?"warn":"good"}">
-    Completed in <b>${secs} s</b> with <b>${MTB.errors}</b> error${MTB.errors===1?"":"s"}.
-    Path ${Math.round(pathMM)} mm in ${rec.strokes} stroke${rec.strokes===1?"":"s"},
-    mean velocity ${velocity==null?"–":Math.round(velocity)} mm/s.</div>` +
-    (res.ok ? `<div class="note">Saved as a screening record (<code>${esc(rec.screen_uid)}</code>).
-       Press Restart to administer it again; each administration is kept.</div>`
-            : `<div class="bad">Not saved — ${esc(res.error)}. ${res.error==="no participant id"
-               ? "Enter a Participant ID at the top of this page, then Restart and run it again."
-               : "Export and clear storage from Results and data."}</div>`);
-  renderScreens();
-}
-
 /* ------------------------------------------------------- dot tap screen */
 // A screen, not a covariate-grade measure. Ten seconds cannot support an estimate of
 // response-time variability -- see measure_grade in the record it writes.
@@ -1901,7 +1742,7 @@ function screenRecordBase(which){
   const b=birthInfo(), pid=$("pid").value||"";
   const iso=new Date().toISOString();
   return {
-    schema:"motiq_prototype/9", build:BUILD, record_type:"screening", screen:which,
+    schema:"motiq_prototype/10", build:BUILD, record_type:"screening", screen:which,
     screen_uid:`${iso.replace(/[:.]/g,"-")}_${pid||"unnamed"}_${which}`,
     started_iso:iso,
     participant:{ id:pid, group:$("grp").value, sex:$("sex").value||null,
@@ -1938,7 +1779,11 @@ function delAllScreens(){
   listScreens().forEach(t=>{ try{ localStorage.removeItem(t.key); }catch(e){} delete SCREEN_MEM[t.key]; });
   renderScreens();
 }
-const SCREEN_LABEL={ mini_trail_b:"Mini Trail B", dot_tap:"Dot tap" };
+// mini_trail_b is RETIRED, not deleted. The task cannot be administered any more, but
+// records written by builds up to v11.02 are still on devices, and a reader that has
+// forgotten the name renders them as the raw key. Retired screens keep their label here
+// for as long as their records can exist.
+const SCREEN_LABEL={ mini_trail_b:"Mini Trail B (retired)", dot_tap:"Dot tap" };
 function renderScreens(){
   if(!$("screenBody")) return;
   const ts=listScreens();
@@ -1947,6 +1792,8 @@ function renderScreens(){
   let h=`<table><tr><th>Started (local)</th><th>Participant</th><th>Screen</th><th>Hand</th>
          <th>Result</th><th class="num">KB</th><th></th></tr>`;
   ts.forEach(t=>{ const r=getScreen(t.key); if(!r) return;
+    // Kept for the same reason as the label. Without this branch an existing Mini Trail B
+    // record falls through to the dot-tap summary and renders "undefined/undefined hit".
     const summary = r.screen==="mini_trail_b"
       ? `${(r.completion_time_ms/1000).toFixed(1)} s · ${r.errors} error${r.errors===1?"":"s"}`
       : `${r.hits}/${r.dots_presented} hit · mean ${r.rt_mean_ms==null?"–":Math.round(r.rt_mean_ms)+" ms"}`;
@@ -2032,11 +1879,35 @@ renderAmbiHand();
 // screen and the record say so.
 const LANG_OTHER="__other__";
 function fillLanguages(){
-  const el=$("lang"); if(!el) return;
-  el.innerHTML = Object.keys(LANGUAGES)
-      .map(k=>`<option value="${k}">${esc(LANGUAGES[k].label)}</option>`).join("")
-    + `<option value="${LANG_OTHER}">Other (not in the registry)…</option>`;
-  el.value="en";
+  const opts = Object.keys(LANGUAGES)
+      .map(k=>`<option value="${k}">${esc(LANGUAGES[k].label)}</option>`).join("");
+  const el=$("lang");
+  if(el){ el.innerHTML = opts + `<option value="${LANG_OTHER}">Other (not in the registry)…</option>`;
+          el.value="en"; }
+  // The participant's language is a FACT ABOUT THE PARTICIPANT, not a set of timing
+  // parameters, so it is not constrained to the registry in any meaningful sense -- the
+  // registry entries are offered only as convenient spellings. "Other" is the normal case
+  // for it, not the exception, and the registry never gates what can be recorded here.
+  const pe=$("plang");
+  if(pe){ pe.innerHTML = `<option value="">— not recorded —</option>` + opts
+            + `<option value="${LANG_OTHER}">Other…</option>`;
+          pe.value=""; }
+}
+// Which language the participant is strongest in. Deliberately NOT "native" or "first":
+// someone who emigrated at five may have a first language they are no longer dominant in,
+// and testing them in it would disadvantage them rather than help. What matters for these
+// tasks is the language they perform best in, which is what this asks.
+function participantLanguage(){
+  const el=$("plang"); if(!el || !el.value) return null;
+  if(el.value!==LANG_OTHER) return el.value;
+  const t=($("plangother")?$("plangother").value:"").trim();
+  return t || null;
+}
+// The derived field analysis actually filters on. Null when the participant's language was
+// not recorded -- which is NOT the same as a match, and must never be collapsed into one.
+function administeredInParticipantLanguage(){
+  const p=participantLanguage(); if(!p) return null;
+  return p.toLowerCase()===currentLanguage().toLowerCase();
 }
 // The recorded language: a registry key, or whatever was typed for "Other".
 function currentLanguage(){
@@ -2058,9 +1929,35 @@ function applyLanguageDefaults(){
 function onLanguageChange(){
   const other = $("lang") && $("lang").value===LANG_OTHER;
   if($("langOtherBox")) $("langOtherBox").classList.toggle("hidden", !other);
+  const pother = $("plang") && $("plang").value===LANG_OTHER;
+  if($("plangOtherBox")) $("plangOtherBox").classList.toggle("hidden", !pother);
   applyLanguageDefaults();
   renderLanguageNote();
+  renderLanguageMatchNote();
   saveState();
+}
+// The mismatch is the finding, not either language on its own. Testing someone in a
+// language they are not strongest in depresses performance on exactly the verbal tasks
+// this battery uses -- fluency and serial counting -- and that depression is
+// indistinguishable, in the score alone, from the impairment being looked for. It compounds
+// with the norms problem already recorded on WORD_PROMPTS: an English fluency norm applied
+// to a non-native English speaker is wrong twice over, once for the language and once for
+// the speaker. Warns, never blocks: sometimes there is no examiner who speaks the
+// participant's language, and running the session anyway is the right call as long as the
+// record says so.
+function renderLanguageMatchNote(){
+  const el=$("langmatch"); if(!el) return;
+  const p=participantLanguage();
+  if(!p){ el.innerHTML=""; return; }
+  if(administeredInParticipantLanguage()){ el.innerHTML=""; return; }
+  const admin=langEntry(currentLanguage())?langEntry(currentLanguage()).label:currentLanguage();
+  el.innerHTML=`<div class="warn"><b>Administered in ${esc(admin)}, but the participant is
+    strongest in ${esc(p)}.</b> The spoken tasks — category fluency and serial counting —
+    measure language as well as cognition, so scores from this session are depressed by the
+    mismatch and cannot be compared against norms or against participants tested in their own
+    language. This is recorded as <code>administered_in_participant_language: false</code>.
+    Run the session if there is no alternative; do not score it as if there were no
+    mismatch.</div>`;
 }
 function renderLanguageNote(){
   const el=$("langnote"); if(!el) return;
@@ -2788,7 +2685,7 @@ function newParticipant(){
   Object.keys(ROOMCHECK).forEach(k=>delete ROOMCHECK[k]); ROOMCHECK.floor_dbfs=null;
   if($("roomresult")) $("roomresult").innerHTML="";
   if($("roomBtn")){ $("roomBtn").disabled=false; $("roomBtn").textContent="Run room check (5 s)"; }
-  penPadClear(); renderAudioCheck(); mtbReset(); dotReset(); onVoiceConsentChange();
+  penPadClear(); renderAudioCheck(); dotReset(); onVoiceConsentChange();
   onParamExploreChange();
   SERIES=0;
   Object.keys(REPEATS).forEach(k=>delete REPEATS[k]);
@@ -3301,7 +3198,22 @@ const idbDel  = id  => idbTx("readwrite", st=>st.delete(id));
 const idbClear= ()  => idbTx("readwrite", st=>st.clear());
 
 /* ------------------------------------------------------- layout + draw */
-let L=null,SPIRAL=null,STROKES=[],TAPS=[],TAPFLASH=null;
+let L=null,SPIRAL=null,STROKES=[],TAPS=[],TAPFLASH=null,HOVER=[];
+// Hover arrives at about 59 Hz, measured on an 11-inch iPad Pro 4th generation. A stored
+// hover row costs 49 bytes, measured on a real saved record rather than estimated, so a
+// 45 s trial spent ENTIRELY hovering would be ~2650 rows and ~128 KB against roughly 5 MB
+// of localStorage shared by every trial on the device.
+//
+// That worst case does not occur: during a spiral the pen is in contact almost all of the
+// time, and hover happens only before the first stroke and between lifts. A realistic trial
+// carrying a few seconds of initiation hover costs single-digit KB -- the test trial here
+// held 49 rows for 2.4 KB against a 9.7 KB record. The cap exists for the case nobody
+// foresaw, not for the expected one.
+//
+// It does NOT truncate silently. On reaching the cap recording stops and the record says
+// so, because a hover stream that stopped early and one that ended naturally are otherwise
+// indistinguishable in the data.
+const HOVER_MAX_ROWS=8000;
 const FLASH_MS=260;
 let TRIAL=null;                   // the queue item being run
 
@@ -3612,7 +3524,7 @@ function openTrial(showInstruction){
     catch(e){ alert("Cannot build the stream for this trial:\n\n"+e.message); return; }
     audio();
   }
-  STROKES=[]; TAPS=[]; TAPFLASH=null;
+  STROKES=[]; TAPS=[]; TAPFLASH=null; HOVER=[];
   TRIAL.voiceFailure=null;
   stageOn(true);
   layout(); drawScene();
@@ -3912,6 +3824,14 @@ function runTrial(seq,c){
         startedISO:new Date().toISOString(),firstContactMs:null,toneClockDone:false,
         lastContact:null,saved:false,c,voice:null,voicePending:null,fluencyCueMs:null,
         responseLocked, windowStart, noResponseCeiling:false, ceilTimer:null, ended:false,
+        // Initiation measures taken BEFORE the pen ever touches. On a spiral task the
+        // interval between the pen appearing above the glass and committing to the first
+        // stroke is the hesitation itself, not dead time waiting for the trial to start.
+        firstHoverMs:null, hoverTruncated:false, hoverSeen:0,
+        // Lifts during drawing. Recoverable from stroke boundaries, but the instruction is
+        // NOT to lift, so how often and for how long the pen left the paper is a measure in
+        // its own right rather than something to be reconstructed by whoever reads the file.
+        lifts:[], lastLiftAt:null,
         measuredDurationMs:null,
         // A press means the examiner intervened -- prompted a participant who had gone
         // quiet, or marked an interruption. Offsets are on the trial clock.
@@ -3983,16 +3903,77 @@ function runTrial(seq,c){
     const st=[]; STROKES.push(st); strokeFor.set(e.pointerId,st); addPoint(st,e,t);
     if(RUN.firstContactMs===null) RUN.firstContactMs=+t.toFixed(2);
   };
-  const move=e=>{ const st=strokeFor.get(e.pointerId); if(!st) return;
+  // A LIFT IS NOT A HOVER. pointerup, pointerout, pointerleave and pointercancel all arrive
+  // with pressure 0 and buttons 0 -- the pen has just STOPPED touching -- so testing pressure
+  // and buttons alone scores the end of every stroke as a hover. Verified the hard way: the
+  // probe made exactly that mistake and reported a first hover 90 ms BEFORE first contact on
+  // a device delivering no hover at all. Only events reporting a position the pen currently
+  // occupies can be hover.
+  // getCoalescedEvents reports the finer-grained events the platform merged into this one.
+  // It can legitimately return an EMPTY list -- there was nothing to merge -- and iterating
+  // that directly silently drops the event itself. The pen path has always had this shape
+  // and got away with it because real hardware fills the list; nothing guarantees that.
+  const coalesced = e => {
+    if(!e.getCoalescedEvents) return [e];
+    const evs=e.getCoalescedEvents();
+    return (evs && evs.length) ? evs : [e];
+  };
+  const isHoverEv = e => e.pointerType==="pen" && e.pressure===0 && e.buttons===0
+                         && (e.type==="pointermove"||e.type==="pointerover");
+  const addHover=(e,t)=>{
+    RUN.hoverSeen++;
+    if(RUN.firstHoverMs===null) RUN.firstHoverMs=+t.toFixed(2);
+    if(HOVER.length>=HOVER_MAX_ROWS){ RUN.hoverTruncated=true; return; }
+    const m=toMM(e.clientX,e.clientY);
+    HOVER.push({t:+t.toFixed(2),x:+m.x.toFixed(3),y:+m.y.toFixed(3),
+                tx:e.tiltX??null,ty:e.tiltY??null});
+  };
+  const move=e=>{
+    const st=strokeFor.get(e.pointerId);
+    // Hover used to die exactly here: no stroke for this pointer, so return. A hovering pen
+    // never has a stroke, so every hover event the platform sent was discarded unread.
+    if(!st){
+      if(c.spiral && isHoverEv(e)){
+        for(const ev of coalesced(e)) addHover(ev,performance.now()-perf0);
+      }
+      return;
+    }
     RUN.lastContact=performance.now();
-    const evs=e.getCoalescedEvents?e.getCoalescedEvents():[e];
+    const evs=coalesced(e);
     for(const ev of evs) addPoint(st,ev,performance.now()-perf0,evs.length>1); };
-  const up=e=>{ strokeFor.delete(e.pointerId); RUN.lastContact=performance.now();
-    if(strokeFor.size===0) RUN.penUpAt=performance.now(); };
-  cv.addEventListener("pointerdown",down); cv.addEventListener("pointermove",move);
+  // Entry and exit of the hover region, which is not the same as the first hover SAMPLE:
+  // pointerover fires the moment the pen becomes known, before it has moved.
+  const over=e=>{ if(c.spiral && isHoverEv(e)) addHover(e,performance.now()-perf0); };
+  const out=e=>{
+    if(!c.spiral || e.pointerType!=="pen") return;
+    // The pen left the hover band entirely -- lifted clear rather than merely stopped
+    // drawing. Recorded as the end of a hover episode, distinct from a stroke ending.
+    RUN.hoverExits=(RUN.hoverExits||0)+1;
+  };
+  const up=e=>{
+    strokeFor.delete(e.pointerId); RUN.lastContact=performance.now();
+    if(strokeFor.size===0){
+      RUN.penUpAt=performance.now();
+      // A lift only counts once drawing has begun. Before the first stroke there is nothing
+      // to lift from, and counting it would conflate initiation with interruption.
+      if(RUN.firstContactMs!==null) RUN.lastLiftAt=performance.now();
+    } };
+  // Pairs a lift with the touch-down that ends it, so lift DURATION is recorded rather than
+  // only lift count. Wrapped around the existing handler so the drawing path is untouched.
+  const downWrapped=e=>{
+    if(RUN.lastLiftAt!=null && strokeFor.size===0 && drawOK(e.pointerType) && c.spiral){
+      RUN.lifts.push({ at_ms:+(RUN.lastLiftAt-perf0).toFixed(1),
+                       dur_ms:+(performance.now()-RUN.lastLiftAt).toFixed(1) });
+      RUN.lastLiftAt=null;
+    }
+    down(e);
+  };
+  cv.addEventListener("pointerdown",downWrapped); cv.addEventListener("pointermove",move);
+  cv.addEventListener("pointerover",over); cv.addEventListener("pointerout",out);
   cv.addEventListener("pointerup",up); cv.addEventListener("pointercancel",up);
-  RUN.teardown=()=>{ cv.removeEventListener("pointerdown",down);
+  RUN.teardown=()=>{ cv.removeEventListener("pointerdown",downWrapped);
     cv.removeEventListener("pointermove",move); cv.removeEventListener("pointerup",up);
+    cv.removeEventListener("pointerover",over); cv.removeEventListener("pointerout",out);
     cv.removeEventListener("pointercancel",up); };
 
   $("ctrl").innerHTML="";
@@ -4194,7 +4175,7 @@ function resetTrial(){
   endRecording();
   if(RUN.voicePending) RUN.voicePending.then(()=>{ if(RUN&&RUN.voice) RUN.voice.blob=null; });
   if(RUN.teardown) RUN.teardown();
-  STROKES=[]; TAPS=[]; TAPFLASH=null;
+  STROKES=[]; TAPS=[]; TAPFLASH=null; HOVER=[];
   // Re-open rather than rebuilding in place: a fresh stream, a fresh sequence, and the
   // microphone acquired again inside this button press, which is where Safari allows it.
   RUN=null; openTrial(false);
@@ -4326,7 +4307,7 @@ function finish(){
          sdL:sdOf(iti(lt)),sdR:sdOf(iti(rt)),sdS:sdOf(iti(sg)),
          altPct: c.zones===2&&zs.length>1 ? 100*alt/(zs.length-1) : null };
   }
-  LAST={RUN,STROKES,TAPS,att,SPIRAL,tp,layoutSafe:L.safeAreaMM,ppmm:L.p,trial:{...TRIAL}};
+  LAST={RUN,STROKES,TAPS,HOVER,att,SPIRAL,tp,layoutSafe:L.safeAreaMM,ppmm:L.p,trial:{...TRIAL}};
   RUN.saved=false;
 
   cancelAnimationFrame(RAF); drawScene();
@@ -4590,7 +4571,7 @@ function buildRecord(){
   const heard = c.count ? countedHeard(R.seq, R.streamCutMs, c.countOf) : null;
   const scheduled = R.seq ? (c.countOf==="all" ? R.seq.n : R.seq.t) : null;
   return {
-    schema:"motiq_prototype/9", build:BUILD, record_type:"trial",
+    schema:"motiq_prototype/10", build:BUILD, record_type:"trial",
     note:"PROTOTYPE. Browser mm and browser timing are approximations.",
     trial_id:R.trialId, trial_uid:R.trialUid,
     session_key:SESSION_KEY,
@@ -4624,6 +4605,13 @@ function buildRecord(){
     // it as English would make the export state something false.
     administration_language: ADMIN_LANG,
     language_in_registry: languageRegistered(),
+    // A fact about the participant, not about the session's timing parameters. Null means
+    // not recorded, which is NOT the same as matching the administration language.
+    participant_language: participantLanguage(),
+    administered_in_participant_language: administeredInParticipantLanguage(),
+    participant_language_note: administeredInParticipantLanguage()===false
+      ? "the session was NOT administered in the participant's strongest language. Category fluency and serial counting measure language as well as cognition, so scores on those tasks are depressed by the mismatch and are not comparable with norms or with participants tested in their own language."
+      : null,
     language_timing_source: languageRegistered() ? ADMIN_LANG : "en",
     language_note: languageRegistered()
       ? "timing parameters for this session come from the LANGUAGES entry for this language"
@@ -4710,6 +4698,37 @@ function buildRecord(){
         : R.seq.onsets.filter((o,i)=>o<=R.streamCutMs && R.seq.isTarget[i]).length,
       onsets_ms:R.seq.onsets, tone_type:R.seq.isTarget.map(x=>x?"target":"standard"),
       intervals_ms:R.seq.intervals, min_isi_ms:R.seq.minISI } : null,
+    // PRE-WINDOW INITIATION. On a spiral task the pen is visible above the glass before it
+    // commits, and the gap between those two instants is the hesitation being measured --
+    // not dead time, and not lost drawing time. Requires an M2-or-later iPad: on an M1
+    // there is no hover at all and every field here is null, which is a hardware fact and
+    // not a recording failure. See the PENCIL HOVER comment.
+    hover: R.c && R.c.spiral ? {
+        supported: R.hoverSeen>0,
+        n_samples: (LAST.HOVER||[]).length,
+        n_events_seen: R.hoverSeen,
+        first_hover_ms: R.firstHoverMs,
+        first_contact_ms: R.firstContactMs,
+        // The measure. Null when either end is missing -- a trial where the pen never
+        // hovered and one where it never touched are both uninterpretable here, and must
+        // not be collapsed to zero.
+        hover_to_contact_ms: (R.firstHoverMs!=null && R.firstContactMs!=null)
+          ? +(R.firstContactMs-R.firstHoverMs).toFixed(2) : null,
+        hover_exits: R.hoverExits||0,
+        truncated: !!R.hoverTruncated,
+        truncated_at_rows: R.hoverTruncated ? HOVER_MAX_ROWS : null,
+        note: R.hoverSeen>0
+          ? "hover samples are pen positions with the nib off the glass, on the same clock and the same millimetre frame as the pen samples. HEIGHT above the glass is not available from a web build on any device; only position is. hover_to_contact_ms is the interval between the pen first appearing and the first stroke."
+          : "no hover events were delivered on this device. Apple Pencil hover requires an M2-or-later iPad; on earlier hardware this is expected and is not a recording failure."
+      } : null,
+    // Lifts during drawing. Reconstructable from stroke boundaries, but the instruction is
+    // not to lift, so this is a measure rather than a by-product.
+    pen_lifts: R.c && R.c.spiral ? {
+        count:(R.lifts||[]).length,
+        total_ms:+((R.lifts||[]).reduce((a,l)=>a+l.dur_ms,0)).toFixed(1),
+        lifts:R.lifts||[],
+        note:"a lift is the pen leaving the glass and returning, counted only after the first stroke. The spiral instruction is to draw without lifting, so count and duration are outcome measures."
+      } : null,
     // Recoverable from the data later: which trials were run under a platform limit that
     // makes the dual task not a dual task.
     input_limits: palmRejectionAffected(c) ? {
@@ -4760,6 +4779,7 @@ function buildRecord(){
       note:"identical on every dual task, participant and visit. Without it, attention allocation varies freely and a motor-impaired participant tends to protect the motor task, which appears as a group difference in dual-task cost that is really a difference in strategy." },
     spiral_rendered:LAST.SPIRAL||null,
     strokes:LAST.STROKES,
+    hover_samples:LAST.HOVER||[],
     strokes_units:"x,y mm from spiral center, y up; t ms from START; p pressure 0-1",
     taps:LAST.TAPS,
     attribution: LAST.att ? { rule:"nearest preceding onset, no upper bound",
@@ -4891,12 +4911,20 @@ const CSV_HEAD=[
   "trial_length_s","measured_duration_ms","lead_in_ms",
   "response_locked","window_start_ms","initiation_latency_ms",
   "no_response_ceiling","examiner_event_count","examiner_event_ms",
-  "first_contact_ms","css_px_per_mm","device_label","calibration_source","card_confirmed",
+  "first_contact_ms",
+  "hover_supported","n_hover_samples","first_hover_ms","hover_to_contact_ms",
+  "hover_truncated","n_pen_lifts","pen_lift_total_ms",
+  // Which OS produced the row. Not cosmetic: iPadOS 16 does not report altitudeAngle or
+  // azimuthAngle and iPadOS 26 does, so two devices running the same build write records
+  // with different fields populated. Without this the difference is unattributable.
+  "user_agent",
+  "css_px_per_mm","device_label","calibration_source","card_confirmed",
   "pen_check_rate_right_hz","pen_check_rate_left_hz",
   "sound_confirmed","audio_route","volume_steps",
   "audio_route_watched","audio_route_changed","audio_route_change_first_ms",
   "audio_route_change_count",
   "administration_language","language_in_registry",
+  "participant_language","administered_in_participant_language",
   "pitch_mm","turns","radius_mm","direction","template_path_mm","template_style","tap_zone_mm","zones",
   "audio_key","stream_duration_s","floor_ms","mean_interval_ms","p_target","tone_ms",
   "f_standard_hz","f_target_hz","tone_level","seed","seed_mode",
@@ -4953,6 +4981,7 @@ function csvRows(rec){
   const ct=rec.counting||{}, V=rec.voice||{}, vb=rec.verbal||{};
   const VL=V.level||{}, VC=V.constraints_applied||{}, OM=rec.omissions||{};
   const EV=(rec.trial&&rec.trial.examiner_events)||{};
+  const HV=rec.hover||{}, PL=rec.pen_lifts||{};
   const pts=(rec.strokes||[]).flat();
   const dur=pts.length>1?(pts[pts.length-1].t-pts[0].t):0;
   const rate=dur>0?((pts.length-1)/(dur/1000)).toFixed(1):"";
@@ -4985,7 +5014,13 @@ function csvRows(rec){
     EV.count??"",
     // Semicolons, not commas: a comma here would split the row across columns.
     (EV.offsets_ms&&EV.offsets_ms.length)?EV.offsets_ms.join(";"):"",
-    rec.trial.first_contact_ms??"", rec.calibration.css_px_per_mm,
+    rec.trial.first_contact_ms??"",
+    HV.supported==null?"":bit(HV.supported), HV.n_samples??"",
+    HV.first_hover_ms??"", HV.hover_to_contact_ms??"",
+    HV.truncated==null?"":bit(HV.truncated),
+    PL.count??"", PL.total_ms??"",
+    rec.device?.user_agent??"",
+    rec.calibration.css_px_per_mm,
     rec.calibration.device_label??"", rec.calibration.source??"",
     bit(rec.calibration.card_confirmed),
     pc.right?pc.right.rate:"", pc.left?pc.left.rate:"",
@@ -4996,6 +5031,7 @@ function csvRows(rec){
     rec.audio_route_watch?(rec.audio_route_watch.change_first_ms??""):"",
     rec.audio_route_watch?(rec.audio_route_watch.change_count??""):"",
     rec.administration_language??"", bit(rec.language_in_registry),
+    rec.participant_language??"", bit(rec.administered_in_participant_language),
     sp.pitch_mm??"", sp.turns??"", S.radius??"", S.direction??"", S.pathMM?Math.round(S.pathMM):"",
     sp.template_style??"", tapp.zone_mm??"", tapp.zones??"",
     au.key??"", au.durS??"", au.floorMs??"", au.meanMs??"", au.ptg??"", au.tone??"",
@@ -5035,6 +5071,10 @@ function csvRows(rec){
   (rec.strokes||[]).forEach((st,si)=>st.forEach(p=>out.push(mkRow(meta,
     {row_type:"pen",stroke:si+1,t_ms:p.t,x_mm:p.x,y_mm:p.y,pressure:p.p,
      tilt_x:p.tx,tilt_y:p.ty,pointer_type:p.k,coalesced:p.c}))));
+  // Hover rows carry no pressure by definition -- the pen is not touching -- so the
+  // pressure column stays empty rather than being filled with a misleading zero.
+  (rec.hover_samples||[]).forEach(h=>out.push(mkRow(meta,
+    {row_type:"hover",t_ms:h.t,x_mm:h.x,y_mm:h.y,tilt_x:h.tx,tilt_y:h.ty,pointer_type:"pen"})));
   const ar=rec.attribution?rec.attribution.rows:[];
   (rec.taps||[]).forEach((t,i)=>{ const a=ar[i]||{};
     out.push(mkRow(meta,{row_type:"tap",t_ms:t.t,pointer_type:t.pointerType,zone:t.zone,
@@ -5061,11 +5101,15 @@ const SCREEN_HEAD=[
   "birth_year","birth_month","age_years","dominant_hand",
   "session_key","session_id","visit_number","session_number",
   "hand","implement","css_px_per_mm","measure_grade",
+  // Mini Trail B columns. The task was retired in v11.03 and no new record will ever fill
+  // these, but records already on devices carry the values and dropping the columns would
+  // silently export those rows with their measures missing. Removing a task must not make
+  // its existing data unreadable -- the columns go when the last record does, not before.
   "mtb_completion_time_ms","mtb_errors","mtb_strokes","mtb_path_length_mm",
   "mtb_mean_velocity_mm_s","mtb_samples","mtb_node_arrivals_json","mtb_error_log_json",
   "dot_run_duration_ms","dot_lifetime_ms","dots_presented","dots_unscored_at_cutoff",
   "dot_hits","dot_misses","dot_off_target_taps","dot_rt_mean_ms","dot_rt_sd_ms","dots_json",
-  "measure_grade_note","notes"
+  "measure_grade_note","notes","user_agent"
 ];
 function screenRow(r){
   const P=r.participant||{};
@@ -5081,7 +5125,7 @@ function screenRow(r){
     r.run_duration_ms??"", r.dot_lifetime_ms??"", r.dots_presented??"",
     r.dots_unscored_at_cutoff??"", r.hits??"", r.misses??"", r.off_target_taps??"",
     r.rt_mean_ms??"", r.rt_sd_ms??"", r.dots?JSON.stringify(r.dots):"",
-    r.measure_grade_note??"", r.notes??""
+    r.measure_grade_note??"", r.notes??"", r.device?.user_agent??""
   ];
 }
 function screenCSVText(recs){
@@ -5248,13 +5292,13 @@ function exportAllJSON(){
       started_iso:r.started_iso, mime_type:r.mime_type,
       bytes:r.bytes ?? (r.blob?r.blob.size:null) }));
     save(`${fileStem()}.json`, JSON.stringify({
-      schema:"motiq_prototype/9", build:BUILD, exported_iso:new Date().toISOString(),
+      schema:"motiq_prototype/10", build:BUILD, exported_iso:new Date().toISOString(),
       note:"trials are per trial; screening is per participant administration; audio_index lists the voice clips held in IndexedDB on the device that produced this file, and the clip bytes are downloaded separately.",
       trials, screening, audio_index:audio
     },null,2),"application/json");
   }).catch(()=>{
     save(`${fileStem()}.json`, JSON.stringify({
-      schema:"motiq_prototype/9", build:BUILD, exported_iso:new Date().toISOString(),
+      schema:"motiq_prototype/10", build:BUILD, exported_iso:new Date().toISOString(),
       note:"the voice clip store could not be read, so audio_index is empty; the clips may still exist on the device.",
       trials, screening, audio_index:[]
     },null,2),"application/json");
@@ -5372,12 +5416,18 @@ function noteTrialScale(){
 // working state on the device so a reload is recoverable.
 const STATE_KEY="motiq_state";
 const STATE_FIELDS=["pid","grp","sex","byear","bmonth","domhand","ambihand","notes",
-                    "lang","langother",
+                    "lang","langother","plang","plangother",
                     "visitno","sessnum","sessnote","instr","tmpl","implement",
                     "pitch_pen","turns_pen","pitch_finger","turns_finger",
                     "startdia","endang","split","tapdia","zonegap","longtrial",
                     "fstd","ftgt","lvl","seedmode","idle","ppmm","spest"];
+// Start-up runs the same change handlers the UI does, and those handlers persist. Until
+// restoreState() has had its chance to read what is on the device, persisting would write
+// the empty start-up DOM straight over a saved session -- which is how a reload came to
+// destroy the thing a reload exists to recover. Nothing saves before the boot completes.
+let BOOTED=false;
 function saveState(){
+  if(!BOOTED) return;
   try{
     const f={}; STATE_FIELDS.forEach(id=>{ if($(id)) f[id]=$(id).value; });
     localStorage.setItem(STATE_KEY, JSON.stringify({
@@ -5452,7 +5502,9 @@ function restoreState(){
     // reload. The language sets the starting value; it does not own the field forever.
     ADMIN_LANG=currentLanguage();
     if($("langOtherBox")) $("langOtherBox").classList.toggle("hidden", $("lang").value!==LANG_OTHER);
-    renderLanguageNote();
+    if($("plangOtherBox") && $("plang"))
+      $("plangOtherBox").classList.toggle("hidden", $("plang").value!==LANG_OTHER);
+    renderLanguageNote(); renderLanguageMatchNote();
     applyCal(); updateAgeNote(); renderSecureNote(); onVoiceConsentChange();
     onParamExploreChange(); renderPidNote();
     renderStatus(); renderPlan(); renderQueue(); renderAudioTable();
@@ -5500,7 +5552,7 @@ window.addEventListener("resize",()=>{
   const running = RUN && !RUN.ready;
   if(running){ noteTrialResize(); return; }
   if($("stage").classList.contains("on")){ layout(); drawScene(); }
-  else if(!$("pg2").classList.contains("hidden")){ mtbBegin(!!MTB.practice); dotReset(); }
+  else if(!$("pg2").classList.contains("hidden")){ dotReset(); }
 });
 // Recorded on the same footing as a mid-trial zoom, and invalidating the trial through the
 // same geometry_valid field, because the consequence is the same: the millimeters in this
@@ -5525,12 +5577,15 @@ if(/[?&]reset\b/.test(location.search)){ clearState(); }
 
 fillLanguages(); onLanguageChange();
 renderPlan(); renderAudioTable(); renderSaved(); renderScreens(); renderStatus();
-renderSecureNote(); onVoiceConsentChange(); mtbReset(); dotReset(); renderAudioStore();
+renderSecureNote(); onVoiceConsentChange(); dotReset(); renderAudioStore();
 renderZoomBanner();
 
 // Nothing below start-up should be able to leave a blank page.
-try { if(restoreState()) goPage(3); }
+// restoreState() reads first, THEN saving is armed. Both branches arm it: a session that
+// could not be restored still has to be able to save the one being entered now.
+try { if(restoreState()) goPage(3); BOOTED=true; }
 catch(e){
+  BOOTED=true;
   clearState();
   if($("statusbar")) $("statusbar").innerHTML =
     `<span style="color:var(--warm)">Start-up recovered from a bad saved session, which has
