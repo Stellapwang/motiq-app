@@ -345,10 +345,15 @@
             <option value="7">July</option><option value="8">August</option>
             <option value="9">September</option><option value="10">October</option>
             <option value="11">November</option><option value="12">December</option></select></div>
-        <div><label for="domhand">Dominant hand</label>
+        <div><label for="domhand">Handedness</label>
           <select id="domhand"><option value="right">Right</option><option value="left">Left</option>
             <option value="ambidextrous">Ambidextrous</option></select></div>
-        <div id="ambiBox" class="hidden"><label for="ambihand">Use which hand as dominant?</label>
+        <!-- Required whenever handedness is ambidextrous. Every task set to "the dominant
+             hand" needs a definite side to run on, and picking one silently would put an
+             arbitrary choice into the data unrecorded. It defaults to right so the app is
+             never in an unrunnable state, and the record marks it as nominated. -->
+        <div id="ambiBox" class="hidden"><label for="ambihand">Preferred dominant hand
+            <span style="color:#8c2020">✱ required</span></label>
           <select id="ambihand"><option value="right">Right</option>
             <option value="left">Left</option></select></div>
       </div>
@@ -386,18 +391,10 @@
         <div id="racenote" class="note"></div>
       </div>
       <div class="r3">
-        <div><label for="lang">Administration language</label>
-          <select id="lang" onchange="onLanguageChange()"></select></div>
-        <div id="langOtherBox" class="hidden"><label for="langother">Which language?</label>
-          <input id="langother" type="text" oninput="onLanguageChange()"></div>
+        <div><label for="plang">Participant language</label>
+          <input id="plang" type="text" placeholder="e.g. English"
+                 oninput="onLanguageChange()"></div>
       </div>
-      <div class="r3">
-        <div><label for="plang">Participant's strongest language</label>
-          <select id="plang" onchange="onLanguageChange()"></select></div>
-        <div id="plangOtherBox" class="hidden"><label for="plangother">Which language?</label>
-          <input id="plangother" type="text" oninput="onLanguageChange()"></div>
-      </div>
-      <div id="langnote"></div>
       <div id="langmatch"></div>
       <label class="checkrow" for="voiceconsent">
         <input id="voiceconsent" type="checkbox" onchange="onVoiceConsentChange()">
@@ -574,15 +571,6 @@
       <p class="note" style="margin-top:0">Repeats are per hand where a task uses both.
       Everything here is a default, not a rule — change anything.</p>
       <div style="overflow-x:auto"><table id="planTable"></table></div>
-      <div class="r4" style="margin-top:12px">
-        <div><label for="spest">Self-paced trial assumed to last (s)</label>
-          <input id="spest" type="number" min="5" max="180" step="5" value="20"
-                 onchange="onSelfPacedEstChange()"></div>
-        <div style="grid-column:span 3"><label>&nbsp;</label>
-          <div class="note" style="margin:0">Used <b>only</b> to project session length below.
-          A self-paced trial has no length until it is run, so the projection needs an assumed
-          one. It is not sent to any trial and changes nothing about what is administered.</div></div>
-      </div>
       <div id="planSummary"></div>
       <div class="btnrow" id="tierButtons"></div>
       <div id="presetNote"></div>
@@ -832,7 +820,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.05 2026-09-11";
+const BUILD = "v12.06 2026-09-11";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -905,12 +893,12 @@ const CATALOGUE = [
   // anchored on its first stroke while this starts on the clock, so the two are not
   // time-matched and a naive difference score between them is not a dual-task cost. Its
   // job is to show the participant can do the task at all without competing motor demand.
-  { id:"VOC_VODD", label:"Counting the high tones aloud, no drawing", order:50, tier:"core", spiral:0, tap:0, audio:1, zones:0, hands:"none", repeats:1, lengthS:60,
+  { id:"VOC_VODD", label:"Counting the high tones aloud, no drawing", order:50, tier:"expl", spiral:0, tap:0, audio:1, zones:0, hands:"none", repeats:1, lengthS:60,
                    count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1 },
 
   // --- Block D: drawing, then drawing under load -----------------------------------
   { id:"PEN_SPRL", label:"Spiral",                        order:60,  tier:"core",   spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:2, lengthS:null, implement:"pen", sustainedS:60 },
-  { id:"PEN_VODD", label:"Spiral + counting the high tones aloud", order:70, tier:"core", spiral:1, tap:0, audio:1, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
+  { id:"PEN_VODD", label:"Spiral + counting the high tones aloud", order:70, tier:"expl", spiral:1, tap:0, audio:1, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
                    selfPaceable:1, fixedS:60, count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1 },
   // "Both, alternating" with one trial per hand. The battery table gives the hand as
   // alternating and the trial count as 1; read as 1 PER HAND, since a single trial cannot
@@ -1110,6 +1098,9 @@ const PALM_WARNING = "Pen and finger do not work at the same time in Safari on i
 //                them and does not transfer.
 const LANGUAGES = { en: { label:"English", countFloorMs:800, fluencyNorms:true } };
 // The recorded language, which is NOT required to be a registry key -- see setLanguage().
+// English is the only language the UI and the instruction text exist in, so it is fixed
+// rather than asked for. The registry below is what makes that an explicit assumption with
+// one place to change instead of a constant buried in the audio defaults.
 let ADMIN_LANG="en";
 const langEntry = code => LANGUAGES[code] || null;
 // Falls back to the English figure for an unregistered language, and the record says so
@@ -1140,7 +1131,7 @@ const AUDIO_DEFAULTS = {
   // Longer floor: a spoken number takes time to articulate, so a shorter floor would ask
   // for the next response before the previous one had finished. How much time is a fact
   // about the language, so the number comes from LANGUAGES.countFloorMs and is re-applied
-  // whenever the administration language changes -- see applyLanguageDefaults().
+  // from the language registry rather than being written here as a bare number.
   PEN_VCNT: { durS:45, floorMs:LANGUAGES.en.countFloorMs, meanMs:1600, ptg:0,    tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
               label:"Dual task — count every tone out loud while drawing" },
   // Faster and denser ON PURPOSE. Only a quarter of tones need a response, so monitoring
@@ -2065,108 +2056,47 @@ renderAmbiHand();
 // and the export would state something false. Recording it is always better than
 // silently defaulting it -- but the trial then runs on English timing, and both the
 // screen and the record say so.
-const LANG_OTHER="__other__";
-function fillLanguages(){
-  const opts = Object.keys(LANGUAGES)
-      .map(k=>`<option value="${k}">${esc(LANGUAGES[k].label)}</option>`).join("");
-  const el=$("lang");
-  if(el){ el.innerHTML = opts + `<option value="${LANG_OTHER}">Other (not in the registry)…</option>`;
-          el.value="en"; }
-  // The participant's language is a FACT ABOUT THE PARTICIPANT, not a set of timing
-  // parameters, so it is not constrained to the registry in any meaningful sense -- the
-  // registry entries are offered only as convenient spellings. "Other" is the normal case
-  // for it, not the exception, and the registry never gates what can be recorded here.
-  const pe=$("plang");
-  if(pe){ pe.innerHTML = `<option value="">— not recorded —</option>` + opts
-            + `<option value="${LANG_OTHER}">Other…</option>`;
-          pe.value=""; }
-}
-// Which language the participant is strongest in. Deliberately NOT "native" or "first":
-// someone who emigrated at five may have a first language they are no longer dominant in,
-// and testing them in it would disadvantage them rather than help. What matters for these
-// tasks is the language they perform best in, which is what this asks.
+// The registry stays, because it is what supplies countFloorMs to PEN_VCNT -- a spoken
+// number takes a language-dependent time to say, and that constant must live somewhere
+// findable rather than inside the audio defaults. What is gone is the SESSION-LEVEL
+// administration language field: it asked the examiner to declare something that, with one
+// registry entry and an English-only UI, could only ever be English. Recording it implied a
+// choice that did not exist. The moment a second language is administered, this is the
+// field to bring back, and LANGUAGES is where it reads from.
+const ADMIN_LANG_FIXED="en";
+// Participant language is a fact about the PARTICIPANT and is kept -- it is in the study's
+// demographics table, and testing someone in a language they are not strongest in depresses
+// the verbal tasks. Free text for now; the option list is still to be decided.
 function participantLanguage(){
-  const el=$("plang"); if(!el || !el.value) return null;
-  if(el.value!==LANG_OTHER) return el.value;
-  const t=($("plangother")?$("plangother").value:"").trim();
+  const el=$("plang"); if(!el) return null;
+  const t=(el.value||"").trim();
   return t || null;
 }
-// The derived field analysis actually filters on. Null when the participant's language was
-// not recorded -- which is NOT the same as a match, and must never be collapsed into one.
-function administeredInParticipantLanguage(){
-  const p=participantLanguage(); if(!p) return null;
-  return p.toLowerCase()===currentLanguage().toLowerCase();
-}
-// The recorded language: a registry key, or whatever was typed for "Other".
-function currentLanguage(){
-  const el=$("lang"); if(!el) return "en";
-  if(el.value!==LANG_OTHER) return el.value;
-  const t=($("langother")?$("langother").value:"").trim();
-  return t || LANG_OTHER;
-}
-const languageRegistered = () => !!langEntry(currentLanguage());
-// PEN_VCNT's floor is an articulation estimate, so it belongs to the language and is
-// re-applied whenever the language changes. It stays editable on the Parameters page
-// afterwards -- this sets the starting point, it does not lock the field.
-function applyLanguageDefaults(){
-  ADMIN_LANG=currentLanguage();
-  AUDIO_DEFAULTS.PEN_VCNT.floorMs = countFloorMs();
-  if(typeof renderAudioTable==="function") try{ renderAudioTable(); }catch(e){}
-  if(typeof planSummary==="function") try{ planSummary(); }catch(e){}
-}
-function onLanguageChange(){
-  const other = $("lang") && $("lang").value===LANG_OTHER;
-  if($("langOtherBox")) $("langOtherBox").classList.toggle("hidden", !other);
-  const pother = $("plang") && $("plang").value===LANG_OTHER;
-  if($("plangOtherBox")) $("plangOtherBox").classList.toggle("hidden", !pother);
-  applyLanguageDefaults();
-  renderLanguageNote();
-  renderLanguageMatchNote();
-  saveState();
-}
-// The mismatch is the finding, not either language on its own. Testing someone in a
-// language they are not strongest in depresses performance on exactly the verbal tasks
-// this battery uses -- fluency and serial counting -- and that depression is
-// indistinguishable, in the score alone, from the impairment being looked for. It compounds
-// with the norms problem already recorded on WORD_PROMPTS: an English fluency norm applied
-// to a non-native English speaker is wrong twice over, once for the language and once for
-// the speaker. Warns, never blocks: sometimes there is no examiner who speaks the
-// participant's language, and running the session anyway is the right call as long as the
+function onLanguageChange(){ renderLanguageMatchNote(); saveState(); }
+// Warns only when the participant's language is recorded AND is not the language the app
+// administers in. Category fluency and serial counting measure language as well as
+// cognition, so the mismatch depresses exactly those scores, and it compounds with the
+// English-only fluency norms already noted on WORD_PROMPTS. Never blocks: sometimes no
+// examiner speaks the participant's language and running anyway is right, as long as the
 // record says so.
 function renderLanguageMatchNote(){
   const el=$("langmatch"); if(!el) return;
-  const p=participantLanguage();
-  if(!p){ el.innerHTML=""; return; }
-  if(administeredInParticipantLanguage()){ el.innerHTML=""; return; }
-  const admin=langEntry(currentLanguage())?langEntry(currentLanguage()).label:currentLanguage();
-  el.innerHTML=`<div class="warn"><b>Administered in ${esc(admin)}, but the participant is
-    strongest in ${esc(p)}.</b> The spoken tasks — category fluency and serial counting —
-    measure language as well as cognition, so scores from this session are depressed by the
-    mismatch and cannot be compared against norms or against participants tested in their own
-    language. This is recorded as <code>administered_in_participant_language: false</code>.
-    Run the session if there is no alternative; do not score it as if there were no
-    mismatch.</div>`;
+  const pl=participantLanguage();
+  if(!pl){ el.innerHTML=""; return; }
+  const english=/^(en|eng|english)$/i.test(pl);
+  el.innerHTML = english ? "" :
+    `<div class="warn"><b>The participant's language is ${esc(pl)}, and this battery is
+     administered in English.</b> The spoken tasks — category fluency and serial counting —
+     measure language as well as cognition, so scores from this session are depressed by the
+     mismatch and are not comparable with norms or with participants tested in their own
+     language. Recorded as <code>administered_in_participant_language: false</code>. Run the
+     session if there is no alternative; do not score it as if there were no mismatch.</div>`;
 }
-function renderLanguageNote(){
-  const el=$("langnote"); if(!el) return;
-  const code=currentLanguage(), ent=langEntry(code);
-  if(ent){
-    const norms = ent.fluencyNorms ? "" : ", and no published fluency norms are recorded for this language";
-    el.innerHTML=`<div class="note">Administered in <b>${esc(ent.label)}</b>. Counting tasks
-      use a ${ent.countFloorMs} ms response floor${norms}. Written into every trial record as
-      <code>administration_language</code>.</div>`;
-    return;
-  }
-  const named = code!==LANG_OTHER;
-  const how = named ? "It is recorded as entered"
-                    : "Type the language so it is recorded rather than filed as English";
-  el.innerHTML=`<div class="warn"><b>${named?esc(code):"This language"} is not in the language
-    registry.</b> ${how}, but every timing parameter on this session is an <b>English default</b> —
-    the ${LANGUAGES.en.countFloorMs} ms counting floor is how long an English number takes to
-    say, and the category-fluency equivalence between animals and fruits &amp; vegetables is an
-    English result. Neither has been established for this language. The record carries
-    <code>language_in_registry: false</code> so these trials can be found again.</div>`;
-}
+const administeredInParticipantLanguage = () => {
+  const pl=participantLanguage(); if(!pl) return null;
+  return /^(en|eng|english)$/i.test(pl);
+};
+
 
 /* ------------------------------------------------------- voice consent */
 const voiceConsented = () => !!($("voiceconsent") && $("voiceconsent").checked);
@@ -2384,6 +2314,16 @@ const familyOf = id => (FAMILIES.find(f=>id.startsWith(f.key)) || FAMILIES[2]).l
 // The plan table groups by TIER and orders within a tier by the administration sequence,
 // so what the examiner reads down the page is the order the session runs in. Every task has
 // a tier, so nothing can fall outside the grouping the way it could with prefixes.
+// Which exploratory tasks are currently on the plan table. Session state, not a setting:
+// pulling one in is a decision about today's session, and it persists with the rest of the
+// session so a reload does not lose it.
+let EXPL_SHOWN=new Set();
+function showExpl(id){ if(!id) return; EXPL_SHOWN.add(id); renderPlan(); saveState(); }
+function hideExpl(id){
+  EXPL_SHOWN.delete(id);
+  if(PLAN[id]) PLAN[id].include=false;      // removing it from the table deselects it too
+  renderPlan(); renderQueue(); saveState();
+}
 const TIER_GROUPS=[ { key:"core",   label:"Core" },
                     { key:"second", label:"Secondary" },
                     { key:"expl",   label:"Exploratory" } ];
@@ -2478,23 +2418,33 @@ function expectedStreamS(c,s){
   if((a.stopMode||"fixed")!=="drawEnd") return full;
   return clamp(selfPacedEstS(), a.floorS ?? 20, full);
 }
-let SELF_PACED_EST_S=20;
-const selfPacedEstS = () => SELF_PACED_EST_S;
-function onSelfPacedEstChange(){
-  SELF_PACED_EST_S=clamp(+$("spest").value||20,5,180);
-  $("spest").value=SELF_PACED_EST_S;
-  planSummary(); saveState();
-}
-
+// The self-paced estimate is gone. It existed to give the session-length projection a
+// number for trials that had no length until they were run -- but every spiral condition now
+// runs a FIXED sustained window, so their length is known before the session starts and the
+// assumption has nothing left to stand in for. A field whose value changed nothing about what
+// was administered, and which now cannot change the projection either, is worse than absent:
+// it invites someone to tune it and believe they have done something.
+//
+// Where a length is still genuinely unknown -- a spiral with no window set -- the projection
+// falls back to the window length the battery uses, and says so rather than asking.
+const SELF_PACED_FALLBACK_S=60;
+const selfPacedEstS = () => SELF_PACED_FALLBACK_S;
 function renderPlan(){
   renderStatus();
   let h=`<tr><th></th><th>Task</th><th>Repeats</th><th>Hands</th><th>Length</th><th>Uses</th><th></th></tr>`;
   const ordered=CATALOGUE.slice().sort((a,b)=>a.order-b.order);
   const seen=new Set();
   TIER_GROUPS.forEach(grp=>{
-    const rows=ordered.filter(c=>c.tier===grp.key);
-    if(!rows.length) return;
+    let rows=ordered.filter(c=>c.tier===grp.key);
+    // EXPLORATORY TASKS ARE NOT LISTED UNTIL THEY ARE WANTED. Fourteen rows of which seven
+    // are exploratory made the battery look like a fourteen-task battery, and greying them
+    // was worse: a greyed row reads as broken rather than as available. They are pulled in
+    // from the picker below instead, and once pulled in they are an ordinary row -- same
+    // controls, not greyed, removable again.
+    if(grp.key==="expl") rows=rows.filter(c=>EXPL_SHOWN.has(c.id) || PLAN[c.id]?.include);
     rows.forEach(c=>seen.add(c.id));
+    if(grp.key==="expl") ordered.filter(c=>c.tier==="expl").forEach(c=>seen.add(c.id));
+    if(!rows.length && grp.key!=="expl") return;
     h+=`<tr><td colspan="7" style="background:#f2f5f8;font-weight:600;font-size:12px;
         text-transform:uppercase;letter-spacing:.05em;color:var(--muted);padding:7px 9px">
         ${grp.label} <span style="font-weight:400;text-transform:none;letter-spacing:0">—
@@ -2527,10 +2477,26 @@ function renderPlan(){
         <td class="note" style="padding-top:10px">${c.dataHeld?`<div style="color:#8c2020;font-weight:600;margin-bottom:3px">DATA HELD — ${esc(HELD_SHORT[c.dataHeld]||c.dataHeld)}</div>`:""}${[c.spiral?"drawing":null,c.tap?"tapping":null,
             c.audio?"<b>tones</b>":null, c.count?"count aloud":null,
             c.verbal?"spoken task":null, c.voice?"<b>voice</b>":null].filter(Boolean).join(" · ")}</td>
-        <td>${adhocCell(c,s2,blocked)}</td>
+        <td>${adhocCell(c,s2,blocked)}${c.tier==="expl"
+          ? `<div style="margin-top:5px"><button class="ghost sm"
+               onclick="hideExpl('${c.id}')" title="Take this back off the plan">remove</button></div>`
+          : ""}</td>
       </tr>`;
     });
   });
+  // The picker. Lives inside the exploratory group so it reads as "and here is the rest of
+  // that group", not as a separate feature.
+  const hidden=ordered.filter(c=>c.tier==="expl" && !EXPL_SHOWN.has(c.id) && !PLAN[c.id]?.include);
+  h+=`<tr><td colspan="7" style="padding:9px">
+      ${hidden.length ? `<label style="display:flex;align-items:center;gap:9px;margin:0;font-size:14px">
+          Add an exploratory task
+          <select style="max-width:420px" onchange="showExpl(this.value); this.value=''">
+            <option value="">— choose —</option>
+            ${hidden.map(c=>`<option value="${c.id}">${esc(c.id)} · ${esc(c.label)}</option>`).join("")}
+          </select></label>`
+        : `<span class="note" style="margin:0">All exploratory tasks are shown.</span>`}
+      </td></tr>`;
+
   // The failure this grouping replaced was a SILENT one: a task nobody had a group for
   // simply never rendered. If a tier is ever added without a group, say so loudly rather
   // than losing the row again.
@@ -5210,8 +5176,12 @@ function buildRecord(){
     // Session-level. Recorded even when it is not a registry key, because a session run in
     // a language the app does not know is still a session run in that language, and filing
     // it as English would make the export state something false.
-    administration_language: ADMIN_LANG,
-    language_in_registry: languageRegistered(),
+    // Fixed, not collected. The UI and the instruction text are English-only, so recording
+    // an examiner-chosen administration language would have implied a choice that does not
+    // exist. It is still exported, because an analysis joining these records needs to know
+    // what they were administered in without reading the build.
+    administration_language: ADMIN_LANG_FIXED,
+    language_in_registry: true,
     // A fact about the participant, not about the session's timing parameters. Null means
     // not recorded, which is NOT the same as matching the administration language.
     participant_language: participantLanguage(),
@@ -5219,8 +5189,8 @@ function buildRecord(){
     participant_language_note: administeredInParticipantLanguage()===false
       ? "the session was NOT administered in the participant's strongest language. Category fluency and serial counting measure language as well as cognition, so scores on those tasks are depressed by the mismatch and are not comparable with norms or with participants tested in their own language."
       : null,
-    language_timing_source: languageRegistered() ? ADMIN_LANG : "en",
-    language_note: languageRegistered()
+    language_timing_source: ADMIN_LANG_FIXED,
+    language_note: true
       ? "timing parameters for this session come from the LANGUAGES entry for this language"
       : "this language is NOT in the app's language registry. Every timing parameter on this session is an ENGLISH default, including the counting response floor, and the published animals / fruits-and-vegetables fluency equivalence is an English result that has not been established for this language. The UI and the instruction text were also English.",
     calibration:{ css_px_per_mm:LAST.ppmm, device_pixel_ratio:window.devicePixelRatio,
@@ -6090,12 +6060,12 @@ function noteTrialScale(){
 // working state on the device so a reload is recoverable.
 const STATE_KEY="motiq_state";
 const STATE_FIELDS=["pid","grp","sex","byear","bmonth","domhand","ambihand","notes",
-                    "lang","langother","plang","plangother",
+                    "plang",
                     "ethnicity","education",
                     "visitno","sessnum","sessnote","instr","tmpl","implement",
                     "pitch_pen","turns_pen","pitch_finger","turns_finger",
                     "startdia","endang","split","tapdia","zonegap","longtrial",
-                    "fstd","ftgt","lvl","seedmode","idle","ppmm","spest"];
+                    "fstd","ftgt","lvl","seedmode","idle","ppmm"];
 // Start-up runs the same change handlers the UI does, and those handlers persist. Until
 // restoreState() has had its chance to read what is on the device, persisting would write
 // the empty start-up DOM straight over a saved session -- which is how a reload came to
@@ -6113,8 +6083,8 @@ function saveState(){
       // Checkboxes carry no .value, so STATE_FIELDS cannot see them. Losing the race
       // selection on a reload would silently blank a demographic that was collected.
       race: raceCode(),
+      explShown:[...EXPL_SHOWN],
       series:SERIES, repeats:REPEATS, lastTask:LAST_TASK, lastHand:LAST_HAND,
-      selfPacedEstS:SELF_PACED_EST_S,
       audio:AUDIO_DEFAULTS, savedAt:new Date().toISOString()
     }));
   }catch(e){}
@@ -6131,12 +6101,13 @@ function restoreState(){
     if(st.sessionKey) SESSION_KEY=st.sessionKey;
     if($("paramexplore")) $("paramexplore").checked=!!st.paramExplore;
     if(st.race!=null) document.querySelectorAll(".racebox").forEach(bx=>{ bx.checked=!!(st.race & +bx.value); });
+    // Renamed codes resolve through the alias, so a pulled-in task survives the rename.
+    if(Array.isArray(st.explShown)) EXPL_SHOWN=new Set(st.explShown.map(taskId).filter(id=>byId(id)));
     // A session saved before this field existed carries no nominated side. It keeps the
     // handedness it recorded and falls back to the right hand, which is what the app was
     // already doing silently. Nothing already written is rewritten.
     renderAmbiHand();
-    SELF_PACED_EST_S=clamp(Number(st.selfPacedEstS)||Number(st.fields.spest)||20,5,180);
-    if($("spest")) $("spest").value=SELF_PACED_EST_S;
+
 
     // rebuild the plan from defaults, then overlay whatever the saved plan still fits
     const fresh=defaultPlan();
@@ -6183,15 +6154,8 @@ function restoreState(){
       if(AUDIO_DEFAULTS[k] && v && typeof v==="object") Object.assign(AUDIO_DEFAULTS[k],v); });
 
     // The language is restored from STATE_FIELDS like any other field. Its side effects
-    // are not, so they are re-run here. Deliberately NOT applyLanguageDefaults(): the saved
-    // AUDIO_DEFAULTS were applied a few lines above, and re-deriving the counting floor from
-    // the language now would overwrite a floor the examiner had edited by hand before the
-    // reload. The language sets the starting value; it does not own the field forever.
-    ADMIN_LANG=currentLanguage();
-    if($("langOtherBox")) $("langOtherBox").classList.toggle("hidden", $("lang").value!==LANG_OTHER);
-    if($("plangOtherBox") && $("plang"))
-      $("plangOtherBox").classList.toggle("hidden", $("plang").value!==LANG_OTHER);
-    renderLanguageNote(); renderLanguageMatchNote(); onRaceChange();
+
+    renderLanguageMatchNote(); onRaceChange();
     applyCal(); updateAgeNote(); renderSecureNote(); onVoiceConsentChange();
     onParamExploreChange(); renderPidNote();
     renderStatus(); renderPlan(); renderQueue(); renderAudioTable();
@@ -6262,7 +6226,7 @@ function noteTrialResize(){
 // the app will not start.
 if(/[?&]reset\b/.test(location.search)){ clearState(); }
 
-fillLanguages(); onLanguageChange();
+onLanguageChange();
 renderPlan(); renderAudioTable(); renderSaved(); renderScreens(); renderStatus();
 renderSecureNote(); onVoiceConsentChange(); dotReset(); renderAudioStore();
 renderZoomBanner();
