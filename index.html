@@ -232,12 +232,13 @@
         web platform reports <i>how high</i> it is: there is no standard property for the
         distance above the glass, and the Pointer Events proposal to add one is unresolved.
         A web build therefore knows the pen is somewhere in that 12&nbsp;mm band, not where in
-        it. <b>Hover is also gated on the iPad itself:</b> it arrived with the M2 generation,
-        so on an 11-inch iPad Pro 3rd generation (M1) there is no hover at all — measured on
-        2026-09-11, where the pen was undetectable until it touched the glass. Whether Safari
-        exposes hover on an M2 iPad has not yet been tested. Either way, hesitation before a
-        participant starts to draw can only be timed here from the moment they touch down, and
-        any hover-derived measure requires an M2 iPad regardless of which build is used.</p>
+        it. <b>Hover is also gated on the iPad itself:</b> it arrived with the M2 generation.
+        Measured 2026-09-11 — on an 11-inch iPad Pro <b>3rd generation (M1) there is no hover
+        at all</b>, the pen being undetectable until it touches; on a <b>4th generation (M2)
+        hover works</b>, at about 59&nbsp;Hz. So hesitation before a participant commits to the
+        first stroke can be measured, but <b>only on an M2 iPad</b> — on the M1 it is not
+        merely unmeasured, it is unmeasurable. The height of the pen above the glass is
+        unavailable on both.</p>
         <!-- Developer-facing, deliberately inside the box the examiner already reads rather
              than in BACKLOG.md, which is a separate file in the repo and invisible from the
              running app. Whoever builds the native instrument will open THIS file. Kept to
@@ -914,14 +915,33 @@ const CATALOGUE = [
    The measurement confirms the hardware limit and leaves the web-platform question
    untouched.
 
-   STILL OPEN: whether Safari exposes hover on hardware that HAS it. The decisive test
-   is the same probe on the 11-inch iPad Pro 4th generation (M2) with the same Pencil,
-   which has not been run. Until it is, this app captures no hover -- correct on either
-   answer, since the device tested cannot produce any.
+   ANSWERED, same day, 11-inch iPad Pro 4TH GENERATION (M2), same Pencil 2, Safari 16.6:
+   SAFARI DOES EXPOSE HOVER. 423 hover samples in 14.7 s, median gap 17 ms, about
+   59 Hz. pointerover fired 6 times against 3 pointerdowns -- over exceeding down is the
+   signature of a pointer becoming known on approach, and is the mirror image of the
+   one-for-one seen on the M1.
+
+   The measure item 2 exists for showed up immediately and unprompted: first hover at
+   3505 ms, first contact at 5820 ms, so 2315 ms of the pen held above the glass before
+   committing to the first stroke. On the M1 that interval is not merely unmeasured, it
+   is unmeasurable.
+
+   So hover capture IS buildable in the web build, on M2 hardware. What remains
+   unavailable everywhere is hover HEIGHT: the probe found no property carrying distance
+   above the glass on either device, which is the web-platform limit described above and
+   is not device-dependent.
 
    WHICH IPAD THE PILOT RUNS ON IS NOW A STUDY-DESIGN QUESTION, not only a procurement
    one. Any hover-derived measure -- in this build or the native one -- is unavailable
    on the M1 iPad. If initiation hesitation matters, the sessions have to run on the M2.
+
+   AND THE TWO DEVICES DIFFER IN SOFTWARE, which changes what is recorded independently
+   of hover. The M1 ran Safari 26.6.1 and reported altitudeAngle and azimuthAngle,
+   populated and varying. The M2 ran Safari 16.6 and reported neither. Pen ALTITUDE and
+   AZIMUTH are inputs to the spiral kinematics, so as things stand the device that can
+   measure hesitation is the device that cannot measure pen orientation, and vice versa.
+   Updating the M2's iPadOS should resolve it and give one device with both; until that
+   is confirmed, do not assume a trial record carries the same fields on both iPads.
 
    What IS delivered on the device tested, and is worth knowing because the spiral
    kinematics use it: pressure, tiltX and tiltY, altitudeAngle and azimuthAngle, all
