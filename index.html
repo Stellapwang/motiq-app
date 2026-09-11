@@ -359,34 +359,13 @@
     <!-- Screening screens. Unlike the pen and sound checks these DO write a record --
          one per administration, per participant rather than per trial, under their own
          storage prefix and their own export. They are covariates for the analysis, not
-         trials, so they are deliberately not in CATALOGUE and never enter the queue. -->
-    <fieldset>
-      <legend>Mini Trail B <span style="font-weight:400;color:var(--muted)">— screening, per participant</span></legend>
-      <p class="note" style="margin-top:0">Ask the participant to join the circles in order —
-      <b>1, A, 2, B, 3, C, 4, D</b> — in one continuous movement, as quickly as they can without
-      lifting the stylus. The next circle is not indicated: locating it, and alternating
-      between the two sequences, is what this screen measures. A move to an incorrect circle
-      does not connect; direct the participant back to the last correct circle. The layout is
-      identical at every administration, so difficulty does not vary between administrations.
-      Expect approximately 15–20 seconds.</p>
-      <p class="note" style="margin-top:6px"><b>Run the practice first.</b> Four circles, same
-      rules, untimed, and no record is written. Without a practice, the first administration
-      partly measures comprehension of the instruction rather than performance.</p>
-      <div class="r4">
-        <div><label for="mtbhand">Hand</label>
-          <select id="mtbhand"><option value="dominant">Dominant</option>
-            <option value="nondominant">Non-dominant</option></select></div>
-        <div><label for="mtbimpl">Implement</label>
-          <select id="mtbimpl"><option value="pen">Stylus</option><option value="finger">Index finger</option></select></div>
-        <div><label>&nbsp;</label><div class="btnrow" style="margin:0">
-          <button class="ghost" onclick="mtbPractice()">Practice</button></div></div>
-        <div><label>&nbsp;</label><div class="btnrow" style="margin:0">
-          <button class="ghost" onclick="mtbReset()">Start the real one</button></div></div>
-      </div>
-      <canvas id="mtbpad" class="screenpad"></canvas>
-      <div id="mtbresult"></div>
-    </fieldset>
+         trials, so they are deliberately not in CATALOGUE and never enter the queue.
 
+         Mini Trail B was removed in v11.03: it duplicates a trail-making item already in
+         the MoCA, which is administered in the same visit, and two administrations of
+         trail making in one session are not independent -- the second benefits from the
+         first. Records written by earlier builds are still listed and still exported;
+         see SCREEN_LABEL and SCREEN_HEAD. -->
     <fieldset>
       <legend>Dot tap screen <span style="font-weight:400;color:var(--muted)">— screening, per participant</span></legend>
       <p class="note" style="margin-top:0">Ten seconds. A dot appears somewhere in the box; the
@@ -709,9 +688,9 @@
         <button class="ghost" onclick="renderScreens()">Refresh</button>
         <button class="ghost" onclick="delAllScreens()">Delete all screening</button>
       </div>
-      <div class="note">One row per administration rather than per trial. Mini Trail B and the
-      dot tap screen are participant-level covariates and are stored separately from the trial
-      file.</div>
+      <div class="note">One row per administration rather than per trial. The dot tap screen is
+      a participant-level covariate and is stored separately from the trial file. Records from
+      screens that have since been retired are still listed and exported here.</div>
     </fieldset>
 
     <fieldset>
@@ -758,7 +737,7 @@
 
 <script>
 "use strict";
-const BUILD = "v11.02 2026-09-07";
+const BUILD = "v11.03 2026-09-10";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1236,7 +1215,7 @@ function goPage(n){
   // The screening canvases size themselves from clientWidth, which is not final in the
   // same tick the page is unhidden -- laying them out then can give a pad a fraction of
   // its real width. Measure on the next frame instead.
-  if(n===2){ onVoiceConsentChange(); requestAnimationFrame(()=>{ mtbReset(); dotReset(); }); }
+  if(n===2){ onVoiceConsentChange(); requestAnimationFrame(()=>{ dotReset(); }); }
   if(n===3){ renderPlan(); renderQueue(); }
   renderStatus();
   if(n===4){ renderAudioTable(); updateGeo(); }
@@ -1534,231 +1513,6 @@ window.addEventListener("resize",()=>{ if(!$("pg2").classList.contains("hidden")
    =========================================================================== */
 const SCREEN_PREFIX="motiq_screen:";
 
-// Fixed Mini Trail B layout. Normalized to the box, so it scales with the canvas but
-// the ARRANGEMENT never varies -- the sequence, the angles between hops and the
-// crossings are identical at every administration on every device. A covariate whose
-// difficulty is randomised is not a covariate.
-//
-// These coordinates are not eyeballed. They were chosen so that on every canvas size
-// the app can produce, the straight line of a CORRECT hop clears every other circle by
-// at least 2.3x the hit radius. That constraint is the whole point: a layout where the
-// right line grazes a wrong circle scores a correct participant as making errors, and
-// the error count is one of the two numbers this screen exists to produce. Circles stay
-// at least 3.4 hit radii apart, and the path crosses itself 8 times so the task still
-// demands visual search rather than following a ring.
-//
-// If these are ever changed, re-check both properties before collecting with them.
-const MTB_NODES=[
-  { label:"1", x:0.899, y:0.161 },
-  { label:"A", x:0.800, y:0.745 },
-  { label:"2", x:0.368, y:0.134 },
-  { label:"B", x:0.252, y:0.920 },
-  { label:"3", x:0.635, y:0.137 },
-  { label:"C", x:0.126, y:0.650 },
-  { label:"4", x:0.551, y:0.714 },
-  { label:"D", x:0.115, y:0.106 }
-];
-// The practice: four circles, 1-A-2-B, same rules, untimed, no record. Deliberately a
-// DIFFERENT arrangement from the test, the way TMT-B's sample form is. Practising on the
-// real positions would teach half the test layout before the timed administration, and a
-// covariate is not comparable across participants if some of them have seen it.
-// Checked to the same constraint: a correct hop clears every other circle by at least
-// 4.6 hit radii at every canvas size, and the path crosses itself once.
-const MTB_PRACTICE_NODES=[
-  { label:"1", x:0.140, y:0.700 },
-  { label:"A", x:0.860, y:0.360 },
-  { label:"2", x:0.140, y:0.140 },
-  { label:"B", x:0.820, y:0.890 }
-];
-const MTB={};
-const mtbNodes = () => MTB.practice ? MTB_PRACTICE_NODES : MTB_NODES;
-
-function mtbGeom(){
-  const cv=$("mtbpad"), dpr=window.devicePixelRatio||1;
-  const w=cv.clientWidth||700, h=Math.round(clamp(w*0.60,240,520));
-  cv.width=w*dpr; cv.height=h*dpr; cv.style.height=h+"px";
-  const g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0);
-  const r=clamp(Math.min(w,h)*0.062,17,34), pad=r+10;
-  const pos=mtbNodes().map(n=>({ label:n.label,
-    x:pad+n.x*(w-2*pad), y:pad+n.y*(h-2*pad) }));
-  return {g,w,h,r,pos};
-}
-function mtbDraw(){
-  const {g,w,h,r,pos}=MTB.geom;
-  g.clearRect(0,0,w,h); g.fillStyle="#fff"; g.fillRect(0,0,w,h);
-  // the participant's own line first, so the circles stay readable over it
-  g.strokeStyle="#1d5fa8"; g.lineWidth=2.4; g.lineCap="round"; g.lineJoin="round";
-  MTB.strokes.forEach(st=>{ if(st.length<2) return;
-    g.beginPath(); st.forEach((p,i)=>i?g.lineTo(p.x,p.y):g.moveTo(p.x,p.y)); g.stroke(); });
-  // The next circle is NOT indicated. Searching the display for it, and alternating
-  // between the number and letter sequences, is the entire cognitive content of Trail B;
-  // cue it and what is left is a visuomotor pointing task, which the dot screen already
-  // measures. Circles already reached stay marked, because that is a record of what has
-  // happened rather than a hint about what comes next.
-  pos.forEach((n,i)=>{
-    const done=i<MTB.next, bad=MTB.flash===i;
-    g.fillStyle   = bad?"#fdecec" : done?"#D9EFD6" : "#f2f5f8";
-    g.strokeStyle = bad?"#8c2020" : done?"#4C8C4A" : "#8a929c";
-    g.lineWidth   = bad?3:1.5;
-    g.beginPath(); g.arc(n.x,n.y,r,0,7); g.fill(); g.stroke();
-    g.fillStyle   = bad?"#8c2020" : done?"#2F6B2D" : "#5d6570";
-    g.font=`600 ${Math.round(r*1.05)}px system-ui`; g.textAlign="center";
-    g.fillText(n.label,n.x,n.y+r*0.37);
-  });
-}
-// A rejected move is shown, briefly, on the circle that was refused -- never on the one
-// that was wanted, which would give the answer away.
-function mtbFlash(i){
-  MTB.flash=i; mtbDraw();
-  clearTimeout(MTB.flashTimer);
-  MTB.flashTimer=setTimeout(()=>{ MTB.flash=null; if(MTB.geom) mtbDraw(); },420);
-}
-function mtbReset(){ mtbBegin(false); }
-function mtbPractice(){ mtbBegin(true); }
-function mtbBegin(practice){
-  if(!$("mtbpad")) return;
-  clearTimeout(MTB.flashTimer);
-  MTB.practice=!!practice; MTB.flash=null;
-  MTB.geom=mtbGeom(); MTB.state="idle"; MTB.next=0; MTB.arrivals=[]; MTB.errors=0;
-  MTB.errorLog=[]; MTB.strokes=[]; MTB.inside=null; MTB.t0=null; MTB.drawing=false;
-  MTB.saved=false;
-  mtbDraw();
-  $("mtbresult").innerHTML = MTB.practice
-    ? `<div class="note" style="margin-top:10px"><b>Practice</b> — four circles,
-       <b>1, A, 2, B</b>. Same rules, not timed, and nothing is saved. Press
-       <b>Start the real one</b> when they have the idea.</div>`
-    : `<div class="note" style="margin-top:10px">Not started. The first touch on <b>1</b>
-       starts the clock. Run the practice first if you have not.</div>`;
-}
-function mtbNodeAt(x,y){
-  const {r,pos}=MTB.geom, hit=r*1.35;
-  for(let i=0;i<pos.length;i++){
-    if(Math.hypot(pos[i].x-x,pos[i].y-y)<=hit) return i;
-  }
-  return null;
-}
-(function initMtb(){
-  const cv=$("mtbpad"); if(!cv) return;
-  const rel=e=>{ const b=cv.getBoundingClientRect(); return {x:e.clientX-b.left,y:e.clientY-b.top}; };
-  const wants=()=>$("mtbimpl").value;
-  const okPointer=t=> wants()==="pen" ? (t==="pen"||t==="mouse") : (t==="touch"||t==="mouse");
-  const sample=(p,t)=>{
-    const st=MTB.strokes[MTB.strokes.length-1]; if(!st) return;
-    st.push({x:p.x,y:p.y,t});
-    const idx=mtbNodeAt(p.x,p.y);
-    if(idx===MTB.inside) return;
-    MTB.inside=idx;
-    if(idx===null || MTB.state==="done") return;
-    const NODES=mtbNodes();
-    if(idx===MTB.next){
-      MTB.arrivals.push({ label:NODES[idx].label, order:idx+1, t_ms:+(t-MTB.t0).toFixed(1) });
-      MTB.next++;
-      if(MTB.next>=NODES.length){ MTB.state="done"; mtbDraw(); mtbFinish(); return; }
-      mtbDraw();
-    } else if(idx<MTB.next){
-      // A circle already joined. Passing back over one, or lifting the stylus and putting
-      // it down again on the one they are working from, is not an error -- that connection
-      // has already been made. Counting it would inflate the error score of anybody who
-      // lifts the pen, which is most older adults, on a measure whose whole point is the
-      // error count.
-    } else {
-      // The connection does not take. The target stays where it is, so the participant
-      // has to come back to the last correct circle and go on from there -- the same
-      // redirection the examiner performs on paper, and the time it costs is the penalty.
-      // The ink is kept: path_length_mm and mean_velocity_mm_s are measures of what the
-      // hand actually did, and erasing the excursion would misreport both.
-      MTB.errors++;
-      MTB.errorLog.push({ t_ms:+(t-MTB.t0).toFixed(1),
-        attempted:NODES[idx].label,
-        expected:NODES[MTB.next].label,
-        from_node: MTB.next>0 ? NODES[MTB.next-1].label : null });
-      mtbFlash(idx);
-    }
-  };
-  cv.addEventListener("pointerdown",e=>{
-    if(MTB.state==="done") return;
-    if(!okPointer(e.pointerType)) return;
-    e.preventDefault();
-    const now=performance.now(), p=rel(e);
-    if(MTB.state==="idle"){ MTB.state="running"; MTB.t0=now; }
-    MTB.drawing=true; MTB.strokes.push([]); MTB.inside=null;
-    sample(p,now);
-  });
-  cv.addEventListener("pointermove",e=>{
-    if(!MTB.drawing) return; e.preventDefault();
-    // An empty coalesced list would drop the sample entirely, and with it the node the
-    // stylus passed through, so fall back to the event itself.
-    let evs=e.getCoalescedEvents?e.getCoalescedEvents():null;
-    if(!evs || !evs.length) evs=[e];
-    const g=MTB.geom.g; g.strokeStyle="#1d5fa8"; g.lineWidth=2.4; g.lineCap="round";
-    for(const ev of evs){
-      const p=rel(ev), st=MTB.strokes[MTB.strokes.length-1];
-      const last=st&&st.length?st[st.length-1]:null;
-      if(last){ g.beginPath(); g.moveTo(last.x,last.y); g.lineTo(p.x,p.y); g.stroke(); }
-      sample(p,performance.now());
-      if(MTB.state==="done") break;
-    }
-  });
-  const end=()=>{ MTB.drawing=false; MTB.inside=null; };
-  cv.addEventListener("pointerup",end);
-  cv.addEventListener("pointercancel",end);
-  cv.addEventListener("pointerleave",end);
-})();
-
-function mtbFinish(){
-  MTB.drawing=false;
-  if(MTB.practice){
-    // A practice is not a measurement. It is untimed and writes nothing, so there is no
-    // chance of a practice row reaching the screening file and being analyzed as one.
-    $("mtbresult").innerHTML=`<div class="good">Practice complete — all four circles joined
-      in order${MTB.errors?`, after ${MTB.errors} wrong move${MTB.errors===1?"":"s"}`:""}.
-      Nothing was saved.</div>
-      <div class="note">Press <b>Start the real one</b> when they are ready. Repeat the
-      practice as many times as it takes.</div>`;
-    return;
-  }
-  const p=parseFloat($("ppmm").value)||3.78;
-  let pathPx=0;
-  MTB.strokes.forEach(st=>{ for(let i=1;i<st.length;i++)
-    pathPx+=Math.hypot(st[i].x-st[i-1].x, st[i].y-st[i-1].y); });
-  const pathMM=pathPx/p;
-  const lastT=MTB.arrivals.length?MTB.arrivals[MTB.arrivals.length-1].t_ms:0;
-  const firstT=MTB.arrivals.length?MTB.arrivals[0].t_ms:0;
-  const completionMs=+lastT.toFixed(1);
-  const velocity = completionMs>0 ? pathMM/(completionMs/1000) : null;
-  const rec={
-    ...screenRecordBase("mini_trail_b"),
-    hand:$("mtbhand").value, implement:$("mtbimpl").value,
-    layout:"fixed 1-A-2-B-3-C-4-D; identical at every administration",
-    layout_nodes:MTB_NODES.map(n=>({label:n.label,x_norm:n.x,y_norm:n.y})),
-    next_node_cued:false,
-    wrong_moves_blocked:true,
-    administration_note:"the next circle is never indicated on screen, and a move to a circle other than the one due does not connect; errors counts those refused moves and the time they cost is carried by completion_time_ms. Re-entering a circle already joined -- including putting the stylus down again on the one being worked from -- is not counted, because that connection has already been made.",
-    completion_time_ms:completionMs,
-    completion_time_clock:"ms from first pen contact to arrival at D",
-    time_first_to_last_node_ms:+(lastT-firstT).toFixed(1),
-    errors:MTB.errors, error_log:MTB.errorLog,
-    node_arrivals_ms:MTB.arrivals,
-    strokes:MTB.strokes.length,
-    path_length_mm:+pathMM.toFixed(1),
-    mean_velocity_mm_s: velocity==null?null:+velocity.toFixed(1),
-    samples:MTB.strokes.reduce((a,s)=>a+s.length,0)
-  };
-  const res=putScreen(rec);
-  MTB.saved=res.ok;
-  const secs=(completionMs/1000).toFixed(1);
-  $("mtbresult").innerHTML=`<div class="${MTB.errors>2||completionMs>40000?"warn":"good"}">
-    Completed in <b>${secs} s</b> with <b>${MTB.errors}</b> error${MTB.errors===1?"":"s"}.
-    Path ${Math.round(pathMM)} mm in ${rec.strokes} stroke${rec.strokes===1?"":"s"},
-    mean velocity ${velocity==null?"–":Math.round(velocity)} mm/s.</div>` +
-    (res.ok ? `<div class="note">Saved as a screening record (<code>${esc(rec.screen_uid)}</code>).
-       Press Restart to administer it again; each administration is kept.</div>`
-            : `<div class="bad">Not saved — ${esc(res.error)}. ${res.error==="no participant id"
-               ? "Enter a Participant ID at the top of this page, then Restart and run it again."
-               : "Export and clear storage from Results and data."}</div>`);
-  renderScreens();
-}
-
 /* ------------------------------------------------------- dot tap screen */
 // A screen, not a covariate-grade measure. Ten seconds cannot support an estimate of
 // response-time variability -- see measure_grade in the record it writes.
@@ -1938,7 +1692,11 @@ function delAllScreens(){
   listScreens().forEach(t=>{ try{ localStorage.removeItem(t.key); }catch(e){} delete SCREEN_MEM[t.key]; });
   renderScreens();
 }
-const SCREEN_LABEL={ mini_trail_b:"Mini Trail B", dot_tap:"Dot tap" };
+// mini_trail_b is RETIRED, not deleted. The task cannot be administered any more, but
+// records written by builds up to v11.02 are still on devices, and a reader that has
+// forgotten the name renders them as the raw key. Retired screens keep their label here
+// for as long as their records can exist.
+const SCREEN_LABEL={ mini_trail_b:"Mini Trail B (retired)", dot_tap:"Dot tap" };
 function renderScreens(){
   if(!$("screenBody")) return;
   const ts=listScreens();
@@ -1947,6 +1705,8 @@ function renderScreens(){
   let h=`<table><tr><th>Started (local)</th><th>Participant</th><th>Screen</th><th>Hand</th>
          <th>Result</th><th class="num">KB</th><th></th></tr>`;
   ts.forEach(t=>{ const r=getScreen(t.key); if(!r) return;
+    // Kept for the same reason as the label. Without this branch an existing Mini Trail B
+    // record falls through to the dot-tap summary and renders "undefined/undefined hit".
     const summary = r.screen==="mini_trail_b"
       ? `${(r.completion_time_ms/1000).toFixed(1)} s · ${r.errors} error${r.errors===1?"":"s"}`
       : `${r.hits}/${r.dots_presented} hit · mean ${r.rt_mean_ms==null?"–":Math.round(r.rt_mean_ms)+" ms"}`;
@@ -2788,7 +2548,7 @@ function newParticipant(){
   Object.keys(ROOMCHECK).forEach(k=>delete ROOMCHECK[k]); ROOMCHECK.floor_dbfs=null;
   if($("roomresult")) $("roomresult").innerHTML="";
   if($("roomBtn")){ $("roomBtn").disabled=false; $("roomBtn").textContent="Run room check (5 s)"; }
-  penPadClear(); renderAudioCheck(); mtbReset(); dotReset(); onVoiceConsentChange();
+  penPadClear(); renderAudioCheck(); dotReset(); onVoiceConsentChange();
   onParamExploreChange();
   SERIES=0;
   Object.keys(REPEATS).forEach(k=>delete REPEATS[k]);
@@ -5061,6 +4821,10 @@ const SCREEN_HEAD=[
   "birth_year","birth_month","age_years","dominant_hand",
   "session_key","session_id","visit_number","session_number",
   "hand","implement","css_px_per_mm","measure_grade",
+  // Mini Trail B columns. The task was retired in v11.03 and no new record will ever fill
+  // these, but records already on devices carry the values and dropping the columns would
+  // silently export those rows with their measures missing. Removing a task must not make
+  // its existing data unreadable -- the columns go when the last record does, not before.
   "mtb_completion_time_ms","mtb_errors","mtb_strokes","mtb_path_length_mm",
   "mtb_mean_velocity_mm_s","mtb_samples","mtb_node_arrivals_json","mtb_error_log_json",
   "dot_run_duration_ms","dot_lifetime_ms","dots_presented","dots_unscored_at_cutoff",
@@ -5500,7 +5264,7 @@ window.addEventListener("resize",()=>{
   const running = RUN && !RUN.ready;
   if(running){ noteTrialResize(); return; }
   if($("stage").classList.contains("on")){ layout(); drawScene(); }
-  else if(!$("pg2").classList.contains("hidden")){ mtbBegin(!!MTB.practice); dotReset(); }
+  else if(!$("pg2").classList.contains("hidden")){ dotReset(); }
 });
 // Recorded on the same footing as a mid-trial zoom, and invalidating the trial through the
 // same geometry_valid field, because the consequence is the same: the millimeters in this
@@ -5525,7 +5289,7 @@ if(/[?&]reset\b/.test(location.search)){ clearState(); }
 
 fillLanguages(); onLanguageChange();
 renderPlan(); renderAudioTable(); renderSaved(); renderScreens(); renderStatus();
-renderSecureNote(); onVoiceConsentChange(); mtbReset(); dotReset(); renderAudioStore();
+renderSecureNote(); onVoiceConsentChange(); dotReset(); renderAudioStore();
 renderZoomBanner();
 
 // Nothing below start-up should be able to leave a blank page.
