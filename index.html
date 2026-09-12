@@ -831,7 +831,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.08 2026-09-11";
+const BUILD = "v12.09 2026-09-12";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -911,6 +911,13 @@ const CATALOGUE = [
   { id:"PEN_SPRL", label:"Spiral",                        order:60,  tier:"core",   spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:2, lengthS:null, implement:"pen", sustainedS:60 },
   { id:"PEN_VODD", label:"Spiral + counting the high tones aloud", order:70, tier:"core", spiral:1, tap:0, audio:1, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
                    selfPaceable:1, fixedS:60, count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1 },
+  // Intersecting pentagon COPY, not a spiral. The model is shown beside a blank area and the
+  // participant reproduces it; there is no template to trace and nothing to sustain, so it is
+  // self-paced and ends at END. The app does NOT score it -- the criterion is ten angles and a
+  // quadrilateral overlap, which is a judgement about a shape rather than something these
+  // strokes can be thresholded into. It records the drawing and the model that was shown.
+  { id:"PEN_PENT", label:"Intersecting pentagon copy", order:75, tier:"core", spiral:0, pent:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:1, lengthS:null, implement:"pen" },
+
   // "Both, alternating" with one trial per hand. The battery table gives the hand as
   // alternating and the trial count as 1; read as 1 PER HAND, since a single trial cannot
   // alternate. Confirm if that is not what was meant.
@@ -1305,6 +1312,25 @@ function instructionFor(taskId, opts){
 
   const dualTask = isDualTask(c);
   const rules = drawingRules(tool, mode);
+  // The copy task has its own wording: there is no template to trace, no speed instruction,
+  // and accuracy rather than continuity is what is being asked for. Reusing the spiral rules
+  // here would tell the participant not to lift the pen, which is wrong for a figure drawn
+  // in separate lines.
+  if(c.pent){
+    lines.push("Sit comfortably.");
+    lines.push("Look at the shape on the left.");
+    lines.push("Copy it in the box on the right, as accurately as you can.");
+    lines.push("Take as long as you need. Lift the pen whenever you want to.");
+    lines.push("Tell me when you have finished.");
+    // Same shape as the normal return -- an early return of a bare array left ins.lines
+    // undefined and took the instruction screen down with it. No spiral figure: the model
+    // the participant copies is on the trial screen itself, and a spiral drawn beside a
+    // pentagon would be the wrong shape to be looking at.
+    return { id:taskId, title:c.label, lines,
+             drawingRules:null, rulesShownInline:false, figure:false,
+             mode, implement:impl,
+             length:"Ends when the administrator stops it." };
+  }
   if(c.spiral && !dualTask){
     lines.push("Sit comfortably.");
     rules.forEach(l=>lines.push(l));
@@ -1904,7 +1930,7 @@ function screenRecordBase(which){
   const b=birthInfo(), pid=$("pid").value||"";
   const iso=new Date().toISOString();
   return {
-    schema:"motiq_prototype/13", build:BUILD, record_type:"screening", screen:which,
+    schema:"motiq_prototype/14", build:BUILD, record_type:"screening", screen:which,
     screen_uid:`${iso.replace(/[:.]/g,"-")}_${pid||"unnamed"}_${which}`,
     started_iso:iso,
     participant:{ id:pid, group:$("grp").value||null,
@@ -3186,6 +3212,51 @@ function makeAngleAccumulator(direction){
   };
 }
 
+// ---------------------------------------------------------------------------
+// INTERSECTING PENTAGONS -- the copy task.
+//
+// Two regular pentagons overlapping so that the intersection is a four-sided figure. That
+// is the whole scoring criterion in the instruments this comes from: ten angles present and
+// the overlap forming a quadrilateral. The layout is therefore FIXED and generated from one
+// constant, not eyeballed and not randomised -- a copy task whose model varies between
+// administrations is not the same task twice.
+//
+// Size is in millimetres, from the same calibration the spiral uses, so the model is the
+// same physical size on every device rather than the same fraction of a screen.
+//
+// THE VERTICES ARE CONSTRUCTED, NOT TRACED FROM A PUBLISHED INSTRUMENT. Two regular
+// pentagons of equal side, one rotated 180 degrees, separated so the overlap is a
+// quadrilateral. It satisfies the scoring criterion, but it is NOT pixel-identical to the
+// figure in the MMSE or the MoCA, and a copy scored against published norms for those
+// instruments would be scored against a figure the participant did not see. If
+// norm-comparability is wanted, replace left/right with the vertices of the instrument
+// actually being used -- everything else here reads from pentagonModel() and nothing else
+// needs to change. The model is exported with every trial for exactly this reason.
+const PENT_SIDE_MM = 22;              // side length of each pentagon
+const PENT_OVERLAP = 0.62;            // centre separation as a fraction of the circumradius
+// Vertices of one regular pentagon, point-up, centred on the origin.
+function pentagonPts(sideMM, rotDeg){
+  const R = sideMM/(2*Math.sin(Math.PI/5));       // circumradius from side length
+  const rot = (rotDeg||0)*Math.PI/180 - Math.PI/2; // point-up before rotation
+  return Array.from({length:5},(_,i)=>{
+    const a = rot + i*2*Math.PI/5;
+    return { x:R*Math.cos(a), y:R*Math.sin(a) };
+  });
+}
+// The pair, as drawn. The right pentagon is rotated so the overlap is a quadrilateral
+// rather than a degenerate sliver, which is what the scoring criterion asks about.
+function pentagonModel(){
+  const R = PENT_SIDE_MM/(2*Math.sin(Math.PI/5));
+  const dx = R*PENT_OVERLAP;
+  const left  = pentagonPts(PENT_SIDE_MM, 0  ).map(q=>({x:q.x-dx, y:q.y}));
+  const right = pentagonPts(PENT_SIDE_MM, 180).map(q=>({x:q.x+dx, y:q.y}));
+  const all=[...left,...right];
+  return { left, right, side_mm:PENT_SIDE_MM, overlap:PENT_OVERLAP,
+           circumradius_mm:+R.toFixed(2), centre_separation_mm:+(2*dx).toFixed(2),
+           width_mm:+(Math.max(...all.map(q=>q.x))-Math.min(...all.map(q=>q.x))).toFixed(2),
+           height_mm:+(Math.max(...all.map(q=>q.y))-Math.min(...all.map(q=>q.y))).toFixed(2) };
+}
+
 function spiralPath(radius,turns,direction,endAngleDeg,nPts=3000){
   const s=direction==="cw"?-1:1, phi=endAngleDeg*Math.PI/180;
   const b=radius/(turns*2*Math.PI), pts=[], thMax=turns*2*Math.PI;
@@ -3625,7 +3696,7 @@ const idbDel  = id  => idbTx("readwrite", st=>st.delete(id));
 const idbClear= ()  => idbTx("readwrite", st=>st.clear());
 
 /* ------------------------------------------------------- layout + draw */
-let L=null,SPIRAL=null,STROKES=[],TAPS=[],TAPFLASH=null,HOVER=[];
+let L=null,SPIRAL=null,PENTAGON=null,STROKES=[],TAPS=[],TAPFLASH=null,HOVER=[];
 // Hover arrives at about 59 Hz, measured on an 11-inch iPad Pro 4th generation. A stored
 // hover row costs 49 bytes, measured on a real saved record rather than estimated, so a
 // 45 s trial spent ENTIRELY hovering would be ~2650 rows and ~128 KB against roughly 5 MB
@@ -3656,7 +3727,7 @@ function layout(){
   const topPad=100, cy=uy0+topPad+(uh-topPad)/2;
 
   const c=byId(TRIAL.task);
-  let dx0=ux0,dw=uw,tapCx=null,zones=null,splitX=null;
+  let dx0=ux0,dw=uw,tapCx=null,zones=null,splitX=null,pentCx=null;
   const drawSide = TRIAL.drawHand==="left" ? "left" : "right";
 
   if(c.spiral && c.tap){
@@ -3664,6 +3735,13 @@ function layout(){
     if(drawSide==="left"){ dx0=ux0; tapCx=ux0+dw+(uw-dw)/2; splitX=ux0+dw; }
     else { dx0=ux0+(uw-dw); tapCx=ux0+(uw-dw)/2; splitX=ux0+(uw-dw); }
   } else if(c.spiral){ dx0=ux0; dw=uw; }
+  // The copy task needs TWO areas: the model to look at and a blank area to draw in. The
+  // model goes on the non-drawing side so the participant's own hand does not cover it.
+  else if(c.pent){
+    dw=uw/2;
+    if(drawSide==="left"){ dx0=ux0; pentCx=ux0+dw+(uw-dw)/2; splitX=ux0+dw; }
+    else { dx0=ux0+(uw-dw); pentCx=ux0+(uw-dw)/2; splitX=ux0+(uw-dw); }
+  }
   else if(c.zones===2){ const gap=(+$("zonegap").value)*p, mid=ux0+uw/2;
     zones=[{id:"left",cx:mid-gap/2},{id:"right",cx:mid+gap/2}]; }
   // Centered for every tapping-only task. It used to be offset toward the tapping hand
@@ -3673,6 +3751,7 @@ function layout(){
   else if(c.zones===1){ tapCx = ux0+uw/2; }
 
   L={p,W,H,g,ux0,uy0,uw,uh,dw,dx0,tapCx,zones,splitX,spiralOn:!!c.spiral,
+     pentOn:!!c.pent,pentCx,
      cx:dx0+dw/2,cy,safeAreaMM:sa,topPad};
   buildZones(c);
   $("hud").style.display = (c.tap||c.audio||c.verbal) ? "block" : "none";
@@ -3785,6 +3864,36 @@ function drawScene(){
     g.fillStyle="#b4531f"; g.font="600 14px system-ui"; g.fillText("End",et.x,et.y+4);
     g.fillStyle="#2F6B2D"; g.font="13px system-ui"; g.fillText("start",c0.x,c0.y+mm2px(sd/2)+15);
   } else SPIRAL=null;
+
+  if(L.pentOn){
+    const m=pentagonModel();
+    PENTAGON={ ...m, model_side:(TRIAL.drawHand==="left"?"right":"left") };
+    // The MODEL, on the side the drawing hand is not. Drawn in the same gray as the spiral
+    // template so the two tasks read as the same kind of thing -- something to copy, not
+    // something already yours.
+    const mx = L.pentCx, my = L.cy;
+    const draw=(pts,ox)=>{
+      g.beginPath();
+      pts.forEach((q,i)=>{ const X=ox+q.x*L.p, Y=my-q.y*L.p; i?g.lineTo(X,Y):g.moveTo(X,Y); });
+      g.closePath(); g.stroke();
+    };
+    g.strokeStyle="#737a85"; g.lineWidth=1.8; g.lineJoin="round"; g.lineCap="round";
+    draw(m.left, mx); draw(m.right, mx);
+    g.fillStyle="#5d6570"; g.font="13px system-ui"; g.textAlign="center";
+    g.fillText("copy this", mx, my - (m.height_mm/2)*L.p - 14);
+
+    // The blank area, marked so it is obvious where to draw. An empty half of a white
+    // screen does not say "draw here", and a participant copying into the model's half
+    // would be a lost trial rather than a bad copy.
+    g.save();
+    g.strokeStyle="#c9ced6"; g.setLineDash([6,6]); g.lineWidth=1.4;
+    const pad=10*L.p, bw=Math.min(L.dw-2*pad, (m.width_mm+20)*L.p);
+    const bh=(m.height_mm+20)*L.p;
+    g.strokeRect(L.cx-bw/2, my-bh/2, bw, bh);
+    g.restore();
+    g.fillStyle="#5d6570"; g.font="13px system-ui";
+    g.fillText("draw here", L.cx, my - bh/2 - 14);
+  } else PENTAGON=null;
 
   // tap zones are DOM elements now; see buildZones()
 
@@ -4442,9 +4551,10 @@ function runTrial(seq,c){
   // open the window -- that is what stops an accidental brush from starting the trial.
   const inStartZone = e => { const m=toMM(e.clientX,e.clientY);
     return Math.hypot(m.x,m.y) <= (+$("startdia").value)/2; };
+  const drawTask = !!(c.spiral || c.pent);      // anything the pen actually draws on
   const down=e=>{
     const t=performance.now()-perf0; RUN.lastContact=performance.now();
-    if(!c.spiral) return;
+    if(!drawTask) return;
     if(!drawOK(e.pointerType)) return;
     if(e.clientX<L.dx0-4) return;
     if(e.clientY<L.uy0+L.topPad) return;
@@ -4498,7 +4608,7 @@ function runTrial(seq,c){
     // Hover used to die exactly here: no stroke for this pointer, so return. A hovering pen
     // never has a stroke, so every hover event the platform sent was discarded unread.
     if(!st){
-      if(c.spiral && isHoverEv(e)){
+      if(drawTask && isHoverEv(e)){
         for(const ev of coalesced(e)) addHover(ev,performance.now()-perf0);
       }
       return;
@@ -4508,9 +4618,9 @@ function runTrial(seq,c){
     for(const ev of evs) addPoint(st,ev,performance.now()-perf0,evs.length>1); };
   // Entry and exit of the hover region, which is not the same as the first hover SAMPLE:
   // pointerover fires the moment the pen becomes known, before it has moved.
-  const over=e=>{ if(c.spiral && isHoverEv(e)) addHover(e,performance.now()-perf0); };
+  const over=e=>{ if(drawTask && isHoverEv(e)) addHover(e,performance.now()-perf0); };
   const out=e=>{
-    if(!c.spiral || e.pointerType!=="pen") return;
+    if(!drawTask || e.pointerType!=="pen") return;
     // The pen left the hover band entirely -- lifted clear rather than merely stopped
     // drawing. Recorded as the end of a hover episode, distinct from a stroke ending.
     RUN.hoverExits=(RUN.hoverExits||0)+1;
@@ -4526,7 +4636,7 @@ function runTrial(seq,c){
   // Pairs a lift with the touch-down that ends it, so lift DURATION is recorded rather than
   // only lift count. Wrapped around the existing handler so the drawing path is untouched.
   const downWrapped=e=>{
-    if(RUN.lastLiftAt!=null && strokeFor.size===0 && drawOK(e.pointerType) && c.spiral){
+    if(RUN.lastLiftAt!=null && strokeFor.size===0 && drawOK(e.pointerType) && drawTask){
       RUN.lifts.push({ at_ms:+(RUN.lastLiftAt-perf0).toFixed(1),
                        dur_ms:+(performance.now()-RUN.lastLiftAt).toFixed(1) });
       RUN.lastLiftAt=null;
@@ -4722,9 +4832,16 @@ function runTrial(seq,c){
     // tells them precisely when to sprint. So a timed trial shows the participant nothing
     // while it runs, and an unmistakable STOP the instant the window closes.
     //
-    // The untimed self-paced spiral trials keep their elapsed readout. That is examiner
+    // The genuinely untimed spiral trials keep their elapsed readout. That is examiner
     // information on a task with no window to pace against, and D7's long-trial notice
     // depends on it.
+    //
+    // A SUSTAINED SPIRAL IS NOT ONE OF THEM. "untimed" means the TRIAL has no automatic end
+    // -- true of every spiral, since they all stop at END so the participant can finish the
+    // stroke they are in -- but a sustained spiral has a WINDOW, and a clock running against
+    // a window is precisely the pacing cue this rule exists to remove. PEN_VODD showed one
+    // for exactly that reason: it is untimed and windowed at the same time, and the test
+    // asked the wrong one of the two.
     if(c.tap||c.audio||c.verbal){
       const hud=$("hud");
       let txt="", big=false;
@@ -4733,6 +4850,9 @@ function runTrial(seq,c){
         txt = RUN.fluencyCueMs===null
           ? "naming "+Math.max(0,(fluencyWinMs-(now-perf0))/1000).toFixed(1)+" s"
           : "naming done";
+      } else if(RUN.sustained){
+        // Windowed. Nothing while it runs; STOP when the window closes.
+        txt="";
       } else if(untimed){
         txt=((now-perf0)/1000).toFixed(1)+" s";
       } else if(!seq && wStart==null){
@@ -4976,7 +5096,7 @@ function finish(){
          sdL:sdOf(iti(lt)),sdR:sdOf(iti(rt)),sdS:sdOf(iti(sg)),
          altPct: c.zones===2&&zs.length>1 ? 100*alt/(zs.length-1) : null };
   }
-  LAST={RUN,STROKES,TAPS,HOVER,att,SPIRAL,tp,layoutSafe:L.safeAreaMM,ppmm:L.p,trial:{...TRIAL}};
+  LAST={RUN,STROKES,TAPS,HOVER,att,SPIRAL,PENTAGON,tp,layoutSafe:L.safeAreaMM,ppmm:L.p,trial:{...TRIAL}};
   RUN.saved=false;
 
   cancelAnimationFrame(RAF); drawScene();
@@ -5240,7 +5360,7 @@ function buildRecord(){
   const heard = c.count ? countedHeard(R.seq, R.streamCutMs, c.countOf) : null;
   const scheduled = R.seq ? (c.countOf==="all" ? R.seq.n : R.seq.t) : null;
   return {
-    schema:"motiq_prototype/13", build:BUILD, record_type:"trial",
+    schema:"motiq_prototype/14", build:BUILD, record_type:"trial",
     note:"PROTOTYPE. Browser mm and browser timing are approximations.",
     trial_id:R.trialId, trial_uid:R.trialUid,
     session_key:SESSION_KEY,
@@ -5422,7 +5542,7 @@ function buildRecord(){
     // not dead time, and not lost drawing time. Requires an M2-or-later iPad: on an M1
     // there is no hover at all and every field here is null, which is a hardware fact and
     // not a recording failure. See the PENCIL HOVER comment.
-    hover: R.c && R.c.spiral ? {
+    hover: R.c && (R.c.spiral || R.c.pent) ? {
         supported: R.hoverSeen>0,
         n_samples: (LAST.HOVER||[]).length,
         n_events_seen: R.hoverSeen,
@@ -5449,7 +5569,7 @@ function buildRecord(){
       } : null,
     // Lifts during drawing. Reconstructable from stroke boundaries, but the instruction is
     // not to lift, so this is a measure rather than a by-product.
-    pen_lifts: R.c && R.c.spiral ? {
+    pen_lifts: R.c && (R.c.spiral || R.c.pent) ? {
         count:(R.lifts||[]).length,
         total_ms:+((R.lifts||[]).reduce((a,l)=>a+l.dur_ms,0)).toFixed(1),
         lifts:R.lifts||[],
@@ -5470,6 +5590,13 @@ function buildRecord(){
         detail:dataHeldReason(R.c),
         note:"this condition runs and records, but the platform prevents it from being the dual task it is designed as. Do not analyse its dual-task contrast; the single-task channel is unaffected." }
       : { held:false },
+    // The model the participant was actually looking at. Scoring a copy against a remembered
+    // description of the figure is not the same as scoring it against the figure; the vertices
+    // are in the same millimetre frame as the strokes, so the two can be overlaid directly.
+    pentagon: LAST.PENTAGON ? { ...LAST.PENTAGON,
+        scored:false,
+        note:"the app does not score this. The criterion is ten angles present and the overlap forming a four-sided figure, which is a judgement about a shape rather than a threshold on these strokes. left and right are the model's vertices in millimetres, in the same frame as the pen samples, so a copy can be overlaid on the model it was made from."
+      } : null,
     omissions: R.omissions || null,
     tapping:LAST.tp||null,
     counting: c.count ? {
@@ -5663,6 +5790,7 @@ const CSV_HEAD=[
   "administration_language","language_in_registry",
   "participant_language","administered_in_participant_language",
   "pitch_mm","turns","radius_mm","direction","template_path_mm","template_style","tap_zone_mm","zones",
+  "pentagon_side_mm","pentagon_separation_mm","pentagon_scored",
   "audio_key","stream_duration_s","floor_ms","mean_interval_ms","p_target","tone_ms",
   "f_standard_hz","f_target_hz","tone_level","seed","seed_mode",
   "n_tones","n_targets","n_tones_played","n_targets_played","stream_cut_ms","stop_mode",
@@ -5782,6 +5910,8 @@ function csvRows(rec){
     rec.participant_language??"", bit(rec.administered_in_participant_language),
     sp.pitch_mm??"", sp.turns??"", S.radius??"", S.direction??"", S.pathMM?Math.round(S.pathMM):"",
     sp.template_style??"", tapp.zone_mm??"", tapp.zones??"",
+    rec.pentagon?.side_mm??"", rec.pentagon?.centre_separation_mm??"",
+    rec.pentagon?bit(rec.pentagon.scored):"",
     au.key??"", au.durS??"", au.floorMs??"", au.meanMs??"", au.ptg??"", au.tone??"",
     au.f_standard??"", au.f_target??"", au.level??"", au.seed??"", au.seed_mode??"",
     seq?seq.n_tones:"", seq?seq.n_targets:"",
@@ -6048,13 +6178,13 @@ function exportAllJSON(){
       started_iso:r.started_iso, mime_type:r.mime_type,
       bytes:r.bytes ?? (r.blob?r.blob.size:null) }));
     save(`${fileStem()}.json`, JSON.stringify({
-      schema:"motiq_prototype/13", build:BUILD, exported_iso:new Date().toISOString(),
+      schema:"motiq_prototype/14", build:BUILD, exported_iso:new Date().toISOString(),
       note:"trials are per trial; screening is per participant administration; audio_index lists the voice clips held in IndexedDB on the device that produced this file, and the clip bytes are downloaded separately.",
       trials, screening, audio_index:audio
     },null,2),"application/json");
   }).catch(()=>{
     save(`${fileStem()}.json`, JSON.stringify({
-      schema:"motiq_prototype/13", build:BUILD, exported_iso:new Date().toISOString(),
+      schema:"motiq_prototype/14", build:BUILD, exported_iso:new Date().toISOString(),
       note:"the voice clip store could not be read, so audio_index is empty; the clips may still exist on the device.",
       trials, screening, audio_index:[]
     },null,2),"application/json");
