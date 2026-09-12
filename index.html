@@ -831,7 +831,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.09 2026-09-12";
+const BUILD = "v12.10 2026-09-12";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -3232,8 +3232,21 @@ function makeAngleAccumulator(direction){
 // norm-comparability is wanted, replace left/right with the vertices of the instrument
 // actually being used -- everything else here reads from pentagonModel() and nothing else
 // needs to change. The model is exported with every trial for exactly this reason.
-const PENT_SIDE_MM = 22;              // side length of each pentagon
+// The pair's bounding box, as multiples of the side length, for the geometry below. Used to
+// solve for the largest side that fits the space actually available rather than picking a
+// size and hoping it looks right on the device in front of you.
+const PENT_W_PER_SIDE = 2.673;        // overall width  / side
+const PENT_H_PER_SIDE = 1.701;        // overall height / side
+const PENT_MIN_SIDE_MM = 14;          // below this the angles stop being judgeable
+const PENT_MARGIN_MM = 8;             // breathing room inside each half
 const PENT_OVERLAP = 0.62;            // centre separation as a fraction of the circumradius
+// The side length that fills the space available. Solved from BOTH dimensions and the
+// smaller taken, so the figure fits whichever way the iPad is held.
+function pentSideFor(halfWidthMM, heightMM){
+  const w=(halfWidthMM-2*PENT_MARGIN_MM)/PENT_W_PER_SIDE;
+  const h=(heightMM-2*PENT_MARGIN_MM)/PENT_H_PER_SIDE;
+  return Math.max(PENT_MIN_SIDE_MM, Math.min(w,h));
+}
 // Vertices of one regular pentagon, point-up, centred on the origin.
 function pentagonPts(sideMM, rotDeg){
   const R = sideMM/(2*Math.sin(Math.PI/5));       // circumradius from side length
@@ -3245,13 +3258,14 @@ function pentagonPts(sideMM, rotDeg){
 }
 // The pair, as drawn. The right pentagon is rotated so the overlap is a quadrilateral
 // rather than a degenerate sliver, which is what the scoring criterion asks about.
-function pentagonModel(){
-  const R = PENT_SIDE_MM/(2*Math.sin(Math.PI/5));
+function pentagonModel(sideMM){
+  const side = sideMM || PENT_MIN_SIDE_MM;
+  const R = side/(2*Math.sin(Math.PI/5));
   const dx = R*PENT_OVERLAP;
-  const left  = pentagonPts(PENT_SIDE_MM, 0  ).map(q=>({x:q.x-dx, y:q.y}));
-  const right = pentagonPts(PENT_SIDE_MM, 180).map(q=>({x:q.x+dx, y:q.y}));
+  const left  = pentagonPts(side, 0  ).map(q=>({x:q.x-dx, y:q.y}));
+  const right = pentagonPts(side, 180).map(q=>({x:q.x+dx, y:q.y}));
   const all=[...left,...right];
-  return { left, right, side_mm:PENT_SIDE_MM, overlap:PENT_OVERLAP,
+  return { left, right, side_mm:+side.toFixed(2), overlap:PENT_OVERLAP,
            circumradius_mm:+R.toFixed(2), centre_separation_mm:+(2*dx).toFixed(2),
            width_mm:+(Math.max(...all.map(q=>q.x))-Math.min(...all.map(q=>q.x))).toFixed(2),
            height_mm:+(Math.max(...all.map(q=>q.y))-Math.min(...all.map(q=>q.y))).toFixed(2) };
@@ -3727,7 +3741,8 @@ function layout(){
   const topPad=100, cy=uy0+topPad+(uh-topPad)/2;
 
   const c=byId(TRIAL.task);
-  let dx0=ux0,dw=uw,tapCx=null,zones=null,splitX=null,pentCx=null;
+  let dx0=ux0,dw=uw,tapCx=null,zones=null,splitX=null,pentCx=null,pentSide=null;
+  let pentVertical=false,pentCy=null,copyCy=null,splitY=null;
   const drawSide = TRIAL.drawHand==="left" ? "left" : "right";
 
   if(c.spiral && c.tap){
@@ -3738,9 +3753,26 @@ function layout(){
   // The copy task needs TWO areas: the model to look at and a blank area to draw in. The
   // model goes on the non-drawing side so the participant's own hand does not cover it.
   else if(c.pent){
-    dw=uw/2;
-    if(drawSide==="left"){ dx0=ux0; pentCx=ux0+dw+(uw-dw)/2; splitX=ux0+dw; }
-    else { dx0=ux0+(uw-dw); pentCx=ux0+(uw-dw)/2; splitX=ux0+(uw-dw); }
+    // The pair is much wider than it is tall, so which way the screen is split decides how
+    // big the figure can be, and the answer flips with the aspect ratio: side by side wins
+    // on a landscape screen, stacked wins on a portrait one. Solve both and take the larger
+    // rather than fixing one and losing half the area on the other orientation.
+    const availH=(uh-topPad)/p, availW=uw/p;
+    const sideBySide = pentSideFor(availW/2, availH);
+    const stacked    = pentSideFor(availW, availH/2);
+    pentVertical = stacked > sideBySide;
+    pentSide = Math.max(sideBySide, stacked);
+    if(pentVertical){
+      // Model above, copy below, on the reading order the instruction assumes.
+      dw=uw; dx0=ux0;
+      pentCy = uy0+topPad+(uh-topPad)*0.27;
+      copyCy = uy0+topPad+(uh-topPad)*0.73;
+      splitY = uy0+topPad+(uh-topPad)/2;
+    } else {
+      dw=uw/2;
+      if(drawSide==="left"){ dx0=ux0; pentCx=ux0+dw+(uw-dw)/2; splitX=ux0+dw; }
+      else { dx0=ux0+(uw-dw); pentCx=ux0+(uw-dw)/2; splitX=ux0+(uw-dw); }
+    }
   }
   else if(c.zones===2){ const gap=(+$("zonegap").value)*p, mid=ux0+uw/2;
     zones=[{id:"left",cx:mid-gap/2},{id:"right",cx:mid+gap/2}]; }
@@ -3751,7 +3783,7 @@ function layout(){
   else if(c.zones===1){ tapCx = ux0+uw/2; }
 
   L={p,W,H,g,ux0,uy0,uw,uh,dw,dx0,tapCx,zones,splitX,spiralOn:!!c.spiral,
-     pentOn:!!c.pent,pentCx,
+     pentOn:!!c.pent,pentCx,pentSide,pentVertical,pentCy,copyCy,splitY,
      cx:dx0+dw/2,cy,safeAreaMM:sa,topPad};
   buildZones(c);
   $("hud").style.display = (c.tap||c.audio||c.verbal) ? "block" : "none";
@@ -3806,8 +3838,12 @@ function onZoneDown(e){
 // where RUN has no window yet, so this must tolerate every stage of the trial lifecycle.
 const SUSTAINED_ON = () => !!(TRIAL && TRIAL.sustainedS>0 && byId(TRIAL.task)?.spiral);
 const mm2px=v=>v*L.p;
-const toCanvas=(x,y)=>({x:L.cx+x*L.p,y:L.cy-y*L.p});
-const toMM=(x,y)=>({x:(x-L.cx)/L.p,y:(L.cy-y)/L.p});
+// The drawing origin. On every task it is the centre of the drawing area -- which for a
+// stacked pentagon copy is the COPY half, not the middle of the screen, or the participant's
+// strokes would be recorded relative to a point they were never drawing around.
+const drawCy = () => (L.pentOn && L.pentVertical && L.copyCy!=null) ? L.copyCy : L.cy;
+const toCanvas=(x,y)=>({x:L.cx+x*L.p,y:drawCy()-y*L.p});
+const toMM=(x,y)=>({x:(x-L.cx)/L.p,y:(drawCy()-y)/L.p});
 
 function drawScene(){
   const g=L.g, c=byId(TRIAL.task);
@@ -3815,6 +3851,9 @@ function drawScene(){
   g.textAlign="center";
   if(L.splitX!==null){ g.strokeStyle="#c9ced6"; g.lineWidth=1; g.setLineDash([5,5]);
     g.beginPath(); g.moveTo(L.splitX,L.uy0+L.topPad); g.lineTo(L.splitX,L.uy0+L.uh); g.stroke();
+    g.setLineDash([]); }
+  if(L.splitY!=null){ g.strokeStyle="#c9ced6"; g.lineWidth=1; g.setLineDash([5,5]);
+    g.beginPath(); g.moveTo(L.ux0,L.splitY); g.lineTo(L.ux0+L.uw,L.splitY); g.stroke();
     g.setLineDash([]); }
 
   if(L.spiralOn){
@@ -3866,18 +3905,22 @@ function drawScene(){
   } else SPIRAL=null;
 
   if(L.pentOn){
-    const m=pentagonModel();
-    PENTAGON={ ...m, model_side:(TRIAL.drawHand==="left"?"right":"left") };
+    const m=pentagonModel(L.pentSide);
+    PENTAGON={ ...m, model_side: L.pentVertical ? "above"
+                 : (TRIAL.drawHand==="left"?"right":"left"),
+               layout: L.pentVertical ? "stacked" : "side_by_side" };
     // The MODEL, on the side the drawing hand is not. Drawn in the same gray as the spiral
     // template so the two tasks read as the same kind of thing -- something to copy, not
     // something already yours.
-    const mx = L.pentCx, my = L.cy;
+    const mx = L.pentVertical ? L.cx : L.pentCx;
+    const my = L.pentVertical ? L.pentCy : L.cy;
+    const copyX = L.cx, copyY = L.pentVertical ? L.copyCy : L.cy;
     const draw=(pts,ox)=>{
       g.beginPath();
       pts.forEach((q,i)=>{ const X=ox+q.x*L.p, Y=my-q.y*L.p; i?g.lineTo(X,Y):g.moveTo(X,Y); });
       g.closePath(); g.stroke();
     };
-    g.strokeStyle="#737a85"; g.lineWidth=1.8; g.lineJoin="round"; g.lineCap="round";
+    g.strokeStyle="#737a85"; g.lineWidth=2.2; g.lineJoin="round"; g.lineCap="round";
     draw(m.left, mx); draw(m.right, mx);
     g.fillStyle="#5d6570"; g.font="13px system-ui"; g.textAlign="center";
     g.fillText("copy this", mx, my - (m.height_mm/2)*L.p - 14);
@@ -3887,12 +3930,14 @@ function drawScene(){
     // would be a lost trial rather than a bad copy.
     g.save();
     g.strokeStyle="#c9ced6"; g.setLineDash([6,6]); g.lineWidth=1.4;
-    const pad=10*L.p, bw=Math.min(L.dw-2*pad, (m.width_mm+20)*L.p);
-    const bh=(m.height_mm+20)*L.p;
-    g.strokeRect(L.cx-bw/2, my-bh/2, bw, bh);
+    // The same size as the model, plus one margin. Sized from the figure rather than from
+    // the half-width so the two read as a matched pair at 1:1.
+    const bw=(m.width_mm  + PENT_MARGIN_MM)*L.p;
+    const bh=(m.height_mm + PENT_MARGIN_MM)*L.p;
+    g.strokeRect(copyX-bw/2, copyY-bh/2, bw, bh);
     g.restore();
     g.fillStyle="#5d6570"; g.font="13px system-ui";
-    g.fillText("draw here", L.cx, my - bh/2 - 14);
+    g.fillText("draw here", copyX, copyY - bh/2 - 14);
   } else PENTAGON=null;
 
   // tap zones are DOM elements now; see buildZones()
@@ -5593,6 +5638,9 @@ function buildRecord(){
     // The model the participant was actually looking at. Scoring a copy against a remembered
     // description of the figure is not the same as scoring it against the figure; the vertices
     // are in the same millimetre frame as the strokes, so the two can be overlaid directly.
+    // side_mm is the size ACTUALLY RENDERED on this device, not a constant: the figure is
+    // scaled to the screen, so two iPads of different sizes present different-sized models
+    // and a copy can only be compared with the model it was made from.
     pentagon: LAST.PENTAGON ? { ...LAST.PENTAGON,
         scored:false,
         note:"the app does not score this. The criterion is ten angles present and the overlap forming a four-sided figure, which is a judgement about a shape rather than a threshold on these strokes. left and right are the model's vertices in millimetres, in the same frame as the pen samples, so a copy can be overlaid on the model it was made from."
