@@ -836,7 +836,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.11 2026-09-12";
+const BUILD = "v12.13 2026-09-12";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1296,17 +1296,26 @@ const overheadFor = taskId => blockOf(taskId) ? BLOCK_GAP_S : OVERHEAD_S;
 // participant is held to is therefore the same in a task and its single-task baseline --
 // which is what stops the instruction itself contributing to dual-task cost -- without a
 // dual-task screen opening with four lines they already know.
+// FEWER LINES, AND ONE OF THEM CARRIES THE TASK. An instruction screen read aloud to an
+// older adult is not a checklist to be worked through -- five equal bullets means five
+// things to hold, and the one that matters gets no more weight than "sit comfortably". Each
+// task now leads with a single emphasised line saying what to DO, and everything else is
+// support beneath it. Lines wrapped in ** ** are rendered emphasised; see instructionHTML.
 function drawingRules(tool, mode){
   return [
-    "Start in the middle.",
     mode==="between"
-      ? "Follow the white path from the center all the way out."
-      : "Trace the spiral line from the center all the way out.",
-    "Draw it as accurately as you can, at a comfortable speed.",
-    `Keep your ${tool} on the screen the whole time. Do not lift it.`,
-    "Do not rest your hand or arm on the table."
+      ? `**Start in the middle and follow the white path all the way out.**`
+      : `**Start in the middle and TRACE the spiral line all the way out.**`,
+    `Go at a comfortable speed, as accurately as you can.`,
+    `Keep your ${tool} down the whole time, and your hand off the table.`
   ];
 }
+// The sustained conditions do not end when the spiral does, and that is the single thing
+// most likely to be missed -- a participant who finishes one spiral and stops has ended the
+// trial as far as they are concerned. It goes in its own emphasised line, not appended to
+// another one.
+const KEEP_GOING_LINE =
+  "**When you reach the end, a new spiral appears. Keep going until you see STOP.**";
 function instructionFor(taskId, opts){
   const c=byId(taskId); if(!c) return null;
   const mode = (opts&&opts.mode) || ($("instr")?$("instr").value:"trace");
@@ -1336,12 +1345,15 @@ function instructionFor(taskId, opts){
              mode, implement:impl,
              length:"Ends when the administrator stops it." };
   }
+  const sustained = !!(TRIAL && TRIAL.task===taskId && TRIAL.sustainedS>0)
+                 || !!(PLAN && PLAN[taskId] && PLAN[taskId].sustainedS>0);
   if(c.spiral && !dualTask){
-    lines.push("Sit comfortably.");
     rules.forEach(l=>lines.push(l));
+    if(sustained) lines.push(KEEP_GOING_LINE);
   } else if(dualTask){
     // Short on screen; the identical rules are one click away. See drawingRules().
-    lines.push(`Draw the spiral with your ${tool}, exactly as before.`);
+    lines.push(`**Trace the spiral with your ${tool}, exactly as before.**`);
+    if(sustained) lines.push(KEEP_GOING_LINE);
   }
 
   const also = dualTask ? "At the same time, " : "";
@@ -1349,30 +1361,31 @@ function instructionFor(taskId, opts){
   if(c.zones===2){
     lines.push("Put one index finger on each circle.");
     lines.push(taskId==="TAP_BANT"
-      ? "Tap left, then right, then left, then right."
-      : "Tap both circles at the same time.");
+      ? "**Tap left, right, left, right — AS FAST AS YOU CAN.**"
+      : "**Tap both circles together — AS FAST AS YOU CAN.**");
     if(taskId==="TAP_BANT") lines.push("Only one finger touches at a time.");
-    lines.push("Tap as fast as you can.");
   } else if(c.tap && !c.audio){
-    lines.push(`${also}tap the circle with your index finger, as fast as you can.`);
+    lines.push(`**${also?"At the same time, tap":"Tap"} the circle with your index finger — AS FAST AS YOU CAN.**`);
   }
 
   const a = AUDIO_DEFAULTS[taskId];
   if(c.audio){
     if(c.count){
+      // Four lines became two. The old version spent one line saying beeps would happen, one
+      // saying what to do, one saying what not to do, and one on the report -- and "do not
+      // tap" pre-empts a mistake nobody on a voice-only task was about to make.
       if(c.countOf==="all"){
-        lines.push("You will hear beeps, one after another.");
-        lines.push(`${also}count them <b>out loud</b> — one, two, three, and so on.`);
+        lines.push(`**${also?"At the same time, count":"Count"} every beep OUT LOUD — one, two, three, and so on.**`);
       } else {
-        lines.push("You will hear low beeps and high beeps.");
-        lines.push(`${also}count the <b>high</b> beeps out loud. Say the new number each time you hear one.`);
-        lines.push("Do nothing for the low beeps.");
+        lines.push(`**${also?"At the same time, count":"Count"} only the HIGH beeps out loud. Say the new number each time.**`);
+        lines.push("The low beeps are more common. Ignore them.");
       }
-      lines.push("Do not tap.");
-      lines.push("Tell me the number you reached when the trial ends.");
+      lines.push("I will ask for your final number at the end.");
+    } else if(c.ptgTargets || (AUDIO_DEFAULTS[taskId]&&AUDIO_DEFAULTS[taskId].ptg>0)){
+      lines.push(`**${also?"At the same time, tap":"Tap"} the circle only when you hear a HIGH beep.**`);
+      lines.push("The low beeps are more common. Ignore them.");
     } else {
-      lines.push("You will hear beeps.");
-      lines.push(`${also}tap the circle every time you hear a beep.`);
+      lines.push(`**${also?"At the same time, tap":"Tap"} the circle every time you hear a beep.**`);
     }
   }
 
@@ -1406,17 +1419,27 @@ function instructionFor(taskId, opts){
   // loud speaking style survives concurrent visuomotor load where habitual style does not
   // (Whitfield et al. 2021, JSLHR).
   if(c.voice){
-    lines.push("Use a <b>strong voice</b> — loud enough for someone across the room to hear you.");
-    lines.push("Keep your voice up all the way through, even while you are drawing.");
-    lines.push("Your voice is recorded for this task, as you agreed.");
+    // One line, not three. The middle one said "even while you are drawing" on VOC_VODD,
+    // which has no drawing at all -- a line generated for one task and read aloud on
+    // another. And the recording line belongs to consent, which was taken on the Participant
+    // page; repeating it at the top of every voice trial spends attention on something
+    // already settled.
+    lines.push(c.spiral
+      ? "Use a <b>strong voice</b> — loud enough to be heard across the room — and keep it up while you draw."
+      : "Use a <b>strong voice</b> — loud enough to be heard across the room.");
   }
 
   return { id:taskId, title:c.label, lines,
            drawingRules: c.spiral ? rules : null,
            rulesShownInline: !!(c.spiral && !dualTask),
            figure: !!c.spiral && !dualTask, mode, implement:impl,
-           length: c.lengthS===null ? "Ends when the administrator stops it."
-                                    : `About ${a?a.durS:c.lengthS} seconds.` };
+           // A sustained trial is not "until the administrator stops it" -- it runs its
+           // window and shows STOP, which is what the emphasised line above already tells
+           // the participant. Saying both contradicted the instruction being read out.
+           length: sustained
+             ? `About ${(TRIAL&&TRIAL.task===taskId&&TRIAL.sustainedS)||PLAN?.[taskId]?.sustainedS} seconds of drawing, then STOP.`
+             : c.lengthS===null ? "Ends when the administrator stops it."
+                                : `About ${a?a.durS:c.lengthS} seconds.` };
 }
 
 
@@ -1448,7 +1471,13 @@ function instructionHTML(ins, opts){
   const fs=big?"21px":"17px";
   return `<ul style="text-align:left;max-width:660px;margin:6px auto;padding-left:22px;
             font-size:${fs};line-height:1.65">` +
-    ins.lines.map(l=>`<li>${l}</li>`).join("") + `</ul>` +
+    ins.lines.map(l=>{
+      const key=/^\*\*(.*)\*\*$/.exec(l);
+      return key
+        ? `<li style="list-style:none;margin-left:-22px;margin-bottom:10px;
+             font-weight:700;color:#1d5fa8;font-size:1.08em">${key[1]}</li>`
+        : `<li>${l}</li>`;
+    }).join("") + `</ul>` +
     (ins.figure?`<div style="display:flex;gap:20px;align-items:center;justify-content:center;
       margin-top:12px;flex-wrap:wrap">
       <img src="${POSTURE_PNG}" alt="posture and grip" style="width:min(46vw,380px);height:auto">
@@ -3209,6 +3238,17 @@ const geomTurns = impl => +$("turns_"+geomSet(impl)).value;
 // small enough that finishing a spiral meant aiming, and aiming is not part of the task.
 // 0.95 keeps a margin that is real while being noticeably easier to land in.
 const END_ZONE_PITCH_FRACTION=0.95;
+// WHAT ACTUALLY PROVES A SPIRAL IS FINISHED IS THE ANGLE. Net angle cannot reach the
+// template's total except by going round it, so a participant who has swept 95% of it has
+// drawn the spiral -- there is nothing further to establish. The end-zone circle was never
+// evidence of completion; it was there to stop someone scribbling small circles near the
+// centre, which accumulates angle without progressing outward.
+//
+// A small circle is a bad way to ask that question. It turns finishing into an aiming task
+// -- miss it and you have to go back and hunt for it -- and aiming is not what is being
+// measured. A RADIUS BAND asks the same thing and cannot be missed: the pen simply has to be
+// out near the rim, which it unavoidably is if the spiral was actually traced.
+const ADVANCE_RADIUS_FRACTION=0.82;
 const endZoneDiaMM = pitch => END_ZONE_PITCH_FRACTION*pitch;
 // How long the pen must stay in the zone. Short enough not to feel like a wait, long enough
 // that a pen sweeping through the zone on its way elsewhere does not trigger it.
@@ -3241,6 +3281,13 @@ function makeAngleAccumulator(direction){
       return total;
     },
     get total(){ return total; },
+    // THE PEN LEAVING THE GLASS IS NOT MOTION. last used to survive a lift, so if the
+    // participant lifted at one angle and touched down at another, the jump between them
+    // was read as travel and added -- and if they touched down "behind" where they lifted,
+    // it was SUBTRACTED. Angle already earned quietly disappeared, and the spiral then
+    // refused to advance although it looked complete on screen. Clearing the reference on
+    // every lift keeps the total and forgets only where the pen was.
+    lift(){ last=null; },
     reset(){ last=null; total=0; }
   };
 }
@@ -3997,9 +4044,23 @@ function drawScene(){
     // kind of object and should read that way. Its diameter is derived from the pitch and is
     // deliberately not settable; see endZoneDiaMM.
     if(SUSTAINED_ON()){
+      // Lights up once the angle condition is met, so "you have drawn enough, go to the end"
+      // is visible rather than something the participant has to infer. Before that it is a
+      // quiet marker; after it, it is the thing to head for.
+      const armed = RUN && RUN.angle &&
+        RUN.netAngleTotal >= ADVANCE_ANGLE_FRACTION*turns*2*Math.PI;
       const ez=endZoneDiaMM(pitch);
-      g.fillStyle="#FBE6D8"; g.strokeStyle="#b4531f"; g.lineWidth=1.2;
+      g.fillStyle = armed ? "#F6C79E" : "#FBE6D8";
+      g.strokeStyle="#b4531f"; g.lineWidth = armed ? 2.4 : 1.2;
       g.beginPath(); g.arc(ec.x,ec.y,mm2px(ez/2),0,7); g.fill(); g.stroke();
+      if(armed){
+        // The band that will actually advance it, drawn faintly so the target is the rim
+        // rather than the dot -- which is what the detector now asks for.
+        g.save();
+        g.strokeStyle="rgba(180,83,31,.30)"; g.lineWidth=1.2; g.setLineDash([4,5]);
+        g.beginPath(); g.arc(c0.x,c0.y,mm2px(ADVANCE_RADIUS_FRACTION*radius),0,7); g.stroke();
+        g.restore();
+      }
     }
     g.strokeStyle="#b4531f"; g.lineWidth=2; g.fillStyle="#fff";
     g.beginPath(); g.arc(ec.x,ec.y,mm2px(3),0,7); g.fill(); g.stroke();
@@ -4778,6 +4839,7 @@ function runTrial(seq,c){
   };
   const up=e=>{
     strokeFor.delete(e.pointerId); RUN.lastContact=performance.now();
+    if(RUN.angle) RUN.angle.lift();
     if(strokeFor.size===0){
       RUN.penUpAt=performance.now();
       // A lift only counts once drawing has begun. Before the first stroke there is nothing
@@ -4837,11 +4899,11 @@ function runTrial(seq,c){
     // Angle first: it is the cheap test and the one that makes the zone safe.
     const needed=ADVANCE_ANGLE_FRACTION*geomTurns(TRIAL.implement)*2*Math.PI;
     if(RUN.netAngleTotal < needed){ RUN.endZoneSince=null; return; }
-    // Then position. RUN.penMM is the last contact point in spiral millimetres.
-    if(!RUN.penMM || !RUN.endMM){ RUN.endZoneSince=null; return; }
-    const d=Math.hypot(RUN.penMM.x-RUN.endMM.x, RUN.penMM.y-RUN.endMM.y);
-    const rz=endZoneDiaMM(geomPitch(TRIAL.implement))/2;
-    if(d>rz){ RUN.endZoneSince=null; return; }
+    // Then position -- but as a band, not a bullseye. Out near the rim is enough.
+    if(!RUN.penMM){ RUN.endZoneSince=null; return; }
+    const outerR=geomPitch(TRIAL.implement)*geomTurns(TRIAL.implement);
+    const r=Math.hypot(RUN.penMM.x, RUN.penMM.y);
+    if(r < ADVANCE_RADIUS_FRACTION*outerR){ RUN.endZoneSince=null; return; }
     if(RUN.endZoneSince===null){ RUN.endZoneSince=now; return; }
     if(now-RUN.endZoneSince >= END_ZONE_DWELL_MS) advancePass("auto");
   };
@@ -5677,7 +5739,9 @@ function buildRecord(){
         passes: R.passes,
         advance_rule:{ end_zone_dia_mm:+endZoneDiaMM(geomPitch(TRIAL.implement)).toFixed(2),
           end_zone_pitch_fraction:END_ZONE_PITCH_FRACTION,
-          dwell_ms:END_ZONE_DWELL_MS, angle_fraction:ADVANCE_ANGLE_FRACTION },
+          dwell_ms:END_ZONE_DWELL_MS, angle_fraction:ADVANCE_ANGLE_FRACTION,
+          radius_fraction:ADVANCE_RADIUS_FRACTION,
+          position_test:"pen at or beyond this fraction of the outer radius, not inside the end-zone circle. The circle is a visual marker; the band is what advances the pass." },
         note:"a pass advances only when the pen is inside the end zone for the dwell AND the net angle swept has reached the template total. The zone alone would fire a turn early, because the spiral crosses its angular position once per turn. advanced_by 'examiner' means the pass was advanced by hand for a participant who stopped short, and carries the examiner's reaction time; 'window_end' is the final partial pass."
       } : null,
     // ANCHORED START. Applies to every spiral condition, sustained or not.
