@@ -137,10 +137,15 @@
   #ovFoot button { font-size:24px; padding:18px 48px; border-radius:12px; min-width:180px; }
   #overlay h3 { font-size:27px; margin:0 0 14px; }
   #overlay p { font-size:20px; max-width:680px; margin:0 0 12px; color:#2c3238; }
-  #adminbar { position:absolute; top:0; left:0; right:0; height:86px; z-index:2;
-              display:flex; align-items:center; gap:12px; padding:0 16px;
+  /* Every pixel here is drawing height the participant does not get, and the spiral is
+     already close to the height of the stage: at the default pitch and turns it is 120 mm
+     across on an area about 140 mm tall. The bar was 86 px, about 26 mm of spiral. It is now
+     as small as it can be while the controls stay comfortably tappable mid-trial, which they
+     have to be -- END is pressed with a participant waiting. */
+  #adminbar { position:absolute; top:0; left:0; right:0; height:54px; z-index:2;
+              display:flex; align-items:center; gap:10px; padding:0 12px;
               border-bottom:1px solid var(--line); background:#f7f9fb; }
-  #adminbar button { font-size:21px; padding:15px 30px; border-radius:10px; min-width:130px; }
+  #adminbar button { font-size:17px; padding:9px 20px; border-radius:9px; min-width:96px; }
   #adminbar .spacer { flex:1; }
   .flashrow { outline:3px solid #b4531f; outline-offset:4px; border-radius:6px;
               animation:flashfade 2.2s ease-out; }
@@ -179,7 +184,7 @@
      rather than sitting in the admin bar where the hidden clock used to be. Below the
      admin bar (z-index 2) so END and Reset stay reachable, and pointer-events:none so it
      cannot swallow a press. */
-  #stopsign { position:absolute; inset:86px 0 0 0; z-index:1; display:none;
+  #stopsign { position:absolute; inset:54px 0 0 0; z-index:1; display:none;
               align-items:center; justify-content:center; pointer-events:none;
               background:#8c2020; }
   #stopsign.on { display:flex; animation:stopin .12s ease-out; }
@@ -831,7 +836,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.10 2026-09-12";
+const BUILD = "v12.11 2026-09-12";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1611,16 +1616,27 @@ function routeFingerprint(){
       if(a.sampleRate) parts.push("sr:"+a.sampleRate);
       if(typeof a.sinkId==="string") parts.push("sink:"+a.sinkId);
     }
-    // The recording route moves with the playback route on iOS: plugging a headset in
-    // changes the input device too, and the input side IS labelled once the microphone has
-    // been granted. Only available on voice trials.
-    const st = RECORDER && RECORDER.stream;
-    if(st){ const tr=st.getAudioTracks()[0];
-      if(tr){ parts.push("in:"+(tr.label||"")); 
-        const g = tr.getSettings ? tr.getSettings() : null;
-        if(g){ if(g.deviceId) parts.push("did:"+g.deviceId); if(g.groupId) parts.push("gid:"+g.groupId); } } }
   }catch(e){ return null; }
   return parts.length ? parts.join("|") : null;
+}
+// THE INPUT DEVICE IS DELIBERATELY NOT PART OF THE FINGERPRINT, and it used to be. The
+// microphone is acquired AFTER the trial starts -- the recorder begins one lead-in later --
+// so on every voice trial the fingerprint gained its input fields partway through and the
+// watcher read that as the route changing. It fired "AUDIO ROUTE CHANGED mid-trial" in red
+// on trials where nothing had changed at all, including trials where the mic had failed and
+// the stream appeared and vanished.
+//
+// The output side is what the watch is for anyway: a speaker-to-headphone switch is a step
+// in OUTPUT latency, and outputLatency is in the fingerprint. The input device is recorded
+// as context at the start and end instead, where a change is reportable without being
+// mistaken for a latency step mid-trial.
+function inputDeviceFingerprint(){
+  try{
+    const st = RECORDER && RECORDER.stream; if(!st) return null;
+    const tr = st.getAudioTracks()[0]; if(!tr) return null;
+    const g = tr.getSettings ? tr.getSettings() : {};
+    return [tr.label||"", g.deviceId||"", g.groupId||""].join("|") || null;
+  }catch(e){ return null; }
 }
 // Fires on plug and unplug where the platform supports it. It does not fire for every
 // route change on every browser, which is why the fingerprint is ALSO sampled in the trial
@@ -1632,6 +1648,10 @@ function noteRouteSample(){
   // fingerprint was null throughout is unwatched, and must not read as watched-and-clean.
   if(fp==null){ R.samples_null++; return; }
   R.samples++;
+  // Context, not a trigger. Recorded whenever it becomes available so a genuine input change
+  // is still answerable from the data.
+  const inFp=inputDeviceFingerprint();
+  if(inFp){ if(R.input_at_start==null) R.input_at_start=inFp; R.input_last=inFp; }
   if(R.fingerprint_at_start==null){ R.fingerprint_at_start=fp; R.fingerprint_last=fp; return; }
   if(fp!==R.fingerprint_last){
     R.change_count++;
@@ -2556,7 +2576,8 @@ function renderPlan(){
             ${s2.hands==="one"?`<select style="margin-top:4px" ${blocked?"disabled":""} onchange="planSet('${c.id}','oneHand',this.value)">
               <option value="dominant" ${s2.oneHand==="dominant"?"selected":""}>${c.spiral?"Dominant hand draws":"Dominant"}</option>
               <option value="nondominant" ${s2.oneHand==="nondominant"?"selected":""}>${c.spiral?"Non-dominant hand draws":"Non-dominant"}</option></select>`:""}</td>
-        <td>${lengthCell(c,s2,blocked)}${sustainedCell(c,s2,blocked)}</td>
+        <td>${lengthCell(c,s2,blocked)}${(c.spiral && !(s2.sustainedS>0))
+              ? sustainedCell(c,s2,blocked) : ""}</td>
         <td class="note" style="padding-top:10px">${c.dataHeld?`<div style="color:#8c2020;font-weight:600;margin-bottom:3px">DATA HELD — ${esc(HELD_SHORT[c.dataHeld]||c.dataHeld)}</div>`:""}${[c.spiral?"drawing":null,c.tap?"tapping":null,
             c.audio?"<b>tones</b>":null, c.count?"count aloud":null,
             c.verbal?"spoken task":null, c.voice?"<b>voice</b>":null].filter(Boolean).join(" · ")}</td>
@@ -2634,17 +2655,24 @@ function sustainedCell(c,s,blocked){
   if(!c.spiral) return "";
   const dis=blocked?"disabled":"";
   const on=s.sustainedS>0;
-  return `<div class="note" style="margin:6px 0 0;padding-top:5px;border-top:1px dashed var(--line)">
-      <label style="display:flex;align-items:center;gap:5px;margin:0">Sustained
+  // Says what the participant does, not what the mechanism is called. "Fixed window" is a
+  // term from the engine and means nothing to someone reading the plan table.
+  return `<div class="note" style="margin:${on?0:6}px 0 0${on?"":";padding-top:5px;border-top:1px dashed var(--line)"}">
+      <label style="display:flex;align-items:center;gap:5px;margin:0">Keeps drawing for
       <input type="number" min="0" max="300" step="5" style="width:64px"
         value="${on?s.sustainedS:""}" placeholder="off" ${dis}
         onchange="planSet('${c.id}','sustainedS', +this.value>0 ? +this.value : null)"> s</label>
-      ${on?`<span style="color:var(--warm)">fixed window; a fresh spiral each time one is
-        finished</span>`:`<span>off — runs to completion</span>`}
+      ${on?`<span>A new spiral appears each time one is finished, until the time is up.</span>`
+          :`<span>Off — one spiral, ends when you press END.</span>`}
     </div>`;
 }
 function lengthCell(c,s,blocked){
   const dis=blocked?"disabled":"";
+  // A SUSTAINED SPIRAL HAS ONE LENGTH, and it is the window. The Length column used to show
+  // a self-paced/fixed dropdown as well, which is a leftover from before sustained windows
+  // existed: it offered a choice that no longer decides anything, next to a window that
+  // does. Two controls for one quantity, one of them inert.
+  if(c.spiral && s.sustainedS>0) return sustainedCell(c,s,blocked);
   // No explanation in this column. How a self-paced stream is generated and cut is stated
   // once on the Parameters page, next to the values it depends on.
   if(!c.selfPaceable){
@@ -3175,7 +3203,12 @@ const geomTurns = impl => +$("turns_"+geomSet(impl)).value;
 // THE ZONE DIAMETER IS DERIVED, NOT CONFIGURABLE. A zone wider than the pitch overlaps the
 // neighbouring turn, which guarantees false advances, and that must not be reachable by
 // editing a number on the Parameters page. 0.8 x pitch leaves a clear margin on both sides.
-const END_ZONE_PITCH_FRACTION=0.8;
+// 0.8 of the pitch was chosen to leave a clear margin against the neighbouring turn, and it
+// leaves more than it needs to: the neighbouring turn is a whole pitch away, so a zone up to
+// 1.0 x pitch still cannot reach it. At the default 10 mm pitch, 0.8 gave an 8 mm circle --
+// small enough that finishing a spiral meant aiming, and aiming is not part of the task.
+// 0.95 keeps a margin that is real while being noticeably easier to land in.
+const END_ZONE_PITCH_FRACTION=0.95;
 const endZoneDiaMM = pitch => END_ZONE_PITCH_FRACTION*pitch;
 // How long the pen must stay in the zone. Short enough not to feel like a wait, long enough
 // that a pen sweeping through the zone on its way elsewhere does not trigger it.
@@ -3428,13 +3461,82 @@ function makeSequence(durationS,floorMs,meanMs,pTarget,seed){
     if(Math.abs(sc-1)<=0.05 && Math.min(...scaled)>=floorMs*0.98){ iv=scaled; break; }
   }
   if(!iv) throw new Error("Could not generate intervals — loosen the parameters.");
-  let pos=[];
+  const onsets0=[0]; for(let i=0;i<n-1;i++) onsets0.push(onsets0[i]+iv[i]);
+
+  // ---- TARGET PLACEMENT -------------------------------------------------------------
+  // Three constraints the earlier version did not have, each from a way the task broke in
+  // use rather than from theory.
+  //
+  // 1. THE COUNT MUST NOT BE PREDICTABLE. With n and p fixed, the number of targets was
+  //    round(n*p) EVERY time -- 30 in a 60 s stream, on all five oddball trials in a
+  //    session. A participant who notices that stops counting and reports the number they
+  //    remember, which looks like a perfect score and measures nothing. The count is now
+  //    jittered around n*p, deterministically from the seed, so it differs between trials
+  //    while still being identical across participants for a given task and repeat.
+  //
+  // 2. THE GAP MUST GROW WITH THE COUNT. Saying "twenty-seven" takes longer than saying
+  //    "seven", so a spacing that is comfortable at the start of a trial is not comfortable
+  //    at the end. The required gap steps up once the running count reaches double digits.
+  //
+  // 3. NOTHING MAY LAND AT THE VERY END. A target in the last moments leaves no room for
+  //    the response, and the beep itself can be clipped by the window closing. The last
+  //    target is held back from the end by a full response time.
+  const SAY_1_DIGIT_MS = 800;                 // LANGUAGES.countFloorMs, the single-digit case
+  const SAY_2_DIGIT_MS = 1150;                // "twenty-seven" against "seven"
+  const TAIL_GUARD_MS  = 1400;                // clear of the end, response included
+  const gapNeededFor = k => (k>=10 ? SAY_2_DIGIT_MS : SAY_1_DIGIT_MS);
+
+  let pos=[], targetPlan=null;
   if(!det){
-    const mm=n-2,pool=[]; for(let i=0;i<mm-t+1;i++) pool.push(i);
-    for(let i=pool.length-1;i>0;i--){const j=Math.floor(rng()*(i+1));[pool[i],pool[j]]=[pool[j],pool[i]];}
-    pos=pool.slice(0,t).sort((a,b)=>a-b).map((b,i)=>b+i+2);
+    // Jitter the count by up to +/-20%, seeded, and never below 4 -- too few and omission
+    // rate has no resolution.
+    const jitter = 1 + (rng()*0.4 - 0.2);
+    const wanted = Math.max(4, Math.round(t*jitter));
+    const lastAllowed = durMs - TAIL_GUARD_MS;
+    // PLACED IN TIME ORDER, which is the only order in which the constraint can be checked.
+    // The gap a target needs depends on how many have come BEFORE it -- the tenth target
+    // needs longer than the second, because the spoken count has two digits by then -- so a
+    // shuffled greedy pass cannot evaluate its own rule: it does not yet know the ordinal.
+    // An earlier version did exactly that and left one to three violations in every stream.
+    //
+    // Walking forward, the ordinal is simply how many have been placed. Targets are spread
+    // across the usable span with seeded jitter, and the required gap is a floor beneath
+    // that spacing rather than something the spacing has to be checked against afterwards.
+    const cand=[]; for(let i=1;i<n-1;i++) if(onsets0[i]<=lastAllowed) cand.push(i);
+    const span = onsets0[cand[cand.length-1]] - onsets0[cand[0]];
+    const chosen=[];
+    let lastT=-Infinity, lastIdx=-99;
+    for(const i of cand){
+      if(chosen.length>=wanted) break;
+      const need = gapNeededFor(chosen.length+1);
+      // Even spread as the baseline, jittered, but never closer than the count allows.
+      const remaining = wanted-chosen.length;
+      const ideal = remaining>0 ? span/wanted : need;
+      const want = Math.max(need, ideal*(0.65+rng()*0.7));
+      if(i-lastIdx<2) continue;                       // non-adjacent in tones
+      if(onsets0[i]-lastT < want) continue;           // and far enough in time
+      chosen.push(i); lastT=onsets0[i]; lastIdx=i;
+    }
+    // A second pass fills any shortfall using only the hard floor, so a jittered spread that
+    // ran out of room still reaches a usable number of targets.
+    if(chosen.length<wanted){
+      for(const i of cand){
+        if(chosen.length>=wanted) break;
+        if(chosen.includes(i)) continue;
+        const sorted=[...chosen,i].sort((a,b)=>a-b);
+        const k=sorted.indexOf(i);
+        const okTones = sorted.every((v,j)=>j===0||v-sorted[j-1]>=2);
+        const okTime = sorted.every((v,j)=>j===0
+          || onsets0[v]-onsets0[sorted[j-1]] >= gapNeededFor(j+1));
+        if(okTones && okTime) chosen.push(i);
+      }
+    }
+    pos=chosen.sort((a,b)=>a-b);
+    targetPlan={ wanted, placed:pos.length, jitter:+jitter.toFixed(3),
+                 tail_guard_ms:TAIL_GUARD_MS,
+                 say_1_digit_ms:SAY_1_DIGIT_MS, say_2_digit_ms:SAY_2_DIGIT_MS };
   }
-  const onsets=[0]; for(let i=0;i<n-1;i++) onsets.push(onsets[i]+iv[i]);
+  const onsets=onsets0;
   const isTarget=Array(n).fill(false); pos.forEach(p=>isTarget[p]=true);
   // Adjacency is disallowed BY CONSTRUCTION above: the positions are drawn from a pool of
   // n-2-t+1 slots and then spread by their own index, which makes two targets touching
@@ -3442,7 +3544,8 @@ function makeSequence(durationS,floorMs,meanMs,pTarget,seed){
   // empty column where a guarantee belonged.
   const minTargetGap = pos.length>1
     ? Math.min(...pos.slice(1).map((v,i)=>v-pos[i])) : null;
-  return {n,t,onsets,intervals:iv,isTarget,positions:pos,det,
+  return {n,t:pos.length||t,onsets,intervals:iv,isTarget,positions:pos,det,
+          targetPlan,
           distribution:"floor + exponential", floorMs, meanMs,
           adjacentTargetsAllowed:false, minTargetGapTones:minTargetGap,
           minISI:Math.min(...iv),maxISI:Math.max(...iv),durationMs:durMs,seed};
@@ -3738,7 +3841,9 @@ function layout(){
   const sa=safeAreaMM();
   const ux0=Math.max(sa.left,2)*p, uy0=Math.max(sa.top,2)*p;
   const uw=W-ux0-Math.max(sa.right,2)*p, uh=H-uy0-Math.max(sa.bottom,2)*p;
-  const topPad=100, cy=uy0+topPad+(uh-topPad)/2;
+  // Clears the admin bar and nothing more. It was 100 px against an 86 px bar; both have
+  // come down, and the difference is drawing area.
+  const topPad=62, cy=uy0+topPad+(uh-topPad)/2;
 
   const c=byId(TRIAL.task);
   let dx0=ux0,dw=uw,tapCx=null,zones=null,splitX=null,pentCx=null,pentSide=null;
@@ -4520,7 +4625,8 @@ function runTrial(seq,c){
         // Route is watched, not read once. See routeFingerprint().
         route:{ declared:$("audioroute").value, changed:false, change_first_ms:null,
                 change_count:0, samples:0, samples_null:0,
-                fingerprint_at_start:null, fingerprint_last:null, fingerprint_at_change:null },
+                fingerprint_at_start:null, fingerprint_last:null, fingerprint_at_change:null,
+                input_at_start:null, input_last:null },
         viewport:{ scale_at_start:scale0, scale_at_end:null,
                    scale_max:scale0, scale_min:scale0,
                    // A plain window resize rebuilt the canvas and re-scaled the template
@@ -5480,6 +5586,8 @@ function buildRecord(){
     // observable here.
     audio_route_watch: R.route ? { ...R.route,
       watched: R.route.fingerprint_at_start!=null,
+      input_device_changed: !!(R.route.input_at_start && R.route.input_last
+                               && R.route.input_at_start!==R.route.input_last),
       note: R.route.fingerprint_at_start==null
         ? "the platform exposed nothing to fingerprint on this trial, so the route was NOT watched. This is not evidence that the route held."
         : "a change means the audio route moved mid-trial -- built-in speaker and wired headphones have different output latencies, so reaction times either side of change_first_ms are on different offsets and the within-trial variability of this trial is not comparable with an unchanged trial. iOS Safari does not enumerate audio output devices, so the states either side cannot always be named; the change itself is what is detectable." } : null,
