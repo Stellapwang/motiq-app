@@ -164,8 +164,35 @@
             padding:12px 20px calc(12px + env(safe-area-inset-bottom));
             border-top:1px solid var(--line); background:#f7f9fb; }
   #ovFoot button { font-size:24px; padding:18px 48px; border-radius:12px; min-width:180px; }
-  #overlay h3 { font-size:27px; margin:0 0 14px; }
+  #overlay h3 { font-size:27px; margin:0 0 14px; line-height:1.25; }
   #overlay p { font-size:20px; max-width:680px; margin:0 0 12px; color:#2c3238; }
+  /* A SENTENCE THAT FITS ON ONE LINE SHOULD BE ON ONE LINE, and where it cannot, the lines
+     should come out a similar length rather than stranding a word on its own. text-wrap
+     balance does that for short blocks and pretty keeps a single word off the last line of
+     longer ones; a browser without either ignores them and wraps as before, so nothing here
+     depends on them being supported. */
+  #overlay h3, .instrkey, #stopsign small { text-wrap:balance; }
+  #overlay p, .instrbullets li { text-wrap:pretty; }
+  /* #overlay p caps every paragraph at 680px and outranks a class selector, so it was
+     silently overriding the instruction block's own width and costing the emphasised lines
+     a second row. Measured: the tapping instructions need 733-780px on one line and were
+     being given 680. The measure is set by .instrbody now, once, for everything in it. */
+  .instrbody { text-align:left; margin:4px auto 0; }
+  #overlay .instrbody p { max-width:none; }
+  /* The statement, and the bullets that qualify it. The gap above a statement is larger than
+     the gap below it, so each one reads as heading its own group instead of floating
+     equidistant between two. */
+  /* Listed under #overlay as well, for the same reason as the width above: #overlay p sets
+     colour with an id in the selector and outranks a bare class, so the emphasised lines
+     rendered in body black on the one screen they exist to stand out on. */
+  .instrkey, #overlay .instrkey { font-weight:700; color:#1d5fa8; line-height:1.3;
+              margin:22px 0 10px; max-width:none; }
+  .instrbody > .instrkey:first-child { margin-top:0; }
+  .instrbullets { margin:0; padding-left:24px; line-height:1.5; color:#2c3238; }
+  .instrbullets li { margin:0 0 6px; }
+  .instrbullets li::marker { color:#9aa3ad; }
+  .instrlead, #overlay .instrlead { margin:0 0 4px; color:#2c3238; line-height:1.5;
+              max-width:none; text-wrap:pretty; }
   /* Every pixel here is drawing height the participant does not get, and the spiral is
      already close to the height of the stage: at the default pitch and turns it is 120 mm
      across on an area about 140 mm tall. The bar was 86 px, about 26 mm of spiral. It is now
@@ -884,7 +911,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.30 2026-09-13";
+const BUILD = "v12.31 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1558,7 +1585,9 @@ function instructionFor(taskId, opts){
            // window and shows STOP, which is what the emphasised line above already tells
            // the participant. Saying both contradicted the instruction being read out.
            length: sustained
-             ? `About ${(TRIAL&&TRIAL.task===taskId&&TRIAL.sustainedS)||PLAN?.[taskId]?.sustainedS} seconds of drawing, then STOP.`
+             // The sign has said END since v12.16. This caption was the last place still
+            // naming the old one.
+            ? `About ${(TRIAL&&TRIAL.task===taskId&&TRIAL.sustainedS)||PLAN?.[taskId]?.sustainedS} seconds of drawing, then END.`
              : c.lengthS===null ? "Ends when the administrator stops it."
                                 : `About ${a?a.durS:c.lengthS} seconds.` };
 }
@@ -1589,16 +1618,32 @@ function spiralFigureSVG(mode){
 function instructionHTML(ins, opts){
   if(!ins) return "";
   const big=(opts&&opts.big)!==false;
-  const fs=big?"21px":"17px";
-  return `<ul style="text-align:left;max-width:660px;margin:6px auto;padding-left:22px;
-            font-size:${fs};line-height:1.65">` +
-    ins.lines.map(l=>{
-      const key=/^\*\*(.*)\*\*$/.exec(l);
-      return key
-        ? `<li style="list-style:none;margin-left:-22px;margin-bottom:10px;
-             font-weight:700;color:#1d5fa8;font-size:1.08em">${key[1]}</li>`
-        : `<li>${l}</li>`;
-    }).join("") + `</ul>` +
+  const fs=big?"22px":"17px";
+  // THE EMPHASISED LINES ARE NOT LIST ITEMS and were only in the list because everything
+  // was. They were then dragged back out of the indent with a negative margin, which is the
+  // shape of a layout fighting its own markup. Each is a statement; the plain lines under it
+  // are its bullets. Consecutive plain lines are gathered into one list so the grouping is
+  // visible rather than implied by spacing.
+  const blocks=[]; let bullets=[];
+  const flush=()=>{ if(!bullets.length) return;
+    // A PLAIN LINE BEFORE ANY STATEMENT IS A LEAD-IN, NOT A BULLET. "Put one index finger on
+    // each circle" opened the bimanual tasks as a lone bullet with nothing above it to be a
+    // bullet of -- a list of one, punctuated as though something had been left out.
+    blocks.push(blocks.length
+      ? `<ul class="instrbullets" style="font-size:${fs}">${bullets.join("")}</ul>`
+      : `<p class="instrlead" style="font-size:${fs}">${bullets.map(b=>b.replace(/^<li>|<\/li>$/g,"")).join("<br>")}</p>`);
+    bullets=[]; };
+  ins.lines.forEach(l=>{
+    const key=/^\*\*(.*)\*\*$/.exec(l);
+    if(key){ flush(); blocks.push(`<p class="instrkey" style="font-size:calc(${fs} * 1.06)">${key[1]}</p>`); }
+    else bullets.push(`<li>${l}</li>`);
+  });
+  flush();
+  // 820px at 23px is about 62 characters, inside the 45-75 that reads comfortably, and wide
+  // enough that every instruction in the battery except the sustained-spiral line fits on one
+  // row. Below that width they wrap, and text-wrap:balance splits them evenly rather than
+  // dropping a single word onto a line of its own.
+  return `<div class="instrbody" style="max-width:${big?820:660}px">`+blocks.join("")+`</div>` +
     (ins.figure?`<div style="display:flex;gap:20px;align-items:center;justify-content:center;
       margin-top:12px;flex-wrap:wrap">
       <img src="${POSTURE_PNG}" alt="posture and grip" style="width:min(46vw,380px);height:auto">
