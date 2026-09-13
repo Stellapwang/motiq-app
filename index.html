@@ -127,7 +127,8 @@
      handler with drawing, and a finger arriving while the pen was down could be lost.
      Separate targets cannot interfere, and the flash becomes pure CSS. */
   .tapzone { position:absolute; border-radius:50%; z-index:1;
-             display:flex; align-items:center; justify-content:center;
+             display:flex; flex-direction:column; align-items:center; justify-content:center;
+             text-align:center; line-height:1.2; gap:2px;
              border:2px solid #8a929c; background:#f2f5f8; color:#5d6570;
              font:16px system-ui; touch-action:none; user-select:none;
              -webkit-user-select:none; -webkit-tap-highlight-color:transparent; }
@@ -824,7 +825,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.27 2026-09-13";
+const BUILD = "v12.28 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1351,6 +1352,13 @@ function instructionFor(taskId, opts){
   const impl = (opts&&opts.implement) || c.implement || "pen";
   const tool = impl==="finger" ? "finger" : "pen";
   const verbal = (opts&&opts.verbal) || null;
+  // WHICH index finger. On TAP_FAST the hand alternates between repeats and the instruction
+  // said only "your index finger", so the one thing that changes trial to trial was the one
+  // thing it did not name. Falls back to no side when there is no trial to read -- the
+  // Instructions page previews these with nobody in the chair.
+  const tapSide = (opts&&opts.tapHand)
+                || (typeof TRIAL!=="undefined" && TRIAL ? TRIAL.tapHand : null) || null;
+  const sideWord = (tapSide && tapSide!=="both") ? tapSide.toUpperCase()+" " : "";
   const lines=[];
 
   const dualTask = isDualTask(c);
@@ -1396,12 +1404,25 @@ function instructionFor(taskId, opts){
 
   if(c.zones===2){
     lines.push("Put one index finger on each circle.");
-    lines.push(taskId==="TAP_BANT"
-      ? "**Tap left, right, left, right — AS FAST AS YOU CAN.**"
-      : "**Tap both circles together — AS FAST AS YOU CAN.**");
-    if(taskId==="TAP_BANT") lines.push("Only one finger touches at a time.");
+    if(taskId==="TAP_BANT"){
+      // THE ORDER IS NOT THE TASK. "Tap left, right, left, right" prescribes a starting hand,
+      // and starting on the non-preferred side is a demand of its own -- one that lands
+      // hardest on exactly the population being measured. What antiphase means is that the
+      // two hands are never down together; which one goes first is arbitrary and is
+      // recorded from the data rather than dictated to the participant.
+      lines.push("**Tap the circles ALTERNATELY — one, then the other, never both together.**");
+      lines.push("Start with whichever hand you like.");
+      lines.push("As fast as you can, while keeping them strictly alternating.");
+    } else {
+      // AND HERE THE ORDER IS THE WHOLE TASK. In-phase tapping measures how well the two
+      // hands stay locked together; speed is the load that makes the coupling break down, not
+      // the thing being measured. Leading with "as fast as you can" got the emphasis exactly
+      // backwards -- a participant who reads it that way trades the measure for the load.
+      lines.push("**Tap both circles TOGETHER — the two fingers land at the same moment.**");
+      lines.push("As fast as you can, but staying together matters more than going fast.");
+    }
   } else if(c.tap && !c.audio){
-    lines.push(`**${also?"At the same time, tap":"Tap"} the circle with your index finger — AS FAST AS YOU CAN.**`);
+    lines.push(`**${also?"At the same time, tap":"Tap"} the circle with your ${sideWord}index finger — AS FAST AS YOU CAN.**`);
   }
 
   const a = AUDIO_DEFAULTS[taskId];
@@ -1418,10 +1439,13 @@ function instructionFor(taskId, opts){
       }
       lines.push("I will ask for your final number at the end.");
     } else if(c.ptgTargets || (AUDIO_DEFAULTS[taskId]&&AUDIO_DEFAULTS[taskId].ptg>0)){
-      lines.push(`**${also?"At the same time, tap":"Tap"} the circle only when you hear a HIGH beep.**`);
+      // Named on the tone tasks too, not only the unpaced ones: the circle is offset to the
+      // tapping side on every one-zone task now, so the instruction and the screen should
+      // agree rather than one of them being the only place the hand is stated.
+      lines.push(`**${also?"At the same time, tap":"Tap"} the circle with your ${sideWord}index finger only when you hear a HIGH beep.**`);
       lines.push("The low beeps are more common. Ignore them.");
     } else {
-      lines.push(`**${also?"At the same time, tap":"Tap"} the circle every time you hear a beep.**`);
+      lines.push(`**${also?"At the same time, tap":"Tap"} the circle with your ${sideWord}index finger every time you hear a beep.**`);
     }
   }
 
@@ -3846,6 +3870,9 @@ const END_ZONE_PITCH_FRACTION=0.95;
 // fires far ahead of the other. The last few per cent stay unrequired: a participant who
 // stops a hair short should not be stranded, and the examiner's Next spiral covers it.
 const ADVANCE_RADIUS_FRACTION=0.92;
+// How far off centre a single tap zone sits, as a fraction of the usable width. Far enough
+// to read as "this side", not so far that it is a reach.
+const TAP_SIDE_OFFSET=0.18;
 // A second guard against a pass ending before one was drawn. Nobody traces six turns in four
 // seconds, so an advance sooner than this is evidence of a detector fault rather than of a
 // fast participant -- and the cost of being wrong is the participant's drawing.
@@ -4559,11 +4586,21 @@ function layout(){
   }
   else if(c.zones===2){ const gap=(+$("zonegap").value)*p, mid=ux0+uw/2;
     zones=[{id:"left",cx:mid-gap/2},{id:"right",cx:mid+gap/2}]; }
-  // Centered for every tapping-only task. It used to be offset toward the tapping hand
-  // when there were no tones, which put TAP_FAST's zone at 72% of the width while
-  // TAP_TONE's sat in the middle -- so any comparison between those two also compared
-  // reach distance. One position for both removes that.
-  else if(c.zones===1){ tapCx = ux0+uw/2; }
+  // ON THE SIDE OF THE HAND THAT TAPS, and the same rule for every one-zone task.
+  //
+  // Centred, the circle says nothing about which hand to use, and on TAP_FAST the hand
+  // alternates between repeats -- so the one thing the participant most needs to know was
+  // the one thing the screen would not tell them. Offsetting it says it without a word.
+  //
+  // Centring was itself a fix, for a build that offset TAP_FAST and left TAP_TONE in the
+  // middle: that put the two at different reach distances, so comparing them compared reach
+  // as well. The answer is not to centre both, it is to treat both the same way -- they are
+  // both offset now, by the same fraction, so reach still cancels.
+  else if(c.zones===1){
+    const d=(+$("tapdia").value)*p;
+    const side = TRIAL.tapHand==="left" ? -1 : 1;
+    tapCx = clamp(ux0+uw/2 + side*uw*TAP_SIDE_OFFSET, ux0+d/2, ux0+uw-d/2);
+  }
 
   L={p,W,H,g,ux0,uy0,uw,uh,dw,dx0,tapCx,zones,splitX,spiralOn:!!c.spiral,
      pentOn:!!c.pent,pentCx,pentSide,pentVertical,pentCy,copyCy,splitY,
@@ -4576,16 +4613,23 @@ function layout(){
 function buildZones(c){
   const host=$("zones"); host.innerHTML="";
   const d=(+$("tapdia").value)*L.p;
-  const make=(cx,label,id)=>{
+  // NAMES THE EFFECTOR, NOT THE LIMB. "Right hand" on a circle you touch with one fingertip
+  // is an instruction to use the hand somehow; the task is specifically the index finger, and
+  // a participant who taps with a thumb or two fingers has not done the task. Sized off the
+  // zone so it fits whatever diameter the zone is set to.
+  const label = side => `<span style="font-size:${Math.round(d*0.17)}px;font-weight:700;
+      letter-spacing:.03em">${side.toUpperCase()}</span>
+    <span style="font-size:${Math.round(d*0.10)}px">index finger</span>`;
+  const make=(cx,html,id)=>{
     const el=document.createElement("div");
-    el.className="tapzone"; el.dataset.zone=id; el.textContent=label;
+    el.className="tapzone"; el.dataset.zone=id; el.innerHTML=html;
     el.style.width=d+"px"; el.style.height=d+"px";
     el.style.left=(cx-d/2)+"px"; el.style.top=(L.cy-d/2)+"px";
     el.addEventListener("pointerdown", onZoneDown);
     host.appendChild(el);
   };
-  if(L.zones) L.zones.forEach(z=>make(z.cx, z.id==="left"?"left hand":"right hand", z.id));
-  else if(L.tapCx!==null) make(L.tapCx,"tap","tap");
+  if(L.zones) L.zones.forEach(z=>make(z.cx, label(z.id), z.id));
+  else if(L.tapCx!==null) make(L.tapCx, label(TRIAL.tapHand||"right"), "tap");
 }
 function onZoneDown(e){
   e.preventDefault(); e.stopPropagation();
@@ -5118,7 +5162,8 @@ function toggleDrawRules(){
 }
 // The instruction page, drawn from the same source as the Instructions tab.
 function showInstructionScreen(seq,c,returnToReady){
-  const ins=instructionFor(TRIAL.task,{implement:TRIAL.implement, verbal:TRIAL.verbal});
+  const ins=instructionFor(TRIAL.task,{implement:TRIAL.implement, verbal:TRIAL.verbal,
+                                       tapHand:TRIAL.tapHand});
   const a=AUDIO_DEFAULTS[TRIAL.task];
   // Let the participant hear the tones before the trial, not for the first time inside it.
   // A stream with no targets has ONE tone, so there is no low and no high -- naming it "the
@@ -5161,7 +5206,7 @@ function showInstructionScreen(seq,c,returnToReady){
       margin:0 0 14px">${TRIAL.task} · ${esc(c.label)}</div>` + instructionHTML(ins) + rulesNote + soundBtns + palmNote + voiceNote +
     `<p style="font-size:16px;color:#5d6570;margin-top:10px">${ins.length}</p>`,
     [{label:"Ready", onClick:()=>{ hideOverlay(); LAST_TASK=TRIAL.task;
-        readyTrial(returnToReady?returnToReady.seq:seq, c); }},
+        readyTrial(returnToReady?returnToReady.seq:seq, c, true); }},
      {label:"Back to session", ghost:true, onClick:()=>backToSession()}]);
 }
 
@@ -5183,7 +5228,20 @@ function reminderText(){
   return `<b>${TRIAL.task}</b> ${pos} · ${bits.join(" · ")}`;
 }
 
-function readyTrial(seq,c){
+// justInstructed: the instruction screen was shown immediately before this call.
+//
+// THIS IS WHY SOME TASKS GOT TWO SCREENS AND OTHERS ONE, and it was never a decision.
+// showInstructionScreen's Ready button sets LAST_TASK before calling here, so by the time
+// the hand-change test runs, TRIAL.task===LAST_TASK is already true -- and if the previous
+// trial happened to use a different hand, the change screen fired directly on top of the
+// instruction screen that had just been read. TAP_FAST (left after a right) and TAP_BMIN
+// ("both" after a one-handed task) hit that; TAP_BANT follows TAP_BMIN, is also "both", and
+// so did not. Three tasks in a row, three different numbers of screens, for a reason that
+// has nothing to do with any of them.
+//
+// A hand-change screen exists to catch a change the participant would otherwise miss because
+// no instruction screen appeared. When one just did, there is nothing to catch.
+function readyTrial(seq,c,justInstructed){
   $("hud").classList.remove("cue"); $("hud").classList.remove("big");
   $("hud").textContent = (TRIAL.lengthS===null && !c.audio) ? "" : (TRIAL.lengthS??"")+" s";
   $("reminder").innerHTML=reminderText();
@@ -5199,7 +5257,7 @@ function readyTrial(seq,c){
   // What changed since the last trial is the thing that gets missed once the instruction
   // page stops appearing, so it is stated large on the screen itself.
   const handNow = TRIAL.drawHand || TRIAL.tapHand || "both";
-  const changed = LAST_HAND && handNow!==LAST_HAND && TRIAL.task===LAST_TASK;
+  const changed = !justInstructed && LAST_HAND && handNow!==LAST_HAND && TRIAL.task===LAST_TASK;
   if(changed){
     // Name the effector, not just the side: "the right hand" is ambiguous when the task
     // is drawn with a fingertip.
