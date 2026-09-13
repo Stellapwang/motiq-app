@@ -499,6 +499,28 @@
       <div id="dotresult"></div>
     </fieldset>
 
+    <!-- The behaviour the sustained conditions depend on, rehearsed before it costs a trial.
+         A participant meeting "finish one spiral and another appears" for the first time
+         DURING PEN_SPRL spends the first pass working out what happened, and that pass is
+         data. Here it costs nothing and can be repeated. -->
+    <fieldset>
+      <legend>Spiral practice <span style="font-weight:400;color:var(--muted)">— per participant</span></legend>
+      <p class="note" style="margin-top:0"><b>Demonstrate first, then hand the iPad over.</b>
+      A smaller spiral than the trial uses, so a practice run takes seconds rather than a
+      minute. Nothing here is recorded.</p>
+      <div style="color:#1d5fa8;font-weight:700;font-size:15px;line-height:1.5;margin:6px 0 4px">
+        Start inside the green circle and trace the line all the way out.<br>
+        One continuous line — do not lift the pen.<br>
+        When you finish one spiral a new one appears. Start again from the middle.
+      </div>
+      <canvas id="prpad" class="screenpad"></canvas>
+      <div class="btnrow" style="margin-top:8px">
+        <button class="ghost" onclick="practiceReset()">Start again</button>
+        <span id="prcount" class="note" style="margin:0"></span>
+      </div>
+      <div id="prresult" class="note"></div>
+    </fieldset>
+
     <fieldset>
       <legend>Sound check <span style="font-weight:400;color:var(--muted)">— per participant</span></legend>
       <p class="note" style="margin-top:0">Play both tones at the level the session will use.
@@ -839,7 +861,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.14 2026-09-12";
+const BUILD = "v12.15 2026-09-12";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1535,7 +1557,8 @@ function goPage(n){
   // same tick the page is unhidden -- laying them out then can give a pad a fraction of
   // its real width. Measure on the next frame instead.
   if(n===2) onVoiceConsentChange();
-  if(n===7){ onVoiceConsentChange(); requestAnimationFrame(()=>{ dotReset(); }); }
+  if(n===7){ onVoiceConsentChange();
+    requestAnimationFrame(()=>{ dotReset(); penPadClear(); practiceRender(); }); }
   if(n===3){ renderPlan(); renderQueue(); }
   renderStatus();
   if(n===4){ renderAudioTable(); updateGeo(); }
@@ -1810,6 +1833,96 @@ function renderPenCheckMode(){
 }
 function penPadClear(){ pcPts=null; penPadSetup(); renderPenCheckMode();
   $("pcresult").innerHTML=""; }
+
+/* ------------------------------------------------------- spiral practice */
+// Rehearses the one thing about the sustained conditions a participant cannot be told in a
+// sentence: that finishing a spiral clears it and puts up another, and that they should keep
+// going. It uses the SAME advance rule as the trial -- net angle plus a radius band -- so
+// what is rehearsed is what happens, not an approximation of it. Three turns instead of six,
+// because the point is the transition, not the endurance.
+const PRACTICE_TURNS=3;
+const PR={ pass:1, angle:null, lastPt:null, drawing:false, view:null, strokes:[], armed:false };
+function practiceSetup(){
+  const cv=$("prpad"); if(!cv) return null;
+  const dpr=window.devicePixelRatio||1;
+  const w=cv.clientWidth||600, h=Math.round(clamp(w*0.42,220,340));
+  cv.width=w*dpr; cv.height=h*dpr; cv.style.height=h+"px";
+  const g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0);
+  g.clearRect(0,0,w,h); g.fillStyle="#fff"; g.fillRect(0,0,w,h);
+  const cx=w/2, cy=h/2, R=Math.min(w,h)/2-26;
+  const dir=($("pchand")&&$("pchand").value==="left")?"ccw":"cw";
+  const sp=spiralPath(R,PRACTICE_TURNS,dir,90,900);
+  const pt=q=>({x:cx+q.x,y:cy-q.y});
+  const sd=Math.max(10,R*0.13);
+  g.fillStyle="#D9EFD6"; g.strokeStyle="#4C8C4A"; g.lineWidth=1;
+  g.beginPath(); g.arc(cx,cy,sd,0,7); g.fill(); g.stroke();
+  g.strokeStyle="#737a85"; g.lineWidth=1.8; g.lineCap="round";
+  g.beginPath(); sp.pts.forEach((q,i)=>{const t=pt(q); i?g.lineTo(t.x,t.y):g.moveTo(t.x,t.y);});
+  g.stroke(); g.lineCap="butt";
+  const last=sp.pts[sp.pts.length-1], ec=pt(last);
+  // Lights up the same way the trial's does once enough angle has been swept.
+  const ez=Math.max(12,R*0.16);
+  g.fillStyle=PR.armed?"#F6C79E":"#FBE6D8"; g.strokeStyle="#b4531f";
+  g.lineWidth=PR.armed?2.4:1.2;
+  g.beginPath(); g.arc(ec.x,ec.y,ez,0,7); g.fill(); g.stroke();
+  g.strokeStyle="#b4531f"; g.lineWidth=2; g.fillStyle="#fff";
+  g.beginPath(); g.arc(ec.x,ec.y,6,0,7); g.fill(); g.stroke();
+  // Only the current pass is drawn, exactly as in the trial.
+  g.strokeStyle="#1d5fa8"; g.lineWidth=2.2; g.lineCap="round"; g.lineJoin="round";
+  PR.strokes.filter(st=>st.pass===PR.pass && st.pts.length>1).forEach(st=>{
+    g.beginPath(); st.pts.forEach((q,i)=>i?g.lineTo(q.x,q.y):g.moveTo(q.x,q.y)); g.stroke(); });
+  return { g,w,h,cx,cy,R,dir,endPx:ec, zonePx:ez };
+}
+function practiceRender(){
+  PR.view=practiceSetup();
+  if($("prcount")) $("prcount").textContent =
+    PR.pass>1 ? `${PR.pass-1} spiral${PR.pass-1===1?"":"s"} finished — it starts again each time.`
+              : "";
+}
+function practiceReset(){
+  PR.pass=1; PR.strokes=[]; PR.lastPt=null; PR.armed=false;
+  PR.angle=makeAngleAccumulator(($("pchand")&&$("pchand").value==="left")?"ccw":"cw");
+  if($("prresult")) $("prresult").innerHTML="";
+  practiceRender();
+}
+(function initPracticePad(){
+  const cv=$("prpad"); if(!cv) return;
+  const rel=e=>{ const r=cv.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; };
+  const advance=()=>{
+    PR.pass++; PR.armed=false; PR.angle.reset();
+    // THE PEN IS STILL DOWN, exactly as in the trial: the advance happens under the
+    // participant's hand and they have not lifted. Ending the stroke here would make them
+    // lift and touch again to continue -- which is the opposite of the behaviour this
+    // practice exists to rehearse, and is the same mistake the trial engine had.
+    if(PR.drawing) PR.strokes.push({pass:PR.pass,pts:[]});
+    if($("prresult")) $("prresult").innerHTML =
+      `<div class="good">That is the whole idea — the spiral cleared and a new one appeared.
+       In the real task this keeps going until STOP.</div>`;
+    practiceRender();
+  };
+  const check=()=>{
+    if(!PR.view) return;
+    const need=ADVANCE_ANGLE_FRACTION*PRACTICE_TURNS*2*Math.PI;
+    const wasArmed=PR.armed;
+    PR.armed = PR.angle.total>=need;
+    if(PR.armed!==wasArmed) practiceRender();
+    if(!PR.armed || !PR.lastPt) return;
+    const dx=PR.lastPt.x-PR.view.cx, dy=PR.view.cy-PR.lastPt.y;
+    if(Math.hypot(dx,dy) >= ADVANCE_RADIUS_FRACTION*PR.view.R) advance();
+  };
+  const down=e=>{ if(!PR.view) practiceRender();
+    e.preventDefault(); PR.drawing=true;
+    PR.strokes.push({pass:PR.pass,pts:[]}); PR.lastPt=rel(e); };
+  const move=e=>{ if(!PR.drawing) return; e.preventDefault();
+    const p=rel(e); PR.lastPt=p;
+    PR.strokes[PR.strokes.length-1].pts.push(p);
+    if(PR.view) PR.angle.push(p.x-PR.view.cx, PR.view.cy-p.y);
+    practiceRender(); check(); };
+  const up=()=>{ PR.drawing=false; if(PR.angle) PR.angle.lift(); };
+  cv.addEventListener("pointerdown",down); cv.addEventListener("pointermove",move);
+  cv.addEventListener("pointerup",up);     cv.addEventListener("pointercancel",up);
+  practiceReset();
+})();
 (function initPenPad(){
   const cv=$("penpad");
   let drawing=false, view=null;
@@ -1863,7 +1976,10 @@ function penPadClear(){ pcPts=null; penPadSetup(); renderPenCheckMode();
   cv.addEventListener("pointerleave",finish);
   penPadClear();
 })();
-window.addEventListener("resize",()=>{ if(!$("pg2").classList.contains("hidden")) penPadClear(); });
+// The checks moved to their own page in v12.05 and this kept watching the old one, so the
+// pads stopped re-laying-out on rotation -- the one orientation change an iPad makes most.
+window.addEventListener("resize",()=>{
+  if(!$("pg7").classList.contains("hidden")){ penPadClear(); practiceRender(); } });
 
 /* ===========================================================================
    SCREENING SCREENS — per participant, not per trial.
