@@ -100,6 +100,14 @@
   .screenpad { border:1px solid var(--line); border-radius:10px; background:#fff;
                touch-action:none; display:block; margin-top:10px; width:100%;
                user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+  /* Red while unanswered, green once ticked. Consent is not a preference among the other
+     ticks on this page: six of the fifteen conditions cannot be planned without it, so an
+     unticked box is the reason most of the battery is greyed out two pages later. It reads
+     as a blocker rather than as another line of small print. */
+  .consentbox { border:2px solid #c0392b; background:#fdecec; border-radius:9px;
+                padding:11px 13px; margin-top:12px;
+                transition:background .15s ease, border-color .15s ease; }
+  .consentbox.ok { border-color:#4C8C4A; background:#eef8ed; }
   .checkrow { display:flex; align-items:flex-start; gap:9px; margin-top:12px;
               font-size:14px; color:var(--ink); cursor:pointer; }
   .checkrow input { width:auto; flex:0 0 auto; margin:3px 0 0; }
@@ -235,7 +243,7 @@
          when the checks were split out: the checks page is element 7 but step 3. Renumbering
          the elements instead would have meant rewriting seventeen goPage() calls whose
          numbers are load-bearing, and one of them being missed is a dead button. -->
-    <span id="s1" class="on" onclick="goPage(1)">1 · Screen</span>
+    <span id="s1" class="on" onclick="goPage(1)">1 · Device</span>
     <span id="s2" onclick="goPage(2)">2 · Participant</span>
     <span id="s7" onclick="goPage(7)">3 · Checks</span>
     <span id="s3" onclick="goPage(3)">4 · Session</span>
@@ -249,65 +257,51 @@
     <!-- D14. Said once, prominently, in one place. The compact markers on affected task
          rows exist so somebody who skips this page still sees something; they point back
          here rather than repeating all of it on every row. -->
+    <!-- NOT EXAMINER INSTRUCTIONS, and the heading now says so. "Known limitations" read
+         as a caveat about the study to whoever opened the app, when all four items are
+         addressed to whoever builds the native instrument. The prose was also three times
+         this length: the reasoning belongs in the source comments, which is where it now
+         is, and a box nobody finishes reading states nothing at all.
+
+         Kept here rather than in BACKLOG.md because BACKLOG.md is a separate file in the
+         repo and invisible from the running app. Whoever builds the native version will
+         open THIS file. -->
     <fieldset style="border-color:#e9b7b7;background:#fdecec">
-      <legend style="color:#8c2020">Known limitations</legend>
+      <legend style="color:#8c2020">Notes for the app developer</legend>
       <div style="color:#8c2020;font-size:14px;line-height:1.6">
-        <p style="margin:0 0 8px"><b>1. Pen and touch input are not simultaneous.</b>
-        While an Apple Pencil is in contact with the screen, iPadOS classifies concurrent
-        finger touches as palm contact and discards them. This cannot be changed from a web
-        page. <b>PEN_TONE</b> and <b>PEN_FAST</b> are affected: tap responses are not
-        recorded while the pen is down, so these do not run as true dual tasks in this
-        prototype. Trials still record, and the limitation is flagged in the data.</p>
-        <p style="margin:0 0 8px"><b>2. Pencil hover height cannot be measured from a web page.</b>
-        An Apple Pencil is detected while its nib is roughly 1&ndash;12&nbsp;mm above the
-        display. A web page can be told <i>where</i> the pen is hovering, but nothing in the
-        web platform reports <i>how high</i> it is: there is no standard property for the
-        distance above the glass, and the Pointer Events proposal to add one is unresolved.
-        A web build therefore knows the pen is somewhere in that 12&nbsp;mm band, not where in
-        it. <b>Hover is also gated on the iPad itself:</b> it arrived with the M2 generation.
-        Measured 2026-09-11 — on an 11-inch iPad Pro <b>3rd generation (M1) there is no hover
-        at all</b>, the pen being undetectable until it touches; on a <b>4th generation (M2)
-        hover works</b>, at about 59&nbsp;Hz. So hesitation before a participant commits to the
-        first stroke can be measured, but <b>only on an M2 iPad</b> — on the M1 it is not
-        merely unmeasured, it is unmeasurable. The height of the pen above the glass is
-        unavailable on both.</p>
-        <!-- Developer-facing, deliberately inside the box the examiner already reads rather
-             than in BACKLOG.md, which is a separate file in the repo and invisible from the
-             running app. Whoever builds the native instrument will open THIS file. Kept to
-             the requirement; the full specification is in the PENCIL HOVER comment in the
-             source, which this points at by name. -->
-        <div style="margin:0 0 8px;padding:9px 11px;border:1px solid #e9b7b7;border-radius:7px;
+        <p style="margin:0 0 8px">Four things a web build cannot do. Nothing here is an
+        examiner action.</p>
+        <p style="margin:0 0 8px"><b>1. Pen and touch are not simultaneous.</b> While an
+        Apple Pencil is in contact, iPadOS discards concurrent finger touches as palm
+        contact, and no web API turns that off. <b>PEN_TONE</b> and <b>PEN_FAST</b> therefore
+        do not run as true dual tasks here. Flagged in the data.</p>
+        <p style="margin:0 0 8px"><b>2. Pencil hover height is unavailable.</b> The platform
+        reports <i>where</i> the pen hovers, never <i>how high</i>. Hover at all needs an M2
+        iPad: measured 2026-09-11, none on an 11-inch M1 iPad Pro, about 59&nbsp;Hz on the
+        M2.</p>
+        <div id="securenote"></div>
+        <p style="margin:0 0 8px"><b>4. This is a prototype instrument.</b> Millimeters come
+        from a card calibration and timing from the browser clock. Both are approximate and
+        should be reported as such.</p>
+        <div style="margin:0;padding:9px 11px;border:1px solid #e9b7b7;border-radius:7px;
                     background:#fff6f6">
-          <p style="margin:0 0 6px"><b>→ Required in the native iPadOS build</b></p>
-          <p style="margin:0 0 6px">Items 1 and 2 above are the two reasons the native build
-          exists. Neither is a defect in this prototype and neither can be fixed in a web
-          page. The native instrument must:</p>
+          <p style="margin:0 0 6px"><b>→ The native iPadOS build exists for 1 and 2.</b>
+          It must:</p>
           <ul style="margin:0;padding-left:20px">
-            <li>deliver <b>pencil and touch as separate simultaneous streams</b>, so a
-            spiral-plus-tap condition runs as a genuine dual task (UIKit does this; Safari
-            does not);</li>
-            <li>record <b>hover onset</b>, and <b>hover dwell before first contact</b>
-            separately from time-to-first-contact, so hesitation with the pen raised is
-            distinguishable from hesitation with the pen nowhere near the glass;</li>
-            <li>record the <b>height profile</b> through the descent — whether the pen comes
-            down steadily, stalls partway, or repeatedly approaches and withdraws. This is
-            the measure a web build cannot capture at all;</li>
+            <li>deliver <b>pencil and touch as separate simultaneous streams</b> (UIKit does;
+            Safari does not);</li>
+            <li>record <b>hover onset</b> and <b>hover dwell before first contact</b>,
+            separately from time-to-first-contact;</li>
+            <li>record the <b>height profile through the descent</b> — steady, stalled, or
+            repeatedly approaching and withdrawing. A web build cannot capture this at
+            all;</li>
             <li>record <b>pen lifts during drawing</b> as first-class events, with count and
             duration, rather than inferring them from stroke boundaries.</li>
           </ul>
-          <p style="margin:6px 0 0">Full rationale, and the caveat about verifying the exact
-          UIKit API rather than trusting a remembered symbol name, are in the
-          <code>PENCIL HOVER</code> comment block in this file's source.</p>
+          <p style="margin:6px 0 0">Full rationale, and the caveat about verifying the UIKit
+          API rather than trusting a remembered symbol name, are in the <code>PENCIL
+          HOVER</code> comment block in this file's source.</p>
         </div>
-        <p style="margin:0 0 8px"><b>3. Voice recording requires an https address.</b>
-        Microphone access is available only over <code>https</code>, or from
-        <code>localhost</code> and <code>127.0.0.1</code>. When the app is opened from a
-        plain <code>http://</code> address on a local network, the spoken tasks run but
-        record no audio. This depends on the address the page was opened from, not on the
-        device.</p>
-        <p style="margin:0"><b>4. This is a prototype instrument.</b> Millimeters are derived
-        from a card calibration and timing from the browser clock. Both are approximate and
-        should be reported as such.</p>
       </div>
     </fieldset>
     <fieldset>
@@ -420,12 +414,15 @@
                  oninput="onLanguageChange()"></div>
       </div>
       <div id="langmatch"></div>
-      <label class="checkrow" for="voiceconsent">
-        <input id="voiceconsent" type="checkbox" onchange="onVoiceConsentChange()">
-        <span><b>Voice recording consented.</b> The participant has agreed to be audio-recorded
-        for the spoken tasks. Until this is ticked those tasks cannot be added to the plan.
-        Recordings stay on this device.</span></label>
-      <div id="securenote"></div>
+      <!-- The single item on this page that BLOCKS work, and it looked like every other
+           tick on it. Red until it is answered, green once it is. -->
+      <div id="consentbox" class="consentbox">
+        <label class="checkrow" for="voiceconsent" style="margin-top:0">
+          <input id="voiceconsent" type="checkbox" onchange="onVoiceConsentChange()">
+          <span><b>Voice recording consented.</b> The participant has agreed to be
+          audio-recorded for the spoken tasks. Until this is ticked those tasks cannot be
+          added to the plan. Recordings stay on this device.</span></label>
+      </div>
       <div id="voicenote"></div>
       <div class="btnrow">
         <button class="ghost" onclick="newParticipant()">Start a new participant</button>
@@ -820,7 +817,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.22 2026-09-13";
+const BUILD = "v12.23 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -2380,7 +2377,7 @@ const administeredInParticipantLanguage = () => {
 function goConsent(){
   goPage(2);
   const box=$("voiceconsent"); if(!box) return;
-  const row=box.closest("label") || box;
+  const row=$("consentbox") || box.closest("label") || box;
   row.scrollIntoView({block:"center", behavior:"smooth"});
   row.classList.add("flashrow");
   setTimeout(()=>row.classList.remove("flashrow"), 2200);
@@ -2388,23 +2385,29 @@ function goConsent(){
 }
 const voiceConsented = () => !!($("voiceconsent") && $("voiceconsent").checked);
 const VOICE_TASKS = () => CATALOGUE.filter(c=>c.voice).map(c=>c.id);
-// Shown next to the consent tick, whether or not consent is given, because the cause is
-// the address and has nothing to do with whether anyone consented.
+// ITEM 3 OF THE DEVELOPER NOTES, written live rather than as a fixed paragraph, because the
+// answer depends on the address this page was opened from and the app knows it.
+//
+// It used to sit beside the consent tick, which put a fact about the URL in the middle of a
+// question about the participant -- two different things, and the one an examiner can act on
+// is the tick. It belongs with the other three platform limits, and now always says which
+// way round it currently is instead of appearing only when broken.
 function renderSecureNote(){
   const el=$("securenote"); if(!el) return;
-  if(secureOrigin()){ el.innerHTML=""; return; }
-  el.innerHTML=`<div class="bad"><b>Voice recording is unavailable from this address.</b>
-    This page was opened from <code>${esc(location.origin)}</code>, which is not a secure
-    origin. Microphone access is available only over <b>https</b>, or from
-    <code>localhost</code> and <code>127.0.0.1</code>, so <code>getUserMedia</code> is not
-    present here.
-    <br><br>This depends on the address the page was opened from, not on the device or the
-    microphone. Open the app over <b>https</b> to record. The spoken tasks will still run,
-    but no audio is captured and each trial record states this.
-    <br><br>Tasks that do not record are unaffected.</div>`;
+  const ok=secureOrigin();
+  el.innerHTML=`<p style="margin:0 0 8px"><b>3. Voice recording needs an https address.</b>
+    Microphone access exists only over <b>https</b>, or from <code>localhost</code> and
+    <code>127.0.0.1</code> — a property of the address, not of the device or the microphone.
+    ${ok
+      ? `Opened from <code>${esc(location.origin)}</code>, so the spoken tasks
+         <b>will record</b>.`
+      : `Opened from <code>${esc(location.origin)}</code>, which is not a secure origin:
+         <b>the spoken tasks run but capture no audio</b>, and each trial record says so.`}
+    </p>`;
 }
 function onVoiceConsentChange(){
   renderSecureNote();
+  if($("consentbox")) $("consentbox").classList.toggle("ok", voiceConsented());
   if(!$("voicenote")) return;
   const ok=voiceConsented(), ids=VOICE_TASKS().join(", ");
   if(!ok){
@@ -2420,7 +2423,7 @@ function onVoiceConsentChange(){
   } else {
     $("voicenote").innerHTML=`<div class="good">Consented. ${ids} can be planned. Recordings are
       written to this device only and are never uploaded.
-      ${!secureOrigin()?"<b>They will not record from this address</b> — see above.":
+      ${!secureOrigin()?"<b>They will not record from this address</b> — see item 3 of the developer notes on the Device page.":
         RECORDER.available?"":"<b>This browser reports no microphone recording support</b> — those tasks will run, but will record nothing and will say so in the record."}</div>`;
   }
   if(!$("pg3").classList.contains("hidden")) renderPlan();
@@ -2749,7 +2752,7 @@ function renderPlan(){
                 `<option value="${k}" ${s2.verbalType===k?"selected":""}>${v.label}</option>`).join("")}
             </select>`:""}
           ${palmRejectionAffected(c)?`<div class="note" style="margin:4px 0 0;color:#8c2020">
-              <b>Pen and touch not simultaneous.</b> See Known limitations on the Screen page.</div>`:""}
+              <b>Pen and touch not simultaneous.</b> See the developer notes on the Device page.</div>`:""}
           ${dep?`<div class="warn" style="margin:5px 0 0;max-width:300px">${dep}</div>`:""}
           ${blocked?`<div class="note" style="margin:4px 0 0;color:var(--warm)">${blocked}
             ${c.voice?`<button class="ghost sm" style="margin-left:6px"
@@ -4116,7 +4119,7 @@ function runRoomCheck(){
   const btn=$("roomBtn");
   if(!secureOrigin()){
     $("roomresult").innerHTML=`<div class="bad">Cannot run: the microphone is unavailable
-      from this address — see the note beside the voice consent tick above.</div>`; return;
+      from this address — see item 3 of the developer notes on the Device page.</div>`; return;
   }
   if(!RECORDER.available){
     $("roomresult").innerHTML=`<div class="bad">This browser reports no microphone support.</div>`; return;
