@@ -921,7 +921,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.34 2026-09-13";
+const BUILD = "v12.35 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -4051,6 +4051,17 @@ const TAP_SIDE_OFFSET=0.18;
 // seconds, so an advance sooner than this is evidence of a detector fault rather than of a
 // fast participant -- and the cost of being wrong is the participant's drawing.
 const MIN_PASS_MS=4000;
+// ONE RULE CANNOT COVER BOTH A TIDY SPIRAL AND A DISORDERED ONE, and the radius band alone
+// was written for the tidy case. A tremulous or hypometric spiral can complete its sweep and
+// still sit well inside the band, or wander outside the template entirely; a participant who
+// believes they have finished simply lifts the pen. None of those advanced, so every one of
+// them needed the examiner's button -- and that button puts the examiner's reaction time into
+// the pass boundary, which is the reason auto-advance exists.
+//
+// The ANGLE test stays the gate in every case: nothing advances that has not actually been
+// drawn. What changes is what counts as having arrived, once it has.
+const LIFT_ADVANCE_MS=1200;          // pen up this long, with the sweep complete, is "done"
+const OVERSHOOT_FRACTION=1.08;       // past the template's own rim is arrival, not approach
 const endZoneDiaMM = pitch => END_ZONE_PITCH_FRACTION*pitch;
 // How long the pen must stay in the zone. Short enough not to feel like a wait, long enough
 // that a pen sweeping through the zone on its way elsewhere does not trigger it.
@@ -4898,17 +4909,13 @@ function drawScene(){
       // quiet marker; after it, it is the thing to head for.
       const need = angleNeededRad(turns, radius, RUN && RUN.angle ? RUN.angle.minR : 0);
       const armed = RUN && RUN.angle && RUN.netAngleTotal >= need;
-      // HOW CLOSE THIS SPIRAL IS TO FINISHING, drawn as an arc filling round the outside.
-      // Without it neither the participant nor the examiner can tell whether the next pass
-      // is imminent or a turn away, and the only feedback was the moment it happened.
-      if(RUN && RUN.angle && !armed && RUN.netAngleTotal>0.05){
-        const frac=Math.max(0,Math.min(1,RUN.netAngleTotal/need));
-        g.save();
-        g.strokeStyle="rgba(29,95,168,.28)"; g.lineWidth=4; g.lineCap="round";
-        g.beginPath();
-        g.arc(c0.x,c0.y,mm2px(radius)+10,-Math.PI/2,-Math.PI/2+frac*2*Math.PI);
-        g.stroke(); g.restore();
-      }
+      // THE PROGRESS ARC IS GONE. It filled round the outside as angle accumulated, which
+      // told the participant how close the next spiral was -- and that is a live performance
+      // gauge on a task whose measure is how someone draws when they are not being scored at.
+      // A gauge invites racing it, and a second blue line moving in the corner of the eye
+      // competes with the one the participant is supposed to be watching, which is their own.
+      // The end zone lighting up when the angle is complete says the same thing at the moment
+      // it becomes actionable, without narrating the way there.
       const ez=endZoneDiaMM(pitch);
       g.fillStyle = armed ? "#F6C79E" : "#FBE6D8";
       g.strokeStyle="#b4531f"; g.lineWidth = armed ? 2.4 : 1.2;
@@ -4975,6 +4982,7 @@ function drawScene(){
   g.strokeStyle="#1d5fa8"; g.lineWidth=2.2; g.lineCap="round"; g.lineJoin="round";
   for(const st of STROKES){ if(st.length<2) continue;
     if((st[0].q||1)!==showPass) continue;
+    if(RUN && RUN.carryStrokes && RUN.carryStrokes.has(st)) continue;   // see advancePass
     g.beginPath(); st.forEach((q,i)=>{const t=toCanvas(q.x,q.y); i?g.lineTo(t.x,t.y):g.moveTo(t.x,t.y);});
     g.stroke(); }
 }
@@ -5686,6 +5694,20 @@ function runTrial(seq,c){
     const t=performance.now()-perf0; RUN.lastContact=performance.now();
     noteSeenType(e.pointerType);
     if(!drawTask) return;
+    // NOTHING IS DRAWN UNTIL THE SPIRAL IS STARTED WHERE IT STARTS. The window has always
+    // opened on the first contact INSIDE the start zone, but a contact outside it still laid
+    // down ink -- so a participant could draw most of a spiral from the wrong place, with the
+    // trial not yet running and nothing on screen saying so. Once the window is open the pen
+    // goes wherever the spiral goes; this gates the first contact only.
+    if(c.spiral && RUN.penAnchored && RUN.windowStart===null && drawOK(e.pointerType)
+       && !inStartZone(e)){
+      if(!RUN.startZoneWarned){
+        RUN.startZoneWarned=true;
+        $("reminder").innerHTML=`<span style="color:var(--warm)"><b>Start inside the green
+          circle.</b> Nothing is recorded until the pen lands there.</span>`;
+      }
+      return;
+    }
     if(!drawOK(e.pointerType)){
       // A REFUSED CONTACT USED TO BE SILENT, which is correct for a palm and wrong for the
       // only implement the participant has. On a device that has never reported a stylus, a
@@ -5714,6 +5736,7 @@ function runTrial(seq,c){
       startToneStream();
       if(RUN.sustained) RUN.timer=setTimeout(()=>endWindow(), RUN.sustainedMs);
     }
+    RUN.penUpAt=null;                       // the lift clock only runs while the pen is up
     const st=[]; STROKES.push(st); strokeFor.set(e.pointerId,st); addPoint(st,e,t);
     if(RUN.firstContactMs===null) RUN.firstContactMs=+t.toFixed(2);
     // The qualifying contact -- the one that opened the window -- is not necessarily the
@@ -5772,6 +5795,10 @@ function runTrial(seq,c){
     RUN.hoverExits=(RUN.hoverExits||0)+1;
   };
   const up=e=>{
+    // The carry-over is over: the pen has lifted, so whatever it draws next is a stroke the
+    // participant meant to make on this template and is drawn like any other.
+    const carried=strokeFor.get(e.pointerId);
+    if(carried && RUN.carryStrokes) RUN.carryStrokes.delete(carried);
     strokeFor.delete(e.pointerId); RUN.lastContact=performance.now();
     if(RUN.angle) RUN.angle.lift();
     if(strokeFor.size===0){
@@ -5821,9 +5848,18 @@ function runTrial(seq,c){
     // when there is none, so every sample would be dropped silently until they happened to
     // lift and touch down again. Instead each pointer still in contact is handed a FRESH
     // stroke, which belongs to the new pass; the continuing movement lands in it.
+    //
+    // AND THAT FRESH STROKE IS NOT DRAWN UNTIL THE PEN LIFTS. Its first sample is wherever
+    // the pen happens to be at the moment of the advance -- out at the rim -- so a new,
+    // empty template appeared with a blue mark already sitting in its end zone: the tail of
+    // the last spiral, wearing the new spiral's pass number. Held back from the canvas, not
+    // from the record: every sample is still written, still tagged with its pass, and still
+    // exported. This is a display rule, like the pass filter it sits beside.
+    RUN.carryStrokes = RUN.carryStrokes || new Set();
     for(const id of [...strokeFor.keys()]){
-      const st=[]; STROKES.push(st); strokeFor.set(id,st);
+      const st=[]; STROKES.push(st); strokeFor.set(id,st); RUN.carryStrokes.add(st);
     }
+    RUN.penUpAt=null;
     drawScene();
   };
   // Checked every frame while a sustained window is open.
@@ -5836,13 +5872,26 @@ function runTrial(seq,c){
       geomPitch(TRIAL.implement)*geomTurns(TRIAL.implement),
       RUN.angle ? RUN.angle.minR : 0);
     if(RUN.netAngleTotal < needed){ RUN.endZoneSince=null; return; }
-    // Then position -- but as a band, not a bullseye. Out near the rim is enough.
-    if(!RUN.penMM){ RUN.endZoneSince=null; return; }
+    // THE SWEEP IS COMPLETE. Three ways of having arrived, recorded separately so a pass
+    // that ended tidily and one that ended by the participant giving up are distinguishable
+    // in the data rather than both reading as "auto".
     const outerR=geomPitch(TRIAL.implement)*geomTurns(TRIAL.implement);
+    // 1. THE PEN IS UP and has stayed up. A finished drawing that stopped short of the band
+    //    still looks finished to the person who drew it, and waiting for a band they are not
+    //    going to reach leaves them staring at a spiral they think they have completed.
+    if(RUN.penUpAt!=null && now-RUN.penUpAt >= LIFT_ADVANCE_MS){
+      RUN.endZoneSince=null; advancePass("lift"); return;
+    }
+    if(!RUN.penMM){ RUN.endZoneSince=null; return; }
     const r=Math.hypot(RUN.penMM.x, RUN.penMM.y);
+    // 2. PAST THE TEMPLATE ALTOGETHER. Overshooting the rim is not an approach to the end
+    //    zone, it is having gone beyond it, and a spiral drawn larger than its template
+    //    otherwise never satisfies a band defined as a fraction of that template.
+    if(r >= OVERSHOOT_FRACTION*outerR){ RUN.endZoneSince=null; advancePass("overshoot"); return; }
+    // 3. The band, as before: out near the rim, held briefly.
     if(r < ADVANCE_RADIUS_FRACTION*outerR){ RUN.endZoneSince=null; return; }
     if(RUN.endZoneSince===null){ RUN.endZoneSince=now; return; }
-    if(now-RUN.endZoneSince >= END_ZONE_DWELL_MS) advancePass("auto");
+    if(now-RUN.endZoneSince >= END_ZONE_DWELL_MS) advancePass("band");
   };
   // ---- WINDOW END -------------------------------------------------------------------
   // Freezes rather than blanks. Nothing disappears: blanking mid-stroke is disorienting and
