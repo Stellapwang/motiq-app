@@ -214,6 +214,10 @@
   .racegrid label { display:flex; align-items:center; gap:7px; font-size:14px; font-weight:400;
                     margin:0; cursor:pointer; }
   .racegrid input { width:auto; flex:0 0 auto; margin:0; }
+  #taskcue { position:absolute; left:0; right:0; top:74px; z-index:1; display:none;
+             text-align:center; font-size:22px; font-weight:600; color:#1d5fa8;
+             padding:0 24px; line-height:1.3; pointer-events:none; text-wrap:balance; }
+  #taskcue.on { display:block; }
   #hud { font-size:16px; font-weight:600; color:var(--muted);
          font-variant-numeric:tabular-nums; min-width:64px; padding-left:6px; }
   #hud.cue { color:var(--warm); }
@@ -900,6 +904,12 @@
     <div id="reminder"></div>
     <button id="quit" onclick="backToSession()">Back to session</button>
   </div>
+  <!-- THE RULE, KEPT ON THE TASK SCREEN. The zone labels say which finger, and on the
+       bimanual tasks that is only half of it: what distinguishes TAP_BMIN from TAP_BANT is
+       together versus one at a time, and that lived only on an instruction screen the
+       participant read once and then lost. Shown for the whole trial, above the circles,
+       sized for the participant rather than for the examiner. -->
+  <div id="taskcue"></div>
   <!-- End-of-window signal for a timed trial. The participant is given no clock while the
        trial runs, so the end has to be unmissable rather than inferred. -->
   <div id="stopsign" aria-hidden="true"><span>END<small id="stopsub"></small></span></div>
@@ -911,7 +921,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.31 2026-09-13";
+const BUILD = "v12.32 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1420,7 +1430,7 @@ function drawingRules(tool, mode){
     mode==="between"
       ? `**Start inside the green circle and follow the white path all the way out.**`
       : `**Start inside the green circle and TRACE the spiral line all the way out.**`,
-    `**One continuous line — do not lift the ${tool}.**`,
+    `**One continuous line. Do not lift the ${tool}.**`,
     `Trace as accurately as you can, at a comfortable speed.`,
     `Keep your hand and arm off the table.`
   ];
@@ -1430,7 +1440,7 @@ function drawingRules(tool, mode){
 // trial as far as they are concerned. It goes in its own emphasised line, not appended to
 // another one.
 const KEEP_GOING_LINE =
-  "**When you finish one spiral a new one appears — start again from the middle and keep "+
+  "**When you finish one spiral a new one appears. Start again from the middle and keep "+
   "going until you see END.**";
 function instructionFor(taskId, opts){
   const c=byId(taskId); if(!c) return null;
@@ -1473,7 +1483,7 @@ function instructionFor(taskId, opts){
                  || !!(PLAN && PLAN[taskId] && PLAN[taskId].sustainedS>0);
   if(c.spiral && !dualTask){
     if(tool==="finger")
-      lines.push("**Use the tip of your index finger — no pen for this one.**");
+      lines.push("**Use the tip of your index finger. No pen for this one.**");
     rules.forEach(l=>lines.push(l));
     if(sustained) lines.push(KEEP_GOING_LINE);
   } else if(dualTask){
@@ -1496,19 +1506,19 @@ function instructionFor(taskId, opts){
       // hardest on exactly the population being measured. What antiphase means is that the
       // two hands are never down together; which one goes first is arbitrary and is
       // recorded from the data rather than dictated to the participant.
-      lines.push("**Tap the circles ALTERNATELY — one, then the other, never both together.**");
+      lines.push("**Tap the circles ALTERNATELY, one finger at a time.**");
       lines.push("Start with whichever hand you like.");
-      lines.push("As fast as you can, while keeping them strictly alternating.");
+      lines.push("As fast as you can, keeping them alternating.");
     } else {
       // AND HERE THE ORDER IS THE WHOLE TASK. In-phase tapping measures how well the two
       // hands stay locked together; speed is the load that makes the coupling break down, not
       // the thing being measured. Leading with "as fast as you can" got the emphasis exactly
       // backwards -- a participant who reads it that way trades the measure for the load.
-      lines.push("**Tap both circles TOGETHER — the two fingers land at the same moment.**");
+      lines.push("**Tap both circles TOGETHER, so the two fingers land at the same moment.**");
       lines.push("As fast as you can, but staying together matters more than going fast.");
     }
   } else if(c.tap && !c.audio){
-    lines.push(`**${also?"At the same time, tap":"Tap"} the circle with your ${sideWord}index finger — AS FAST AS YOU CAN.**`);
+    lines.push(`**${also?"At the same time, tap":"Tap"} the circle with your ${sideWord}index finger, AS FAST AS YOU CAN.**`);
   }
 
   const a = AUDIO_DEFAULTS[taskId];
@@ -1518,7 +1528,7 @@ function instructionFor(taskId, opts){
       // saying what to do, one saying what not to do, and one on the report -- and "do not
       // tap" pre-empts a mistake nobody on a voice-only task was about to make.
       if(c.countOf==="all"){
-        lines.push(`**${also?"At the same time, count":"Count"} every beep OUT LOUD — one, two, three, and so on.**`);
+        lines.push(`**${also?"At the same time, count":"Count"} every beep OUT LOUD: one, two, three, and so on.**`);
       } else {
         lines.push(`**${also?"At the same time, count":"Count"} the HIGH beeps out loud.**`);
         lines.push("The low beeps are more common. Ignore them.");
@@ -1551,7 +1561,7 @@ function instructionFor(taskId, opts){
         ? `${also}start at ${from} and count ${pr.step>0?"up":"down"} out loud, one number at a time.`
         : `${also}start at ${from} and count ${pr.step>0?"up":"down"} out loud in ${by===2?"twos":"threes"}.`);
       const ex=verbalExample(type,start);
-      if(ex) lines.push(`Like this: ${ex} — and keep going.`);
+      if(ex) lines.push(`Like this: ${ex}, and keep going.`);
       lines.push("Keep going until I tell you to stop.");
     }
   }
@@ -1571,8 +1581,8 @@ function instructionFor(taskId, opts){
     // page; repeating it at the top of every voice trial spends attention on something
     // already settled.
     lines.push(c.spiral
-      ? "Use a <b>strong voice</b> — loud enough to be heard across the room — and keep it up while you draw."
-      : "Use a <b>strong voice</b> — loud enough to be heard across the room.");
+      ? "Use a <b>strong voice</b>, loud enough to be heard across the room, and keep it up while you draw."
+      : "Use a <b>strong voice</b>, loud enough to be heard across the room.");
   }
 
   return { id:taskId, title:c.label, lines,
@@ -5298,6 +5308,22 @@ function showInstructionScreen(seq,c,returnToReady){
      {label:"Back to session", ghost:true, onClick:()=>backToSession()}]);
 }
 
+// One short line, in the participant's words, for the whole trial. Only where the screen
+// cannot already say it: a single labelled circle says everything TAP_FAST asks for, so it
+// gets the speed and nothing else, while the bimanual pair need the rule that tells them
+// apart. Tasks with tones are not given one -- the tone IS the cue, and a standing sentence
+// competing with it would be one more thing to attend to in a task about attention.
+const TASK_CUE = {
+  TAP_FAST:"As quickly as possible",
+  TAP_BMIN:"Tap both fingers at the same time, as quickly as possible",
+  TAP_BANT:"Tap one finger at a time, as quickly as possible"
+};
+function setTaskCue(id){
+  const el=$("taskcue"); if(!el) return;
+  const txt = id ? (TASK_CUE[taskId(id)] || "") : "";
+  el.textContent=txt;
+  el.classList.toggle("on", !!txt);
+}
 function reminderText(){
   const c=byId(TRIAL.task), bits=[];
   if(c.spiral){ bits.push($("instr").value==="between"?"between the lines":"trace the line");
@@ -5333,6 +5359,7 @@ function readyTrial(seq,c,justInstructed){
   $("hud").classList.remove("cue"); $("hud").classList.remove("big");
   $("hud").textContent = (TRIAL.lengthS===null && !c.audio) ? "" : (TRIAL.lengthS??"")+" s";
   $("reminder").innerHTML=reminderText();
+  setTaskCue(TRIAL.task);
   $("recdot").textContent = c.voice ? (TRIAL.voiceFailure ? "no mic" : "mic ready") : "";
   $("recdot").style.color = c.voice && TRIAL.voiceFailure ? "#8c2020" : "#5d6570";
   // Shown for the whole of any voice task, not only once a recording is running. Absent,
@@ -6054,7 +6081,12 @@ function stopTrial(auto){
   // has no clock, so "the trial is over" must come from the screen rather than be inferred
   // from the examiner's body language. Not shown when the window never opened -- there was
   // nothing to stop.
-  if(!RUN.untimed && !RUN.noResponseCeiling) showStopSign();
+  // STAYS UP UNTIL THE EXAMINER MOVES ON. It used to clear after 1.8 s, which put the task
+  // screen back in front of a participant who had just been told to stop -- circles still
+  // sitting there looking tappable while the examiner reads the summary and decides whether
+  // to save. The trial is over; the screen should say so for as long as that is true.
+  setTaskCue(null);
+  if(!RUN.untimed && !RUN.noResponseCeiling) showStopSign(true);
   finish();
 }
 // The single way off the stage, on the admin bar and in the footer of every overlay that
@@ -6070,7 +6102,7 @@ function backToSession(){
            if(RUN.teardown) RUN.teardown(); endRecording(); }
   else RECORDER.release();
   cancelAnimationFrame(RAF); stopAudio();
-  hideStopSign(); hideOverlay(); stageOn(false); RUN=null; goPage(3);
+  hideStopSign(); setTaskCue(null); hideOverlay(); stageOn(false); RUN=null; goPage(3);
 }
 
 
@@ -6191,17 +6223,26 @@ function askCount(seq){
 
 function showEndControls(seq,c,pts,rate,att,tp){
   const sb=document.createElement("button"); sb.textContent="SAVE";
-  sb.onclick=()=>saveTrial(sb); $("ctrl").appendChild(sb);
+  sb.onclick=()=>{ hideStopSign(); saveTrial(sb); }; $("ctrl").appendChild(sb);
   const rp=document.createElement("button"); rp.textContent="REPEAT"; rp.className="ghost";
-  rp.onclick=()=>{ if(!okUnsaved()) return; RUN=null; openTrial(false); }; $("ctrl").appendChild(rp);
+  rp.onclick=()=>{ if(!okUnsaved()) return; hideStopSign(); RUN=null; openTrial(false); };
+  $("ctrl").appendChild(rp);
   const nx=document.createElement("button"); nx.textContent="NEXT"; nx.className="ghost";
-  nx.onclick=()=>{ if(!okUnsaved()) return;
+  nx.onclick=()=>{ if(!okUnsaved()) return; hideStopSign();
     if(RUN&&RUN.saved && !TRIAL.adhoc && QPOS===TRIAL.index) QPOS++;  // past the saved trial
     RUN=null; runCurrent(); };
   $("ctrl").appendChild(nx);
+  // THE ONE THING A STICKY END SIGN TAKES AWAY: on a drawing task the examiner can no longer
+  // see what was drawn, and the summary reports numbers rather than the trace. One button
+  // puts it back, and only where there is something behind the sign to look at.
+  if(c.spiral || c.pent){
+    const sh=document.createElement("button"); sh.textContent="Show drawing";
+    sh.className="ghost"; sh.style.minWidth="0";
+    sh.onclick=()=>hideStopSign(); $("ctrl").appendChild(sh);
+  }
   const ex=document.createElement("button"); ex.textContent="Exit"; ex.className="ghost";
   ex.style.minWidth="0";
-  ex.onclick=()=>{ if(!okUnsaved()) return; stageOn(false); RUN=null; goPage(3); };
+  ex.onclick=()=>{ if(!okUnsaved()) return; hideStopSign(); stageOn(false); RUN=null; goPage(3); };
   $("ctrl").appendChild(ex);
 
   $("saveState").innerHTML=`<div class="warn">The last trial has not been saved.</div>`;
