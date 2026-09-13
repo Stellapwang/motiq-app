@@ -262,7 +262,7 @@
          numbers are load-bearing, and one of them being missed is a dead button. -->
     <span id="s1" class="on" onclick="goPage(1)">1 · Device</span>
     <span id="s2" onclick="goPage(2)">2 · Participant</span>
-    <span id="s7" onclick="goPage(7)">3 · Checks</span>
+    <span id="s7" onclick="goPage(7)">3 · Practice</span>
     <span id="s3" onclick="goPage(3)">4 · Session</span>
     <span id="s4" onclick="goPage(4)">5 · Parameters</span>
     <span id="s5" onclick="goPage(5)">6 · Instructions</span>
@@ -345,6 +345,25 @@
         <span class="note" style="margin:0">Clears the saved session and calibration if the app
           misbehaves. Saved trials are not touched.</span>
       </div>
+    </fieldset>
+
+    <!-- THE ROOM IS NOT THE PARTICIPANT. This measures the space and the microphone, not the
+         person in front of them, and grouping it with the hearing check invited it to be
+         re-run per participant when once per room is what it is for. It sits with the other
+         thing measured about where the session is happening. -->
+    <fieldset>
+      <legend>Room check <span style="font-weight:400;color:var(--muted)">— per session, per room</span></legend>
+      <p class="note" style="margin-top:0">Five seconds of silence with nobody speaking. It
+      measures the background noise floor, which is what makes a voice recording scoreable or
+      not: speech has to sit far enough above the room. The published minimum is 30 dB of
+      signal-to-noise, with over 42 dB recommended (Deliyski et al. 2005, J Voice 19:15).
+      Without a noise floor there is no way to tell a quiet participant from a noisy room —
+      and that distinction matters, because recording geometry moves the level far more than
+      the voice disorder does.</p>
+      <div class="btnrow" style="margin-top:6px">
+        <button class="ghost" id="roomBtn" onclick="runRoomCheck()">Run room check (5 s)</button>
+      </div>
+      <div id="roomresult"></div>
     </fieldset>
 
     <div class="navrow"><span></span><button class="big" onclick="goPage(2)">Next</button></div>
@@ -441,6 +460,45 @@
           added to the plan. Recordings stay on this device.</span></label>
       </div>
       <div id="voicenote"></div>
+    </fieldset>
+
+    <!-- A HEARING CHECK, WHICH IS A PROPERTY OF THE PERSON. It sat with the room check and
+         the practice pads, where it read as equipment setup -- but whether these two tones
+         are clearly audible to THIS participant is a covariate, and it belongs next to the
+         other things recorded about them. It also has to be settled before the tapping
+         practice on the Practice page plays the same tones, and the Participant page comes
+         first, so the order holds without the two sharing a page. -->
+    <fieldset>
+      <legend>Sound check <span style="font-weight:400;color:var(--muted)">— per participant</span></legend>
+      <p class="note" style="margin-top:0">Play both tones at the level the session will use.
+      The participant must hear the difference easily — this is not a discrimination test.
+      Fix the volume here and do not change it during the session.</p>
+      <div class="btnrow" style="margin-top:6px">
+        <button class="ghost" onclick="demo('std')">Play low tone</button>
+        <button class="ghost" onclick="demo('tgt')">Play high tone</button>
+        <button class="ghost" onclick="demo('alt')">Play both, alternating</button>
+      </div>
+      <div class="r2" style="margin-top:10px">
+        <div><label for="audioroute">Delivery</label>
+          <select id="audioroute" onchange="renderAudioCheck()">
+            <option value="speaker">Device speaker</option>
+            <option value="wired">Wired headphones</option>
+          </select></div>
+        <div><label for="volstep">Volume steps used</label>
+          <select id="volstep" onchange="renderAudioCheck()">
+            <option value="0">Starting level</option>
+            <option value="1">Raised once</option>
+            <option value="max">At maximum</option>
+          </select></div>
+      </div>
+      <label id="soundokRow" for="soundok" style="display:flex;align-items:flex-start;gap:9px;margin-top:12px;font-size:14px;cursor:pointer">
+        <input id="soundok" type="checkbox" style="width:auto;flex:0 0 auto;margin:3px 0 0" onchange="renderAudioCheck()">
+        <span>The participant confirms both tones are clearly audible.</span></label>
+      <div id="soundnote"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Session notes</legend>
       <div class="btnrow">
         <button class="ghost" onclick="newParticipant()">Start a new participant</button>
         <span class="note" style="margin:0">Clears these fields, opens a new session and
@@ -462,6 +520,34 @@
        The first is typed once and rarely revisited; the second is worked through with
        the participant in front of you, and two of the three write their own records. -->
   <div id="pg7" class="hidden">
+
+    <!-- FIRST, BECAUSE IT IS FIRST IN THE SESSION. The tapping block opens the battery and
+         the spiral conditions come later, so rehearsing in the other order asks a participant
+         to practise the second thing they will do before the first. It also needs no pen: an
+         examiner whose stylus is not cooperating can still complete this page.
+
+         It plays tones, so the sound check has to have happened first -- and that is now on
+         the Participant page, which comes before this one. -->
+    <fieldset>
+      <legend>Tapping practice <span style="font-weight:400;color:var(--muted)">— per participant</span></legend>
+      <p class="note" style="margin-top:0">Ten seconds of the TAP_TONE stream, so the first
+      tones a participant hears are not the first tones of a scored trial. TAP_TONE measures
+      the whole response distribution, and the opening responses of an unpractised trial are
+      the participant working out the task. <b>Nothing here is scored.</b></p>
+      <div class="r3" style="margin-top:8px">
+        <div><label for="tphand">Hand</label>
+          <select id="tphand" onchange="tapPracticeReset()">
+            <option value="right">Right</option><option value="left">Left</option></select></div>
+        <div></div><div></div>
+      </div>
+      <div id="tpbox" class="tappracticebox"><div id="tppad" class="tapdot"></div></div>
+      <div class="btnrow" style="margin-top:8px">
+        <button class="ghost" id="tpbtn" onclick="tapPracticeStart()">Start 10 s</button>
+        <span id="tpcount" class="note" style="margin:0"></span>
+      </div>
+      <div id="tpresult" class="note"></div>
+    </fieldset>
+
     <!-- The behaviour the sustained conditions depend on, rehearsed before it costs a trial.
          A participant meeting "finish one spiral and another appears" for the first time
          DURING PEN_SPRL spends the first pass working out what happened, and that pass is
@@ -499,72 +585,6 @@
       </div>
       <div id="prsendnote"></div>
       <div id="prresult" class="note"></div>
-    </fieldset>
-
-    <fieldset>
-      <legend>Sound check <span style="font-weight:400;color:var(--muted)">— per participant</span></legend>
-      <p class="note" style="margin-top:0">Play both tones at the level the session will use.
-      The participant must hear the difference easily — this is not a discrimination test.
-      Fix the volume here and do not change it during the session.</p>
-      <div class="btnrow" style="margin-top:6px">
-        <button class="ghost" onclick="demo('std')">Play low tone</button>
-        <button class="ghost" onclick="demo('tgt')">Play high tone</button>
-        <button class="ghost" onclick="demo('alt')">Play both, alternating</button>
-      </div>
-      <div class="r2" style="margin-top:10px">
-        <div><label for="audioroute">Delivery</label>
-          <select id="audioroute" onchange="renderAudioCheck()">
-            <option value="speaker">Device speaker</option>
-            <option value="wired">Wired headphones</option>
-          </select></div>
-        <div><label for="volstep">Volume steps used</label>
-          <select id="volstep" onchange="renderAudioCheck()">
-            <option value="0">Starting level</option>
-            <option value="1">Raised once</option>
-            <option value="max">At maximum</option>
-          </select></div>
-      </div>
-      <label id="soundokRow" for="soundok" style="display:flex;align-items:flex-start;gap:9px;margin-top:12px;font-size:14px;cursor:pointer">
-        <input id="soundok" type="checkbox" style="width:auto;flex:0 0 auto;margin:3px 0 0" onchange="renderAudioCheck()">
-        <span>The participant confirms both tones are clearly audible.</span></label>
-      <div id="soundnote"></div>
-
-      <!-- AFTER the sound check on purpose: it plays tones, so the level has to be settled
-           first. Before it, the practice would be the thing that sets the volume. -->
-      <div style="border-top:1px solid var(--line);margin-top:16px;padding-top:12px">
-        <b style="font-size:14px">Tapping practice <span style="font-weight:400;color:var(--muted)">— per participant</span></b>
-        <p class="note" style="margin-top:4px">Ten seconds of the TAP_TONE stream, so the
-        first tones a participant hears are not the first tones of a scored trial. TAP_TONE
-        measures the whole response distribution, and the opening responses of an unpractised
-        trial are the participant working out the task. <b>Nothing here is scored.</b></p>
-        <div class="r3" style="margin-top:8px">
-          <div><label for="tphand">Hand</label>
-            <select id="tphand" onchange="tapPracticeReset()">
-              <option value="right">Right</option><option value="left">Left</option></select></div>
-          <div></div><div></div>
-        </div>
-        <div id="tpbox" class="tappracticebox"><div id="tppad" class="tapdot"></div></div>
-        <div class="btnrow" style="margin-top:8px">
-          <button class="ghost" id="tpbtn" onclick="tapPracticeStart()">Start 10 s</button>
-          <span id="tpcount" class="note" style="margin:0"></span>
-        </div>
-        <div id="tpresult" class="note"></div>
-      </div>
-
-      <div style="border-top:1px solid var(--line);margin-top:16px;padding-top:12px">
-        <b style="font-size:14px">Room check</b>
-        <p class="note" style="margin-top:4px">Five seconds of silence, once per session, with
-        nobody speaking. It measures the background noise floor, which is what makes a voice
-        recording scoreable or not: speech has to sit far enough above the room. The published
-        minimum is 30 dB of signal-to-noise, with over 42 dB recommended
-        (Deliyski et al. 2005, J Voice 19:15). Without a noise floor there is no way to tell a
-        quiet participant from a noisy room — and that distinction matters, because recording
-        geometry moves the level far more than the voice disorder does.</p>
-        <div class="btnrow" style="margin-top:6px">
-          <button class="ghost" id="roomBtn" onclick="runRoomCheck()">Run room check (5 s)</button>
-        </div>
-        <div id="roomresult"></div>
-      </div>
     </fieldset>
     <div class="navrow">
       <button class="big ghost" onclick="goPage(2)">Back</button>
@@ -864,7 +884,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.29 2026-09-13";
+const BUILD = "v12.30 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1625,9 +1645,12 @@ function goPage(n){
   // The screening canvases size themselves from clientWidth, which is not final in the
   // same tick the page is unhidden -- laying them out then can give a pad a fraction of
   // its real width. Measure on the next frame instead.
-  if(n===2) onVoiceConsentChange();
-  if(n===7){ onVoiceConsentChange();
-    requestAnimationFrame(()=>{ tapPracticeReset(); practiceRender(); }); }
+  // Each panel renders on the page that owns it. The sound check moved to Participant in
+  // v12.30; leaving its render call on the old Checks hook would have left it blank until
+  // somebody opened a page it is no longer on. The room check writes only into #roomresult
+  // when it runs, so it has nothing to render on arrival.
+  if(n===2){ onVoiceConsentChange(); renderAudioCheck(); }
+  if(n===7) requestAnimationFrame(()=>{ tapPracticeReset(); practiceRender(); });
   if(n===3){ renderPlan(); renderQueue(); }
   renderStatus();
   if(n===4){ renderAudioTable(); updateGeo(); }
@@ -1689,7 +1712,7 @@ function applyCal(){
   // NOT practiceRender(). applyCal() runs during start-up, above the practice code, so every
   // constant that code touches is still in its temporal dead zone -- and a const read there
   // throws rather than returning undefined, which takes the rest of the script with it. The
-  // pad is laid out when the Checks page opens and on resize, which is when it can be seen.
+  // pad is laid out when the Practice page opens and on resize, which is when it can be seen.
   updateGeo();
 }
 $("ppmm").addEventListener("input",()=>{ setManual(); applyCal(); });
@@ -2162,7 +2185,7 @@ function practiceReset(){
   //
   // The trial canvas gets away without this because the stage locks the body -- position
   // fixed, overflow hidden, touchmove and the gesture events swallowed document-wide -- so
-  // there is no competing page gesture for Safari to award the pencil to. The Checks page is
+  // there is no competing page gesture for Safari to award the pencil to. The Practice page is
   // an ordinary scrolling page, and on iPadOS a pencil drag there is a candidate for
   // scrolling, selection and Scribble. Safari resolves that by issuing pointerdown, deciding
   // the gesture belongs to the page, and then sending POINTERCANCEL -- which lands on the
@@ -2220,7 +2243,7 @@ function practiceReset(){
   // above to intercept: if the browser dispatches the event into this page at all, this sees
   // it first.
   //
-  // Costs a rect test per pointer event on the Checks page, and buys the pad the same
+  // Costs a rect test per pointer event on the Practice page, and buys the pad the same
   // position the stage has.
   // Kept purely as a counter, so "pad" still means what reached the CANVAS ELEMENT and
   // "page" what reached the document. The two disagreeing is the finding.
@@ -2305,7 +2328,7 @@ function practiceReset(){
   // The stage swallows touchmove and the gesture events document-wide while it is up, and
   // that -- not touch-action, which this file already records as insufficient on iPadOS -- is
   // why the trial canvas never loses a pencil stroke. The pad gets the same treatment, scoped
-  // to the pad's own rectangle so the rest of the Checks page still scrolls.
+  // to the pad's own rectangle so the rest of the Practice page still scrolls.
   const padTouch = e => (e.touches&&e.touches[0]) ? onPad(e.touches[0]) : false;
   document.addEventListener("touchmove", e=>{ if(padTouch(e)) e.preventDefault(); },
     {capture:true, passive:false});
