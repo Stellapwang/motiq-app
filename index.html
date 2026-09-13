@@ -820,7 +820,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.18 2026-09-13";
+const BUILD = "v12.19 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1121,6 +1121,9 @@ let AUDIO_SHIPPED=null;
 // Values the examiner deliberately changed, carried over from a saved session. Listed on the
 // Parameters page so a non-default number is never quietly in force.
 let RESTORED_EDITS=[];
+// Values from a session saved before parameters could be told apart from defaults. Not in
+// force -- offered on the Parameters page so a deliberate choice is recoverable.
+let ORPHANED_AUDIO=null;
 const AUDIO_DEFAULTS = {
   // 2 x 50 s at a 1000 ms mean yields about 100 responses, which is what ex-Gaussian
   // fitting needs. The FLOOR stays 600 ms: it exists so a response completes before the
@@ -3290,6 +3293,17 @@ function renderAudioTable(){
     <div style="margin-top:7px"><button class="ghost sm" onclick="resetAudioToShipped()">
       Use this build's values instead</button></div></div>`;
 
+  if(ORPHANED_AUDIO && ORPHANED_AUDIO.length) notes+=`<div class="note"
+      style="border-left:3px solid var(--warm);padding-left:10px">
+    <b>This build's values are in use.</b> The session saved on this device came from a build
+    that did not record which numbers had been chosen deliberately, so its values were set
+    aside rather than kept — otherwise anything changed since would have stayed frozen without
+    saying so. ${ORPHANED_AUDIO.length} differed:<br>
+    ${ORPHANED_AUDIO.slice(0,12).map(d=>esc(`${d.k} ${d.f}: was ${d.val}, now ${d.now}`)).join("<br>")}
+    ${ORPHANED_AUDIO.length>12?`<br>…and ${ORPHANED_AUDIO.length-12} more`:""}
+    <div style="margin-top:7px"><button class="ghost sm" onclick="restoreOrphanedAudio()">
+      Put the saved values back</button></div></div>`;
+
   const slow=Object.entries(AUDIO_DEFAULTS).filter(([k,a])=>bindingLimitMs(k,a)<950).map(([k])=>k);
   if(slow.length) notes+=`<div class="warn">Usable window under 900 ms on
     <b>${slow.join(", ")}</b>. Reported reaction time in Lewy body dementia sits near 900 ms
@@ -3314,6 +3328,15 @@ function renderAudioTable(){
   box.insertAdjacentElement("afterend",div);
 }
 // Restores the build's own numbers without touching anything else in the session.
+// For the case where those set-aside values were in fact deliberate.
+function restoreOrphanedAudio(){
+  if(!ORPHANED_AUDIO || !ORPHANED_AUDIO.length) return;
+  if(!confirm(`Put the ${ORPHANED_AUDIO.length} saved value(s) back?\n\nThey came from an `
+    +`earlier build and will replace this build's defaults for this session.`)) return;
+  ORPHANED_AUDIO.forEach(d=>{ if(AUDIO_DEFAULTS[d.k]) AUDIO_DEFAULTS[d.k][d.f]=d.val; });
+  ORPHANED_AUDIO=null;
+  renderAudioTable(); planSummary(); saveState();
+}
 function resetAudioToShipped(){
   if(!AUDIO_SHIPPED) return;
   if(!confirm("Reset the tone parameters to this build's defaults?\n\nAny values edited on "
@@ -6835,20 +6858,39 @@ function restoreState(){
     // listed on the Parameters page, so an old number is never silently in force.
     if(st.audio){
       const wasShipped=st.audioShipped||null;
-      RESTORED_EDITS=[];
-      Object.entries(st.audio).forEach(([k,v])=>{
-        if(!AUDIO_DEFAULTS[k] || !v || typeof v!=="object") return;
-        Object.entries(v).forEach(([f,val])=>{
-          if(typeof val==="object") return;
-          const oldDefault = wasShipped && wasShipped[k] ? wasShipped[k][f] : undefined;
-          const untouched = wasShipped ? (val===oldDefault) : false;
-          if(untouched) return;                       // let this build's value stand
-          if(AUDIO_DEFAULTS[k][f]!==val){
-            RESTORED_EDITS.push(`${k} ${f}: ${val} (build ships ${AUDIO_DEFAULTS[k][f]})`);
-            AUDIO_DEFAULTS[k][f]=val;
-          }
+      RESTORED_EDITS=[]; ORPHANED_AUDIO=null;
+      if(!wasShipped){
+        // A SESSION SAVED BEFORE THIS MECHANISM EXISTED cannot say which of its numbers were
+        // chosen and which were merely that build's defaults. Keeping them all was the first
+        // instinct and it is wrong: every parameter the build has deliberately changed since
+        // then stays frozen at the old value, silently, for the life of the session -- which
+        // is the exact failure this was meant to end, preserved in the name of caution.
+        //
+        // So the build's values stand, and the saved ones are held aside and offered on the
+        // Parameters page. Nothing is lost, nothing stale is in force, and a value that
+        // really was deliberate is one click from coming back.
+        const diff=[];
+        Object.entries(st.audio).forEach(([k,v])=>{
+          if(!AUDIO_DEFAULTS[k] || !v || typeof v!=="object") return;
+          Object.entries(v).forEach(([f,val])=>{
+            if(typeof val==="object") return;
+            if(AUDIO_DEFAULTS[k][f]!==val) diff.push({k,f,val,now:AUDIO_DEFAULTS[k][f]});
+          });
         });
-      });
+        if(diff.length) ORPHANED_AUDIO=diff;
+      } else {
+        Object.entries(st.audio).forEach(([k,v])=>{
+          if(!AUDIO_DEFAULTS[k] || !v || typeof v!=="object") return;
+          Object.entries(v).forEach(([f,val])=>{
+            if(typeof val==="object") return;
+            if(val===(wasShipped[k]?wasShipped[k][f]:undefined)) return;  // untouched
+            if(AUDIO_DEFAULTS[k][f]!==val){
+              RESTORED_EDITS.push(`${k} ${f}: ${val} (build ships ${AUDIO_DEFAULTS[k][f]})`);
+              AUDIO_DEFAULTS[k][f]=val;
+            }
+          });
+        });
+      }
     }
 
     // The language is restored from STATE_FIELDS like any other field. Its side effects
