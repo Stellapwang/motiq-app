@@ -921,7 +921,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.32 2026-09-13";
+const BUILD = "v12.33 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -3695,8 +3695,19 @@ function newVisit(){
 
 // A different person entirely.
 function newParticipant(){
+  // Named BEFORE the confirm, so the question is answerable. "A new session begins" does not
+  // tell an examiner that the three extra repeats they added an hour ago are about to go.
+  const drift=protocolDrift();
+  const warn = drift.length
+    ? `\n\nThe trial plan and the parameters return to this build's defaults. `
+      +`${drift.length} setting${drift.length===1?"":"s"} differ${drift.length===1?"s":""} `
+      +`and will be reset:\n\n`+drift.slice(0,14).join("\n")
+      +(drift.length>14?`\n…and ${drift.length-14} more`:"")
+    : "";
+  if(!confirm("Start a new participant?\n\nThe fields on this page are cleared and a new "
+    +"session begins. Trials already saved on this device are kept. The screen calibration "
+    +"is kept."+warn)) return;
   clearState();
-  if(!confirm("Start a new participant?\n\nThe fields on this page are cleared and a new session begins. Trials already saved on this device are kept.")) return;
   ["pid","grp","byear","notes","sessnote"].forEach(id=>{ if($(id)) $(id).value=""; });
   ["sex","bmonth"].forEach(id=>{ if($(id)) $(id).value=""; });
   if($("domhand")) $("domhand").value="right";
@@ -3718,12 +3729,61 @@ function newParticipant(){
   onParamExploreChange();
   SERIES=0;
   Object.keys(REPEATS).forEach(k=>delete REPEATS[k]);
+  resetProtocolToShipped();
+  applyCal(); renderAudioTable(); renderNextUpParams();
   QUEUE=[]; QPOS=0; LAST=null; INSTRUCTED.clear();
   SESSION_KEY=nextSessionNumber();
   $("visitno").value=1; $("sessnum").value=1;
   updateAgeNote(); renderStatus(); renderPlan(); renderQueue();
   goPage(2);
   setTimeout(()=>{ const el=$("pid"); if(el) el.focus(); },60);
+}
+// EVERY SETTING THAT IS ABOUT THE PROTOCOL RATHER THAN THE DEVICE. Geometry, zone sizes,
+// tone frequencies, the template style, the idle cut. Deliberately NOT ppmm or cardok: those
+// measure this iPad's glass and are true for every participant on it, so a new participant
+// must not silently discard a calibration.
+const PROTOCOL_FIELDS=["instr","tmpl","implement","pitch_pen","turns_pen","pitch_finger",
+  "turns_finger","startdia","endang","split","tapdia","zonegap","longtrial",
+  "fstd","ftgt","lvl","seedmode","idle"];
+let FIELD_SHIPPED={};
+function snapshotShippedFields(){
+  PROTOCOL_FIELDS.forEach(id=>{ const el=$(id); if(el) FIELD_SHIPPED[id]=el.value; });
+}
+// What is about to be thrown away, named before it goes. A reset that silently discards a
+// deliberate change is the same trap as a saved session silently keeping one.
+function protocolDrift(){
+  const out=[];
+  PROTOCOL_FIELDS.forEach(id=>{ const el=$(id);
+    if(el && FIELD_SHIPPED[id]!==undefined && el.value!==FIELD_SHIPPED[id])
+      out.push(`${id}: ${el.value} (build ships ${FIELD_SHIPPED[id]})`); });
+  if(AUDIO_SHIPPED) streamGroups().forEach(g=>{
+    const d=AUDIO_SHIPPED[g.first]; if(!d) return;
+    ["floorMs","meanMs","ptg","tone"].forEach(f=>{ if(g.a[f]!==d[f])
+      out.push(`${(STREAM_ROW_LABEL[g.key]||[g.key])[0]} ${f}: ${g.a[f]} (build ships ${d[f]})`); });
+  });
+  const plan=defaultPlan();
+  Object.keys(plan).forEach(k=>{
+    if(!PLAN||!PLAN[k]) return;
+    ["include","repeats","lengthS","hands","oneHand","sustainedS"].forEach(f=>{
+      if(PLAN[k][f]!==plan[k][f] && !(PLAN[k][f]==null && plan[k][f]==null))
+        out.push(`${k} ${f}: ${PLAN[k][f]} (build ships ${plan[k][f]})`); });
+  });
+  return out;
+}
+// THE PROTOCOL IS THE BUILD'S, NOT THE LAST PARTICIPANT'S. Repeats, trial lengths, which
+// tasks are included, the geometry and the tone parameters all survived into the next
+// participant, so an edit made to try something once became the protocol for everybody
+// after -- silently, because the plan table shows a number without saying whether it is the
+// one this build ships. A protocol change belongs in a build, which is what the version
+// stamp and the tag exist for; a change made in the app is for this participant.
+function resetProtocolToShipped(){
+  PROTOCOL_FIELDS.forEach(id=>{ const el=$(id);
+    if(el && FIELD_SHIPPED[id]!==undefined) el.value=FIELD_SHIPPED[id]; });
+  if(AUDIO_SHIPPED) Object.keys(AUDIO_SHIPPED).forEach(k=>{
+    if(AUDIO_DEFAULTS[k]) Object.assign(AUDIO_DEFAULTS[k],
+      JSON.parse(JSON.stringify(AUDIO_SHIPPED[k]))); });
+  RESTORED_EDITS=[]; ORPHANED_AUDIO=null;
+  PLAN=defaultPlan();
 }
 function nextIds(pid,task,H){
   const k=`${pid}|${task}|${H}`; REPEATS[k]=(REPEATS[k]||0)+1; SERIES+=1;
@@ -7622,6 +7682,11 @@ onLanguageChange();
 renderPlan(); renderAudioTable(); renderSaved(); renderScreens(); renderStatus();
 renderSecureNote(); onVoiceConsentChange(); renderAudioStore();
 renderZoomBanner();
+
+// THE BUILD'S OWN PROTOCOL VALUES, captured before restoreState() overlays a saved session
+// on top -- the same reason AUDIO_SHIPPED is taken where it is. Without it there is no way
+// to put a setting back to what this build ships, because by then nothing remembers.
+snapshotShippedFields();
 
 // Nothing below start-up should be able to leave a blank page.
 // restoreState() reads first, THEN saving is armed. Both branches arm it: a session that
