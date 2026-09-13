@@ -824,7 +824,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.26 2026-09-13";
+const BUILD = "v12.27 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1826,6 +1826,25 @@ const PR={ pass:1, angle:null, lastPt:null, drawing:false, view:null, strokes:[]
 // pointerdown-only counter reports "no pencil at all", which is the same answer it gives for
 // a pencil that is flat. Those are opposite problems. Every pointer event type is counted,
 // and the pen's event types are named, so "hover but never down" is visible as itself.
+// WHAT THIS DEVICE HAS EVER PRODUCED, across sessions.
+//
+// A working, paired Apple Pencil reports pointerType "pen" and touchType "stylus" on iPadOS
+// Safari. There is no setting in which it reports as an ordinary finger. So a device that
+// has never once produced a pen event is not a device with a pad problem -- it is a device
+// on which the stylus is not reaching the browser as a stylus at all, and every pen
+// condition in the battery is affected, not just the practice pad.
+//
+// Kept in localStorage rather than in the session, because it is a fact about the hardware
+// and survives a new participant. One flag per type, written once.
+const SEEN_TYPES_KEY="motiq_seen_pointer_types";
+let SEEN_TYPES = (()=>{ try{ return JSON.parse(localStorage.getItem(SEEN_TYPES_KEY))||{}; }
+                        catch(e){ return {}; } })();
+function noteSeenType(k){
+  if(!k || SEEN_TYPES[k]) return;
+  SEEN_TYPES[k]=1;
+  try{ localStorage.setItem(SEEN_TYPES_KEY, JSON.stringify(SEEN_TYPES)); }catch(e){}
+}
+const deviceEverSawPen = () => !!SEEN_TYPES.pen;
 const PRLOG={ canvas:{}, page:{}, penEvents:{}, touchTypes:{}, raw:[], captured:null,
               cancels:0, rejected:0, lastRejected:null };
 function prCount(bucket,k){ bucket[k]=(bucket[k]||0)+1; }
@@ -1899,7 +1918,17 @@ function renderPrLog(){
   const wantPen=($("pcimpl")?$("pcimpl").value:"pen")==="pen";
   let verdict="";
   const penTypes=Object.keys(PRLOG.penEvents);
-  if(wantPen && penTypes.length && !PRLOG.penEvents.pointerdown)
+  const touchOnly = wantPen && !penTypes.length && !deviceEverSawPen()
+                    && (PRLOG.page.touch||0)>0;
+  if(touchOnly)
+    verdict=`<div class="bad" style="margin:6px 0 0"><b>This device has never reported a
+      stylus to the browser.</b> Every contact, in this session and in every earlier one on
+      this device, arrived as an ordinary touch. On iPadOS a paired Apple Pencil always
+      arrives as a pen and a capacitive stylus always arrives as a touch, so this is a
+      hardware or pairing question, not a pad one — and it affects every pen condition in the
+      battery. The pad is accepting the contact anyway so the practice can go ahead, but the
+      reading will not claim a stylus drew it.</div>`;
+  else if(wantPen && penTypes.length && !PRLOG.penEvents.pointerdown)
     verdict=`<div class="bad" style="margin:6px 0 0"><b>The stylus is seen, but its contact
       never registers.</b> It delivered ${esc(penTypes.join(", "))} and no
       <code>pointerdown</code> — iPadOS is taking the contact as a system gesture rather than
@@ -2006,6 +2035,11 @@ function practiceReset(){
       PENCHECK[hand]={ samples:pts.length, rate:+rate.toFixed(1),
         pressure_min:+pmin.toFixed(3), pressure_max:+pmax.toFixed(3),
         pressure_varied:varied, pointer_types:kinds, implement:impl,
+        // WHETHER THE DEVICE CONFIRMED THE IMPLEMENT, rather than the examiner's selection
+        // being taken as fact. False means the contact arrived as an ordinary touch on a pad
+        // set to Stylus, which on a device that cannot report a stylus is the only reading
+        // obtainable -- it is kept, and it does not claim to be a stylus reading.
+        implement_verified: impl!=="pen" || kinds.includes("pen") || kinds.includes("mouse"),
         task:"spiral_practice", template_style:$("tmpl")?$("tmpl").value:null,
         turns:PRACTICE_TURNS, direction:(hand==="left"?"ccw":"cw"),
         radius_mm: PR.view ? +(PR.view.R/ppmm).toFixed(1) : null,
@@ -2029,10 +2063,16 @@ function practiceReset(){
       // it is how the app is reviewed on a desktop, and flagging it would cry wolf on every
       // review pass.
       (impl==="pen" && !kinds.includes("pen") && !kinds.includes("mouse")
-        ? `<div class="bad"><b>Recorded as a stylus, drawn with a finger</b> — every sample
-           arrived as "${esc(kinds)}". Either the pencil is not reaching the pad, or this
-           spiral was drawn by hand. Set Implement to Index finger, or draw it again with the
-           pencil.</div>` : "");
+        ? `<div class="bad"><b>Not verified as a stylus.</b> Every sample arrived as
+           "${esc(kinds)}", so the drawing is kept but is not recorded as a stylus reading.
+           ${deviceEverSawPen()
+             ? `This device does report a stylus, so this spiral was drawn by hand — draw it
+                again with the pencil, or set Implement to Index finger.`
+             : `<b>This device has never reported a stylus to the browser at all</b>, so this
+                is not something drawing it again will change: on iPadOS a paired Apple Pencil
+                always arrives as a pen, and a capacitive stylus is electrically a finger and
+                always arrives as a touch. Every pen condition in the battery is affected, not
+                only this pad.`}</div>` : "");
   };
   const advance=()=>{
     recordPenCheck();
@@ -2074,8 +2114,16 @@ function practiceReset(){
   // pad, which exists to rehearse the trial, accepted anything that touched it. So a pad set
   // to Stylus drew happily under a palm, a knuckle or a sleeve anywhere in the rectangle, and
   // recorded the result as a stylus reading. Mouse passes as either, for desktop review.
+  // FAILS OPEN, DELIBERATELY, IN EXACTLY ONE CASE. Refusing a finger on a stylus pad is
+  // right where the device can tell the two apart. Where it cannot -- where it has never once
+  // reported a pen -- refusing leaves a dead pad and an examiner with nothing to do, and the
+  // reason is not the examiner's to fix. So the contact is accepted and the reading is
+  // marked unverified instead, which is the honest record: what was drawn is kept, and the
+  // claim that a stylus drew it is not made.
   const implOK=k=>{ const want=$("pcimpl")?$("pcimpl").value:"pen";
-    return k==="mouse" || (want==="pen" ? k==="pen" : k==="touch"); };
+    if(k==="mouse") return true;
+    if(want!=="pen") return k==="touch";
+    return k==="pen" || (k==="touch" && !deviceEverSawPen()); };
   const down=e=>{ if(!PR.view) practiceRender();
     if(!implOK(e.pointerType)){
       PRLOG.rejected++; PRLOG.lastRejected=e.pointerType; renderPrLog(); return;
@@ -2121,6 +2169,7 @@ function practiceReset(){
     return e.clientX>=r.left && e.clientX<=r.right && e.clientY>=r.top && e.clientY<=r.bottom; };
   document.addEventListener("pointerdown", e=>{
     const pg=$("pg7"); if(pg && pg.classList.contains("hidden")) return;
+    noteSeenType(e.pointerType);
     prCount(PRLOG.page, e.pointerType);
     // DISARMS THE TOUCH FALLBACK. A real pen pointerdown proves pointer events work on this
     // device, and leaving the fallback armed after that point feeds every stroke in twice --
@@ -5386,8 +5435,23 @@ function runTrial(seq,c){
   const drawTask = !!(c.spiral || c.pent);      // anything the pen actually draws on
   const down=e=>{
     const t=performance.now()-perf0; RUN.lastContact=performance.now();
+    noteSeenType(e.pointerType);
     if(!drawTask) return;
-    if(!drawOK(e.pointerType)) return;
+    if(!drawOK(e.pointerType)){
+      // A REFUSED CONTACT USED TO BE SILENT, which is correct for a palm and wrong for the
+      // only implement the participant has. On a device that has never reported a stylus, a
+      // pen condition cannot record at all, and the symptom is a canvas that ignores the pen
+      // -- indistinguishable, from the far side of the glass, from an app that is broken.
+      if(TRIAL.implement==="pen" && e.pointerType==="touch" && !deviceEverSawPen()
+         && !RUN.styluslessWarned){
+        RUN.styluslessWarned=true;
+        $("reminder").innerHTML=`<span style="color:#8c2020"><b>This device is reporting the
+          stylus as a finger.</b> A paired Apple Pencil always arrives as a pen on iPadOS, so
+          the pen conditions cannot record here. Stop and check the Pencil, or run the finger
+          conditions instead.</span>`;
+      }
+      return;
+    }
     if(e.clientX<L.dx0-4) return;
     if(e.clientY<L.uy0+L.topPad) return;
     // THE WINDOW OPENS HERE on a spiral condition: first pen-down inside the start zone.
