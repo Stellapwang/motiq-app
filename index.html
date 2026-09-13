@@ -921,7 +921,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.33 2026-09-13";
+const BUILD = "v12.34 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -3163,8 +3163,10 @@ function renderPlan(){
             ${s2.hands==="one"?`<select style="margin-top:4px" ${blocked?"disabled":""} onchange="planSet('${c.id}','oneHand',this.value)">
               <option value="dominant" ${s2.oneHand==="dominant"?"selected":""}>${c.spiral?"Dominant hand draws":"Dominant"}</option>
               <option value="nondominant" ${s2.oneHand==="nondominant"?"selected":""}>${c.spiral?"Non-dominant hand draws":"Non-dominant"}</option></select>`:""}</td>
-        <td>${lengthCell(c,s2,blocked)}${(c.spiral && !(s2.sustainedS>0))
-              ? sustainedCell(c,s2,blocked) : ""}</td>
+        <!-- The window control used to be appended HERE when it was off, because lengthCell
+             dropped it in that state. lengthCell owns it in both states now, and leaving this
+             behind printed it twice on every switched-off spiral. -->
+        <td>${lengthCell(c,s2,blocked)}</td>
         <td class="note" style="padding-top:10px">${c.dataHeld?`<div style="color:#8c2020;font-weight:600;margin-bottom:3px">DATA HELD — ${esc(HELD_SHORT[c.dataHeld]||c.dataHeld)}</div>`:""}${[c.spiral?"drawing":null,c.tap?"tapping":null,
             c.audio?"<b>tones</b>":null, c.count?"count aloud":null,
             c.verbal?"spoken task":null, c.voice?"<b>voice</b>":null].filter(Boolean).join(" · ")}</td>
@@ -3247,21 +3249,35 @@ function sustainedCell(c,s,blocked){
   const on=s.sustainedS>0;
   // Says what the participant does, not what the mechanism is called. "Fixed window" is a
   // term from the engine and means nothing to someone reading the plan table.
-  return `<div class="note" style="margin:${on?0:6}px 0 0${on?"":";padding-top:5px;border-top:1px dashed var(--line)"}">
+  // Both readings of the blank are stated, because the field is the only place either
+  // option lives. Blank is not "unset": it is the single-spiral condition, chosen.
+  return `<div class="note" style="margin:0 0 ${on?0:6}px">
       <label style="display:flex;align-items:center;gap:5px;margin:0;flex-wrap:wrap">Draws for
       <input type="number" min="0" max="300" step="5" style="width:64px"
         value="${on?s.sustainedS:""}" placeholder="off" ${dis}
         onchange="planSet('${c.id}','sustainedS', +this.value>0 ? +this.value : null)"> s
-      <span>${on?"— new spiral each time one is finished":"— off, one spiral only"}</span></label>
+      <span>${on ? "— a new spiral each time one is finished"
+                 : "— blank: one spiral only, ending at END"}</span></label>
     </div>`;
 }
+// A SPIRAL CONDITION ALWAYS SHOWS THE WINDOW CONTROL, on or off.
+//
+// It used to be drawn only while the window was ON, which made turning it off a ONE-WAY
+// DOOR: clear the seconds, and at the next render the cell fell through to the plain
+// "self-paced" label with no control anywhere to switch it back. The two options were both
+// real and only one of them was reachable twice.
+//
+// While the window is on it is also the whole length, so nothing else is shown -- that part
+// was right: a self-paced/fixed dropdown beside a window is two controls for one quantity
+// with one of them inert. Off, the underlying length control comes back, because then it is
+// the thing that decides.
 function lengthCell(c,s,blocked){
+  if(c.spiral) return sustainedCell(c,s,blocked)
+    + (s.sustainedS>0 ? "" : baseLengthCell(c,s,blocked));
+  return baseLengthCell(c,s,blocked);
+}
+function baseLengthCell(c,s,blocked){
   const dis=blocked?"disabled":"";
-  // A SUSTAINED SPIRAL HAS ONE LENGTH, and it is the window. The Length column used to show
-  // a self-paced/fixed dropdown as well, which is a leftover from before sustained windows
-  // existed: it offered a choice that no longer decides anything, next to a window that
-  // does. Two controls for one quantity, one of them inert.
-  if(c.spiral && s.sustainedS>0) return sustainedCell(c,s,blocked);
   // No explanation in this column. How a self-paced stream is generated and cut is stated
   // once on the Parameters page, next to the values it depends on.
   if(!c.selfPaceable){
