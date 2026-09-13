@@ -820,7 +820,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.20 2026-09-13";
+const BUILD = "v12.21 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1340,7 +1340,7 @@ function drawingRules(tool, mode){
 // another one.
 const KEEP_GOING_LINE =
   "**When you finish one spiral a new one appears — start again from the middle and keep "+
-  "going until you see STOP.**";
+  "going until you see END.**";
 function instructionFor(taskId, opts){
   const c=byId(taskId); if(!c) return null;
   const mode = (opts&&opts.mode) || ($("instr")?$("instr").value:"trace");
@@ -1877,8 +1877,8 @@ function practiceReset(){
         duration_s:+dur.toFixed(2), checked_iso:new Date().toISOString() };
     }
     if(res) res.innerHTML=`<div class="${rate<55?"warn":"good"}">
-      <b>That is the whole idea</b> — the spiral cleared and a new one appeared. In the real
-      task this keeps going until the time is up.<br>
+      <b>The spiral cleared and a new one appeared.</b> In the real task this keeps going
+      until the time is up.<br>
       <b>${hand} hand</b>: ${pts.length} samples over ${dur.toFixed(2)} s, about
       <b>${rate.toFixed(0)} Hz</b>. Pointer: ${kinds}.
       Pressure ${varied?`varied ${pmin.toFixed(2)}–${pmax.toFixed(2)}`:`did not vary (${pmax.toFixed(2)})`}.
@@ -2761,7 +2761,10 @@ function adhocCell(c,s2,blocked){
   // the physical side is what the trial actually turns on: drawScene() winds the spiral
   // clockwise for a right hand and counter-clockwise for a left.
   const side = h => physHand(h)==="left" ? "left hand" : "right hand";
-  const label = s2.hands==="both" ? "both hands"
+  // A voice-only task has no hand to choose. It was still drawing the selector, which
+  // offered a choice the trial does not use and the Hands column has already answered.
+  const label = s2.hands==="none" ? "no hand"
+              : s2.hands==="both" ? "both hands"
               : s2.hands==="one"  ? side(s2.oneHand==="nondominant"?"nondominant":"dominant")
               : null;
   return `<button class="ghost sm" onclick="runAdhoc('${c.id}')">Run now</button>` +
@@ -2787,12 +2790,11 @@ function sustainedCell(c,s,blocked){
   // Says what the participant does, not what the mechanism is called. "Fixed window" is a
   // term from the engine and means nothing to someone reading the plan table.
   return `<div class="note" style="margin:${on?0:6}px 0 0${on?"":";padding-top:5px;border-top:1px dashed var(--line)"}">
-      <label style="display:flex;align-items:center;gap:5px;margin:0">Keeps drawing for
+      <label style="display:flex;align-items:center;gap:5px;margin:0;flex-wrap:wrap">Draws for
       <input type="number" min="0" max="300" step="5" style="width:64px"
         value="${on?s.sustainedS:""}" placeholder="off" ${dis}
-        onchange="planSet('${c.id}','sustainedS', +this.value>0 ? +this.value : null)"> s</label>
-      ${on?`<span>A new spiral appears each time one is finished, until the time is up.</span>`
-          :`<span>Off — one spiral, ends when you press END.</span>`}
+        onchange="planSet('${c.id}','sustainedS', +this.value>0 ? +this.value : null)"> s
+      <span>${on?"— new spiral each time one is finished":"— off, one spiral only"}</span></label>
     </div>`;
 }
 function lengthCell(c,s,blocked){
@@ -3090,7 +3092,15 @@ function setParam(id,val){
   el.dispatchEvent(new Event("change",{bubbles:true}));
   renderNextUpParams();
 }
-function setAudioParam(task,field,val){ audioSet(task,field,val); renderNextUpParams(); }
+// Applies to the whole stream row, not to this task alone. Editing one member here and
+// leaving its partner behind is the drift the Parameters page was just rebuilt to prevent,
+// and it would do it from a panel that does not show the partner at all.
+function setAudioParam(task,field,val){
+  const a=AUDIO_DEFAULTS[task];
+  const key = !a ? null : a.stream==="oddball" ? "oddball" : "every:"+a.respond;
+  if(key) streamSet(key,field,val); else audioSet(task,field,val);
+  renderNextUpParams();
+}
 // D8. Collapsed by default. What must be visible without opening anything is which task
 // is next, which hand, what the participant does and how long it should take -- the
 // parameters are for when you deliberately go looking for them.
@@ -3131,13 +3141,18 @@ function renderNextUpParams(){
   if(c.tap) groups.push(`<div style="margin-top:10px"><b>Tapping</b>
     <div class="r4">${pNum("tapdia","Zone size (mm)",5,20,90)}
       ${c.zones===2?pNum("zonegap","Bimanual spacing (mm)",5,60,200):""}</div></div>`);
-  if(c.audio && AUDIO_DEFAULTS[c.id]) groups.push(`<div style="margin-top:10px"><b>Auditory stream — ${c.id}</b>
-    <div class="note" style="margin:2px 0 6px">Usable window
+  const agrp = c.audio && AUDIO_DEFAULTS[c.id]
+    ? (AUDIO_DEFAULTS[c.id].stream==="oddball" ? "oddball" : "every:"+AUDIO_DEFAULTS[c.id].respond)
+    : null;
+  if(agrp) groups.push(`<div style="margin-top:10px"><b>Auditory stream — ${(STREAM_ROW_LABEL[agrp]||[agrp])[0]}</b>
+    <div class="note" style="margin:2px 0 6px">Shared by
+      ${streamGroups().filter(g=>g.key===agrp).flatMap(g=>g.tasks).join(", ")}. A change here
+      applies to all of them.<br>Usable window
       <b>${Math.round(bindingLimitMs(c.id,AUDIO_DEFAULTS[c.id]))} ms</b> — the longest response
       that can still be attributed to the right tone. It follows from the floor.</div>
     <div class="r4">${pAudio(c.id,"floorMs","Floor (ms)",50,150,4000)}${pAudio(c.id,"meanMs","Mean interval (ms)",50,200,6000)}
       ${pAudio(c.id,"ptg","Target prob.",0.01,0,0.5)}${pAudio(c.id,"tone","Tone (ms)",10,30,200)}</div>
-    <div class="r4">${pAudio(c.id,"lead","Lead-in (ms)",100,0,3000)}${pNum("fstd","Standard (Hz)",50)}
+    <div class="r4">${pNum("fstd","Standard (Hz)",50)}
       ${pNum("ftgt","Target (Hz)",50)}${pNum("lvl","Tone level (0–1)",0.05,0.05,1)}</div></div>`);
   if(!groups.length){ host.innerHTML=`<div class="note">This task uses no adjustable
     parameters.</div>`; return; }
@@ -3268,19 +3283,63 @@ function nextIds(pid,task,H){
 function bindingLimitMs(taskId,a){
   return (a.ptg>0 ? 2 : 1) * a.floorMs;
 }
-function renderAudioTable(){
-  let h=`<tr><th>Task</th><th>Floor (ms)</th><th>Mean interval (ms)</th>
-         <th>Target prob.</th><th>Tone (ms)</th><th>Lead-in (ms)</th>
-         <th class="num">Tones</th><th style="color:var(--ink)">Usable window</th></tr>`;
+// ONE ROW PER STREAM, NOT PER TASK.
+//
+// Seven task rows invited seven different answers to a question that only has three, and
+// every pair of numbers that could differ eventually did -- which is how a baseline and its
+// dual-task partner ended up on different streams. What genuinely differs is the stream and
+// the response channel, because the floor is a property of the response:
+//
+//   every / tap     a tap finishes in a few hundred ms, so tones can come about every second
+//   every / voice   a spoken number takes about 800 ms, so they cannot
+//   oddball         standards are not answered at all, so their spacing is not a response
+//                   time; the response constraint lands on target-to-target spacing instead,
+//                   and is enforced where the targets are placed
+//
+// Editing a row moves every task in it together. Duration is not here -- it belongs to the
+// trial and is set in the Length column of the plan table.
+function streamGroups(){
+  const g=new Map();
   Object.entries(AUDIO_DEFAULTS).forEach(([k,a])=>{
-    const limit=bindingLimitMs(k,a);
-    h+=`<tr><td><b>${k}</b><br><span class="note" style="margin:0">${a.label}</span></td>
-      <td><input type="number" value="${a.floorMs}" min="150" max="4000" step="50" onchange="audioSet('${k}','floorMs',+this.value)"></td>
-      <td><input type="number" value="${a.meanMs}" min="200" max="6000" step="50" onchange="audioSet('${k}','meanMs',+this.value)"></td>
-      <td><input type="number" value="${a.ptg}" min="0" max="0.5" step="0.01" onchange="audioSet('${k}','ptg',+this.value)"></td>
-      <td><input type="number" value="${a.tone}" min="30" max="200" step="10" onchange="audioSet('${k}','tone',+this.value)"></td>
-      <td><input type="number" value="${a.lead}" min="0" max="3000" step="100" onchange="audioSet('${k}','lead',+this.value)"></td>
-      <td class="num">${Math.max(0,Math.floor((a.selfPacedDurS??a.durS)*1000/a.meanMs))}</td>
+    const key = a.stream==="oddball" ? "oddball" : "every:"+a.respond;
+    if(!g.has(key)) g.set(key,{ key, first:k, a, tasks:[] });
+    g.get(key).tasks.push(k);
+  });
+  return [...g.values()];
+}
+// Writes to every task in the group. The whole reason for grouping is that these cannot be
+// set apart, so there is deliberately no way to set one member on its own from this page.
+function streamSet(key,f,v){
+  streamGroups().filter(g=>g.key===key).forEach(g=>g.tasks.forEach(t=>{ AUDIO_DEFAULTS[t][f]=v; }));
+  renderAudioTable(); planSummary(); renderNextUpParams(); saveState();
+}
+const STREAM_ROW_LABEL = {
+  "every:tap":   ["Every tone · tap",    "A tap to every tone."],
+  "every:voice": ["Every tone · spoken", "A spoken number to every tone."],
+  "oddball":     ["Oddball",             "A response only to the rare high tone. The low tones are not answered, so they are packed close: that is what makes the high one rare."]
+};
+function renderAudioTable(){
+  let h=`<tr><th>Stream</th><th>Used by</th><th>Floor (ms)</th><th>Mean interval (ms)</th>
+         <th>Target prob.</th><th>Tone (ms)</th>
+         <th class="num">Tones</th><th style="color:var(--ink)">Usable window</th></tr>`;
+  streamGroups().forEach(g=>{
+    const a=g.a, k=g.key, limit=bindingLimitMs(g.first,a);
+    const lab=STREAM_ROW_LABEL[k]||[k,""];
+    // Counted against the trial length, not against selfPacedDurS. That field is the leftover
+    // "assume a self-paced trial lasts 180 s" guess, and reading it here reported 180 tones for
+    // a task that runs a 60 s window -- a number matching nothing the participant ever hears.
+    const counts=[...new Set(g.tasks.map(t=>{ const x=AUDIO_DEFAULTS[t];
+      return Math.max(0,Math.floor(x.durS*1000/x.meanMs)); }))].sort((p,q)=>p-q);
+    const tones = counts.length>1 ? `${counts[0]}–${counts[counts.length-1]}` : counts[0];
+    const num=(f,min,max,step)=>`<input type="number" value="${a[f]}" min="${min}" max="${max}"
+      step="${step}" onchange="streamSet('${k}','${f}',+this.value)">`;
+    h+=`<tr><td><b>${lab[0]}</b><br><span class="note" style="margin:0">${lab[1]}</span></td>
+      <td><span class="note" style="margin:0">${g.tasks.join("<br>")}</span></td>
+      <td>${num("floorMs",150,4000,50)}</td>
+      <td>${num("meanMs",200,6000,50)}</td>
+      <td>${a.ptg>0?num("ptg",0,0.5,0.01):`<span class="note" style="margin:0">—</span>`}</td>
+      <td>${num("tone",30,200,10)}</td>
+      <td class="num">${tones}</td>
       <td class="num"><b style="font-size:15px">${Math.round(limit)} ms</b></td></tr>`;
   });
   $("audioTable").innerHTML=h;
@@ -3291,14 +3350,13 @@ function renderAudioTable(){
   // an administrator running a session.
   let notes=`<div class="note">
     <b>Tones</b> is how many tones the whole stream contains — <i>every</i> tone, not only the
-    high ones. On an oddball, the number of HIGH tones is roughly Tones × Target prob., and it
-    is deliberately not a fixed number: it is jittered per trial so a participant cannot learn
-    the answer. It scales with the trial length, so changing a task's length changes it.<br>
-    <b>Intervals are not evenly spaced and not Gaussian.</b> Each gap is a fixed <b>floor</b>
-    plus a random draw from an exponential with the given <b>mean</b>. An exponential above a
-    floor has a flat hazard: having waited a while tells the participant nothing about when the
-    next tone is due, so they cannot anticipate it. Even spacing or symmetric jitter both let
-    them.<br>
+    high ones. On an oddball the number of HIGH tones is roughly Tones × Target prob., jittered
+    per trial so the answer cannot be learned. A range means the tasks in that row run for
+    different lengths.<br>
+    <b>Length and lead-in are not set here.</b> Length belongs to the trial and is in the plan
+    table; the lead-in is 1 s where there is drawing to get going first and 0.5 s otherwise.<br>
+    <b>Intervals are not evenly spaced.</b> Each gap is a fixed <b>floor</b> plus a random
+    draw with the given <b>mean</b>, so the next tone cannot be anticipated.<br>
     <b>Usable window</b> is the longest response still attributable to one tone. It follows
     from the floor and is not set directly.</div>`;
 
@@ -3307,32 +3365,38 @@ function renderAudioTable(){
   // parameter changed in a new build does not appear until the session is cleared, and the
   // only symptom is that the number looks unchanged. Saying so is the difference between a
   // setting and a trap.
+  // REPORTED PER ROW, not per task per field. The same three edits across seven tasks
+  // printed as twenty-two lines, which reads as twenty-two problems and buries what was
+  // actually changed. One line per stream row says the same thing.
+  const FIELD_LABEL={floorMs:"floor",meanMs:"mean",ptg:"target prob.",tone:"tone",lead:"lead-in",durS:"length"};
   const drifted=[];
-  if(AUDIO_SHIPPED) Object.entries(AUDIO_DEFAULTS).forEach(([k,a])=>{
-    const d=AUDIO_SHIPPED[k]; if(!d) return;
-    ["floorMs","meanMs","ptg","tone","lead","durS"].forEach(f=>{
-      if(a[f]!==d[f]) drifted.push(`${k} ${f}: ${a[f]} (this build ships ${d[f]})`);
-    });
+  if(AUDIO_SHIPPED) streamGroups().forEach(g=>{
+    const d=AUDIO_SHIPPED[g.first]; if(!d) return;
+    const bits=["floorMs","meanMs","ptg","tone"].filter(f=>g.a[f]!==d[f])
+      .map(f=>`${FIELD_LABEL[f]} ${g.a[f]} (ships ${d[f]})`);
+    if(bits.length) drifted.push(`<b>${(STREAM_ROW_LABEL[g.key]||[g.key])[0]}</b> — ${bits.join(", ")}`);
   });
-  if(drifted.length) notes+=`<div class="warn"><b>${drifted.length} value${drifted.length===1?" differs":"s differ"} from this build's defaults</b>
-    — edited here, or carried over from an earlier session on this device. Everything not listed
+  if(drifted.length) notes+=`<div class="warn"><b>Not this build's values.</b> These were
+    edited here, or carried over from a session saved on this device. Anything not listed
     already follows the build.<br>
-    ${drifted.map(esc).join("<br>")}
+    ${drifted.join("<br>")}
     <div style="margin-top:7px"><button class="ghost sm" onclick="resetAudioToShipped()">
       Use this build's values instead</button></div></div>`;
 
-  if(ORPHANED_AUDIO && ORPHANED_AUDIO.length) notes+=`<div class="note"
-      style="border-left:3px solid var(--warm);padding-left:10px">
-    <b>This build's values are in use.</b> The session saved on this device came from a build
-    that did not record which numbers had been chosen deliberately, so its values were set
-    aside rather than kept — otherwise anything changed since would have stayed frozen without
-    saying so. ${ORPHANED_AUDIO.length} differed:<br>
-    ${ORPHANED_AUDIO.slice(0,12).map(d=>esc(`${d.k} ${d.f}: was ${d.val}, now ${d.now}`)).join("<br>")}
-    ${ORPHANED_AUDIO.length>12?`<br>…and ${ORPHANED_AUDIO.length-12} more`:""}
+  if(ORPHANED_AUDIO && ORPHANED_AUDIO.length){
+    const fields=[...new Set(ORPHANED_AUDIO.map(d=>FIELD_LABEL[d.f]||d.f))];
+    notes+=`<div class="note" style="border-left:3px solid var(--warm);padding-left:10px">
+    <b>This build's values are in use.</b> The session saved on this device predates the
+    build recording which numbers an examiner had chosen, so its ${ORPHANED_AUDIO.length}
+    differing value${ORPHANED_AUDIO.length===1?"":"s"} (${esc(fields.join(", "))}) were set
+    aside rather than kept — otherwise every parameter changed since would still be frozen at
+    the old number. Put them back only if they were chosen on purpose.
     <div style="margin-top:7px"><button class="ghost sm" onclick="restoreOrphanedAudio()">
       Put the saved values back</button></div></div>`;
+  }
 
-  const slow=Object.entries(AUDIO_DEFAULTS).filter(([k,a])=>bindingLimitMs(k,a)<950).map(([k])=>k);
+  const slow=streamGroups().filter(g=>bindingLimitMs(g.first,g.a)<950)
+    .map(g=>(STREAM_ROW_LABEL[g.key]||[g.key])[0]);
   if(slow.length) notes+=`<div class="warn">Usable window under 900 ms on
     <b>${slow.join(", ")}</b>. Reported reaction time in Lewy body dementia sits near 900 ms
     before dual-task load, so these load attention but lose the slowest responses as a
@@ -3439,7 +3503,13 @@ const END_ZONE_PITCH_FRACTION=0.95;
 // -- miss it and you have to go back and hunt for it -- and aiming is not what is being
 // measured. A RADIUS BAND asks the same thing and cannot be missed: the pen simply has to be
 // out near the rim, which it unavoidably is if the spiral was actually traced.
-const ADVANCE_RADIUS_FRACTION=0.82;
+// Raised from 0.82 in v12.21. At 0.82 the pass advanced with the outer fifth of the spiral
+// still undrawn -- the template vanished under the pen partway round the last turn, which is
+// both a lost fifth of every pass and an unpleasant surprise. The angle test already asks for
+// 95% of the reachable sweep, so a band at 0.92 is the matching radius and neither test
+// fires far ahead of the other. The last few per cent stay unrequired: a participant who
+// stops a hair short should not be stranded, and the examiner's Next spiral covers it.
+const ADVANCE_RADIUS_FRACTION=0.92;
 // A second guard against a pass ending before one was drawn. Nobody traces six turns in four
 // seconds, so an advance sooner than this is evidence of a detector fault rather than of a
 // fast participant -- and the cost of being wrong is the participant's drawing.
@@ -4400,13 +4470,14 @@ function stopCaptionFor(c){
              : bits.slice(0,-1).join(", ")+" and "+bits[bits.length-1];
   return "you can stop "+list;
 }
-function showStopSign(){
+function showStopSign(sticky){
   const el=$("stopsign"); if(!el) return;
   const sub=$("stopsub");
   if(sub) sub.textContent=stopCaptionFor(RUN && RUN.c ? RUN.c : (TRIAL?byId(TRIAL.task):null));
   el.classList.add("on");
   if($("zones")) $("zones").classList.add("off");
-  clearTimeout(STOP_TIMER);
+  clearTimeout(STOP_TIMER); STOP_TIMER=null;
+  if(sticky) return;                       // cleared by hideStopSign, not by a timer
   STOP_TIMER=setTimeout(()=>{ el.classList.remove("on");
     if($("zones")) $("zones").classList.remove("off"); }, STOP_SIGN_MS);
 }
@@ -4745,7 +4816,13 @@ function showInstructionScreen(seq,c,returnToReady){
   const voiceNote = c.voice ? (TRIAL.voiceFailure
       ? `<p style="font-size:17px;color:#8c2020"><b>Not being recorded</b> — ${esc(TRIAL.voiceFailure.detail)}</p>`
       : `<p style="font-size:17px;color:var(--ok)">Voice recording is on for this trial.</p>`) : ``;
-  showOverlay(`<h3>${TRIAL.task} — ${c.label}</h3>` + instructionHTML(ins) + rulesNote + soundBtns + palmNote + voiceNote +
+  // THE PARTICIPANT READS THIS SCREEN. The heading used to be the task code and the
+  // catalogue label at 27 px, directly above the emphasised line -- which said the same
+  // thing twice, once in a code nobody outside the study can read. The code is an examiner
+  // reminder, so it is sized and coloured as one, and the instruction is the only thing on
+  // the screen written for the person holding the pen.
+  showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em;
+      margin:0 0 14px">${TRIAL.task} · ${esc(c.label)}</div>` + instructionHTML(ins) + rulesNote + soundBtns + palmNote + voiceNote +
     `<p style="font-size:16px;color:#5d6570;margin-top:10px">${ins.length}</p>`,
     [{label:"Ready", onClick:()=>{ hideOverlay(); LAST_TASK=TRIAL.task;
         readyTrial(returnToReady?returnToReady.seq:seq, c); }},
@@ -5180,10 +5257,15 @@ function runTrial(seq,c){
                       net_angle_rad:+RUN.netAngleTotal.toFixed(4),
                       net_angle_turns:+(RUN.netAngleTotal/(2*Math.PI)).toFixed(3) });
     stopAudio();
-    dimStage(()=>showStopSign());
-    $("reminder").innerHTML=`<span style="color:var(--warm)"><b>SAY "STOP" ALOUD.</b>
-      For this population a spoken stop is the most reliable signal, and it covers the
-      drawing and the counting at once.</span>`;
+    // STAYS UP until the examiner moves on. Everywhere else the sign is a 1.8 s
+    // acknowledgement next to a cue the participant already has -- the tones stopping, the
+    // examiner speaking. On a silent spiral there is no such cue: the only thing that
+    // happens at 60 s is that the ink stops counting, which looks like nothing happening.
+    // A sign that appears and clears while the participant is looking down at their own
+    // drawing is the same as no sign at all, which is what was reported.
+    dimStage(()=>showStopSign(true));
+    $("reminder").innerHTML=`<span style="color:var(--warm)"><b>Tell the participant to
+      stop.</b> A spoken stop covers the drawing and the counting at once.</span>`;
   };
   // Hung on RUN so the detector and the window end can be exercised directly. The animation
   // loop is the only caller in normal running, but a detector whose correctness depends on
@@ -5203,7 +5285,7 @@ function runTrial(seq,c){
   // Deliberately not a prompt or a text box: it has to be one press, because the examiner
   // presses it while attending to the participant.
   const ev=document.createElement("button"); ev.id="evbtn"; ev.className="ghost";
-  ev.textContent="Event"; ev.title="Timestamp an examiner intervention or an interruption";
+  ev.textContent="Log event"; ev.title="Timestamp a prompt to the participant, or an interruption in the room";
   ev.onclick=()=>markExaminerEvent(); $("ctrl").appendChild(ev);
   // EXCEPTION PATH, for one case: a participant who stops short and never reaches the end
   // zone. Deliberately not the normal way to advance -- an examiner pressing at every
@@ -5423,7 +5505,7 @@ function markExaminerEvent(){
   if(!RUN || RUN.ready || RUN.ended || !RUN.perf0) return;
   RUN.examinerEvents.push(+(performance.now()-RUN.perf0).toFixed(1));
   const b=$("evbtn");
-  if(b){ b.textContent="Event ("+RUN.examinerEvents.length+")";
+  if(b){ b.textContent="Logged ("+RUN.examinerEvents.length+")";
          b.classList.add("lit"); setTimeout(()=>b.classList.remove("lit"), FLASH_MS); }
 }
 
@@ -5687,9 +5769,9 @@ function renderResult(seq,c,pts,rate,att,tp){
   ${RUN.viewport&&RUN.viewport.resized_during_trial
     ? `<div class="bad"><b>Trial invalid: the window resized during the trial</b>
        (first at ${(RUN.viewport.resize_first_ms/1000).toFixed(1)} s${RUN.viewport.resize_count>1
-         ? `, ${RUN.viewport.resize_count} times in all`:""}). The drawing area was deliberately
-       left as it was, so every millimeter in this record is on one scale — but the participant
-       was working on an area that no longer matched the screen. The record is flagged
+         ? `, ${RUN.viewport.resize_count} times in all`:""}). The drawing area was left as it
+       was, so every millimeter in this record is on one scale, but the participant was
+       working on an area that no longer matched the screen. The record is flagged
        <code>geometry_valid: false</code>. Restore the window and repeat the trial.</div>`:""}
   ${RUN.route&&RUN.route.changed
     ? `<div class="bad"><b>The audio route changed during this trial</b>
@@ -5778,9 +5860,9 @@ function renderResult(seq,c,pts,rate,att,tp){
           <td class="num">${nResp?(100*hit/nResp).toFixed(0):"–"}%</td><td class="num">${fa}</td></tr>`; });
     $("rwin").innerHTML=h+`</table><p class="note">Attribution stays unambiguous up to
       <b>${Math.round(limit)} ms</b>${everyTone
-        ? ", which is the interval floor — every tone carries a response, so that is exactly the gap."
-        : ", twice the floor, since no two targets are adjacent."} This is exact, not a
-      worst case: intervals are drawn from a floor plus an exponential tail.</p>`;
+        ? ", the interval floor, since every tone carries a response."
+        : ", twice the floor, since no two targets are adjacent."} Exact, not a worst case:
+      no interval is shorter than the floor.</p>`;
     const Lg=att.targetLags;
     $("rq").innerHTML=Lg.length?`<h2>Response times to ${cls}</h2><table>
       <tr><th class="num">n</th><th class="num">min</th><th class="num">25th</th><th class="num">median</th>
