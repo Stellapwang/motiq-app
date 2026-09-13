@@ -939,7 +939,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.40 2026-09-13";
+const BUILD = "v12.41 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1458,8 +1458,8 @@ function drawingRules(tool, mode){
 // trial as far as they are concerned. It goes in its own emphasised line, not appended to
 // another one.
 const KEEP_GOING_LINE =
-  "**When you finish one spiral a new one appears. Start again from the middle and keep "+
-  "going until you see END.**";
+  "**When you reach the end, lift the pen and a new spiral appears. Start again from the "+
+  "middle, and keep going until you see END.**";
 function instructionFor(taskId, opts){
   const c=byId(taskId); if(!c) return null;
   const mode = (opts&&opts.mode) || ($("instr")?$("instr").value:"trace");
@@ -2259,7 +2259,9 @@ function practiceReset(){
   // THE SAME ARRIVAL RULE AS THE TRIAL, including the guard that nobody traces three turns
   // in four seconds. The practice exists to rehearse the trial; a practice that advances on
   // rules of its own rehearses something else, and this one had neither the minimum-duration
-  // guard nor the lift and overshoot paths.
+  // guard. The trial's rule is now one line -- sweep complete, then the pen comes off -- and
+  // the practice runs the same one, because a practice that advances on different rules
+  // rehearses a task the participant is not about to do.
   const check=()=>{
     if(!PR.view) return;
     const need=angleNeededRad(PRACTICE_TURNS, PR.view.R, PR.angle ? PR.angle.minR : 0);
@@ -2268,11 +2270,7 @@ function practiceReset(){
     if(PR.armed!==wasArmed) practiceRender();
     if(PR.passStartedAt && performance.now()-PR.passStartedAt < MIN_PASS_MS) return;
     if(!PR.armed) return;
-    if(PR.penUpAt!=null && performance.now()-PR.penUpAt >= LIFT_ADVANCE_MS){ advance(); return; }
-    if(!PR.lastPt) return;
-    const dx=PR.lastPt.x-PR.view.cx, dy=PR.view.cy-PR.lastPt.y;
-    const r=Math.hypot(dx,dy);
-    if(r >= ADVANCE_RADIUS_FRACTION*PR.view.R) advance();
+    if(PR.penUpAt!=null && performance.now()-PR.penUpAt >= LIFT_ADVANCE_MS) advance();
   };
   // THE PAD TOOK A FINGER AND IGNORED THE PENCIL, and nothing in this file was rejecting it:
   // neither handler looks at pointerType. The events were never arriving intact.
@@ -4134,6 +4132,8 @@ const END_ZONE_PITCH_FRACTION=0.95;
 // 95% of the reachable sweep, so a band at 0.92 is the matching radius and neither test
 // fires far ahead of the other. The last few per cent stay unrequired: a participant who
 // stops a hair short should not be stranded, and the examiner's Next spiral covers it.
+// RETIRED in v12.41 with the radius band it defined. Left named rather than deleted so a
+// reader of an older record's advance_rule can find what radius_fraction meant.
 const ADVANCE_RADIUS_FRACTION=0.92;
 // How far off centre a single tap zone sits, as a fraction of the usable width. Far enough
 // to read as "this side", not so far that it is a reach.
@@ -4151,11 +4151,30 @@ const MIN_PASS_MS=4000;
 //
 // The ANGLE test stays the gate in every case: nothing advances that has not actually been
 // drawn. What changes is what counts as having arrived, once it has.
-const LIFT_ADVANCE_MS=1200;          // pen up this long, with the sweep complete, is "done"
-const OVERSHOOT_FRACTION=1.08;       // past the template's own rim is arrival, not approach
+// A PASS ENDS WHEN THE PEN IS LIFTED, and that is the whole rule.
+//
+// It used to end on a radius band: sweep complete, pen out past 0.92 of the outer radius,
+// held 200 ms. Two independent proxies for one quantity -- how far along the spiral somebody
+// is -- and they disagree in both directions. A spiral drawn LARGER than its template
+// reaches the band with a turn still to draw, so the template vanishes mid-stroke; one drawn
+// SMALLER never reaches it at all. Neither failure is visible from the far side of the
+// glass: the drawing disappears at a moment with nothing to do with finishing it, which is
+// exactly the report.
+//
+// A lift cannot disagree with anything. The participant is told to draw one continuous line,
+// so taking the pen off the glass is already what they do when they have finished, and it is
+// their decision rather than a geometric inference about it. Above all: THE TEMPLATE NEVER
+// CHANGES WHILE THE PEN IS ON IT. Every complaint about this task has been some form of the
+// drawing vanishing under the hand, and this ends the category rather than narrowing it.
+//
+// The angle gate stays in front of it, so a lift part-way through does not end the pass --
+// the sweep has to be complete first. Two backstops remain for the pen that never lifts: a
+// runaway well clear of the template, and the examiner's button.
+const LIFT_ADVANCE_MS=800;           // pen up this long, with the sweep complete, is "done"
 const endZoneDiaMM = pitch => END_ZONE_PITCH_FRACTION*pitch;
 // How long the pen must stay in the zone. Short enough not to feel like a wait, long enough
 // that a pen sweeping through the zone on its way elsewhere does not trigger it.
+// Retired with the band; see ADVANCE_RADIUS_FRACTION.
 const END_ZONE_DWELL_MS=200;
 // Fraction of the template's total sweep that counts as complete. Not 100%: the last few
 // degrees are inside the end zone anyway, and demanding all of them would strand a
@@ -5040,14 +5059,10 @@ function drawScene(){
       g.fillStyle = armed ? "#F6C79E" : "#FBE6D8";
       g.strokeStyle="#b4531f"; g.lineWidth = armed ? 2.4 : 1.2;
       g.beginPath(); g.arc(ec.x,ec.y,mm2px(ez/2),0,7); g.fill(); g.stroke();
-      if(armed){
-        // The band that will actually advance it, drawn faintly so the target is the rim
-        // rather than the dot -- which is what the detector now asks for.
-        g.save();
-        g.strokeStyle="rgba(180,83,31,.30)"; g.lineWidth=1.2; g.setLineDash([4,5]);
-        g.beginPath(); g.arc(c0.x,c0.y,mm2px(ADVANCE_RADIUS_FRACTION*radius),0,7); g.stroke();
-        g.restore();
-      }
+      // The dotted ring that used to appear here was that radius band, drawn so it could be
+      // aimed at. There is no band now, so there is nothing to aim at -- and a dotted curve
+      // materialising across the drawing moments before it vanished was, reasonably, read as
+      // part of the fault rather than as a target.
     }
     g.strokeStyle="#b4531f"; g.lineWidth=2; g.fillStyle="#fff";
     g.beginPath(); g.arc(ec.x,ec.y,mm2px(3),0,7); g.fill(); g.stroke();
@@ -5741,6 +5756,9 @@ function runTrial(seq,c){
         // Whether the CURRENT pass has begun. False between the end of one spiral and the
         // pen's return to the middle; see beginPass.
         passStarted:false, passStartedMs:null,
+        // Strokes recorded but not drawn: the pen's journey back from one spiral's rim to
+        // the next one's centre. Created up front so nothing has to guard for its absence.
+        carryStrokes:new Set(),
         lastContact:null,saved:false,c,voice:null,voicePending:null,fluencyCueMs:null,
         responseLocked, penAnchored, anchored, sustained, sustainedMs,
         windowStart, noResponseCeiling:false, ceilTimer:null, ended:false,
@@ -5848,8 +5866,18 @@ function runTrial(seq,c){
     RUN.passStartedMs=+t.toFixed(2);
     if(RUN.angle) RUN.angle.reset();
     RUN.netAngleTotal=0;
-    // The return journey stops being held back the moment it stops being a return journey.
-    if(RUN.carryStrokes) RUN.carryStrokes.clear();
+    // THE RETURN JOURNEY IS NEVER DRAWN. Clearing the held-back set here was wrong: those
+    // strokes are the pen travelling from the last spiral's rim back to the middle, and
+    // releasing them at the start of the new pass painted that whole journey across the
+    // fresh template -- the trace "after the dotted curve" that did not disappear.
+    //
+    // They stay hidden. What the participant draws from HERE is a new stroke, handed to each
+    // pointer still in contact exactly as advancePass does, so the ink starts where the
+    // spiral starts. Every sample is still recorded either way, tagged with s:0 before the
+    // pass began and s:1 after, so the journey is in the data and only out of the picture.
+    for(const id of [...strokeFor.keys()]){
+      const st=[]; STROKES.push(st); strokeFor.set(id,st);
+    }
     $("reminder").innerHTML=reminderText();
   };
   const addPoint=(st,e,t,co)=>{ const m=toMM(e.clientX,e.clientY);
@@ -5971,7 +5999,14 @@ function runTrial(seq,c){
       if(RUN.sustained) RUN.timer=setTimeout(()=>endWindow(), RUN.sustainedMs);
     }
     RUN.penUpAt=null;                       // the lift clock only runs while the pen is up
-    const st=[]; STROKES.push(st); strokeFor.set(e.pointerId,st); addPoint(st,e,t);
+    const st=[]; STROKES.push(st); strokeFor.set(e.pointerId,st);
+    // ANYTHING DRAWN BEFORE THE PASS STARTS IS HELD BACK, whichever way the pen got there.
+    // The advance path already did this for a pen that was still down; a pen that lifted at
+    // the end of one spiral and came down again at the rim to travel back was not covered,
+    // and painted its journey across the fresh template. One rule for both: the picture
+    // shows the spiral, and the journey to it is in the record and not on the screen.
+    if(RUN.sustained && inWindow() && !RUN.passStarted) RUN.carryStrokes.add(st);
+    addPoint(st,e,t);
     if(RUN.firstContactMs===null) RUN.firstContactMs=+t.toFixed(2);
     // The qualifying contact -- the one that opened the window -- is not necessarily the
     // first contact anywhere on the canvas, so both are kept.
@@ -6094,7 +6129,6 @@ function runTrial(seq,c){
     // the last spiral, wearing the new spiral's pass number. Held back from the canvas, not
     // from the record: every sample is still written, still tagged with its pass, and still
     // exported. This is a display rule, like the pass filter it sits beside.
-    RUN.carryStrokes = RUN.carryStrokes || new Set();
     for(const id of [...strokeFor.keys()]){
       const st=[]; STROKES.push(st); strokeFor.set(id,st); RUN.carryStrokes.add(st);
     }
@@ -6116,26 +6150,17 @@ function runTrial(seq,c){
       geomPitch(TRIAL.implement)*geomTurns(TRIAL.implement),
       RUN.angle ? RUN.angle.minR : 0);
     if(RUN.netAngleTotal < needed){ RUN.endZoneSince=null; return; }
-    // THE SWEEP IS COMPLETE. Three ways of having arrived, recorded separately so a pass
-    // that ended tidily and one that ended by the participant giving up are distinguishable
-    // in the data rather than both reading as "auto".
-    const outerR=geomPitch(TRIAL.implement)*geomTurns(TRIAL.implement);
-    // 1. THE PEN IS UP and has stayed up. A finished drawing that stopped short of the band
-    //    still looks finished to the person who drew it, and waiting for a band they are not
-    //    going to reach leaves them staring at a spiral they think they have completed.
-    if(RUN.penUpAt!=null && now-RUN.penUpAt >= LIFT_ADVANCE_MS){
-      RUN.endZoneSince=null; advancePass("lift"); return;
-    }
-    if(!RUN.penMM){ RUN.endZoneSince=null; return; }
-    const r=Math.hypot(RUN.penMM.x, RUN.penMM.y);
-    // 2. PAST THE TEMPLATE ALTOGETHER. Overshooting the rim is not an approach to the end
-    //    zone, it is having gone beyond it, and a spiral drawn larger than its template
-    //    otherwise never satisfies a band defined as a fraction of that template.
-    if(r >= OVERSHOOT_FRACTION*outerR){ RUN.endZoneSince=null; advancePass("overshoot"); return; }
-    // 3. The band, as before: out near the rim, held briefly.
-    if(r < ADVANCE_RADIUS_FRACTION*outerR){ RUN.endZoneSince=null; return; }
-    if(RUN.endZoneSince===null){ RUN.endZoneSince=now; return; }
-    if(now-RUN.endZoneSince >= END_ZONE_DWELL_MS) advancePass("band");
+    // THE SWEEP IS COMPLETE, so the pass may now end -- and it ends when the pen comes off.
+    // Nothing else. There is no geometric backstop, and that is deliberate: every version of
+    // one, at every threshold, could still fire while the pen was on the glass, which is the
+    // single behaviour this task keeps being reported for. A participant who draws 30% larger
+    // than the template crosses any rim-based threshold DURING their last turn.
+    //
+    // The backstop for a pen that never lifts is the examiner, who is in the room and has
+    // Next spiral, and whose press is recorded as "examiner" so those passes are separable.
+    // A human watching is a better backstop than a number that cannot tell finishing from
+    // passing through.
+    if(RUN.penUpAt!=null && now-RUN.penUpAt >= LIFT_ADVANCE_MS) advancePass("lift");
   };
   // ---- WINDOW END -------------------------------------------------------------------
   // Freezes rather than blanks. Nothing disappears: blanking mid-stroke is disorienting and
@@ -6995,12 +7020,11 @@ function buildRecord(){
         // Offered alongside as description only, for the same reason.
         passes_completed: R.passes.filter(p=>p.advanced_by!=="window_end").length,
         passes: R.passes,
-        advance_rule:{ end_zone_dia_mm:+endZoneDiaMM(geomPitch(TRIAL.implement)).toFixed(2),
-          end_zone_pitch_fraction:END_ZONE_PITCH_FRACTION,
-          dwell_ms:END_ZONE_DWELL_MS, angle_fraction:ADVANCE_ANGLE_FRACTION,
-          radius_fraction:ADVANCE_RADIUS_FRACTION,
-          position_test:"pen at or beyond this fraction of the outer radius, not inside the end-zone circle. The circle is a visual marker; the band is what advances the pass." },
-        note:"a pass advances only when the pen is inside the end zone for the dwell AND the net angle swept has reached the template total. The zone alone would fire a turn early, because the spiral crosses its angular position once per turn. advanced_by 'examiner' means the pass was advanced by hand for a participant who stopped short, and carries the examiner's reaction time; 'window_end' is the final partial pass."
+        advance_rule:{ angle_fraction:ADVANCE_ANGLE_FRACTION,
+          lift_ms:LIFT_ADVANCE_MS, min_pass_ms:MIN_PASS_MS,
+          start_test:"the pass begins when the pen is inside the start zone, on every pass and not only the first",
+          end_test:"the pass ends when the pen has been off the glass for lift_ms, and only after the net angle swept has reached angle_fraction of the sweep reachable outside the start zone. There is no position test: any threshold on radius can be crossed while the pen is still drawing, which is not the same thing as having finished." },
+        note:"a pass advances only on a lift, after a complete sweep. Before v12.41 a radius band advanced it, which fired early on a spiral drawn larger than the template and never on one drawn smaller. advanced_by 'examiner' means the pass was advanced by hand for a participant who did not lift, and carries the examiner's reaction time; 'window_end' is the final partial pass."
       } : null,
     // ANCHORED START. Applies to every spiral condition, sustained or not.
     anchoring: R.penAnchored ? {
