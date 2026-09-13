@@ -157,9 +157,17 @@
      does not: an overflowing centred column has its top pushed outside the scroll area, and
      scrolling cannot bring it back. The instruction screen lost its first line that way,
      which is the line saying what to do. "safe center" centres only while there is room. */
+  /* #stage sets touch-action:none for the drawing surface. The overlay is not a drawing
+     surface and has to scroll, so it opts back in explicitly. */
+  #overlay { touch-action:pan-y; }
   #ovBody { flex:1 1 auto; overflow-y:auto; -webkit-overflow-scrolling:touch;
+            touch-action:pan-y; overscroll-behavior:contain;
             display:flex; flex-direction:column; align-items:center; justify-content:safe center;
             text-align:center; padding:26px 30px 10px; }
+  #ovMore { flex:0 0 auto; text-align:center; font-size:15px; font-weight:600;
+            color:#1d5fa8; padding:6px 0 10px; pointer-events:none;
+            background:linear-gradient(to bottom, rgba(255,255,255,0), rgba(255,255,255,.98) 55%); 
+            margin-top:-34px; }
   #ovFoot { flex:0 0 auto; display:flex; gap:12px; justify-content:center;
             padding:12px 20px calc(12px + env(safe-area-inset-bottom));
             border-top:1px solid var(--line); background:#f7f9fb; }
@@ -922,13 +930,16 @@
   <div id="stopsign" aria-hidden="true"><span>END<small id="stopsub"></small></span></div>
   <div id="overlay">
     <div id="ovBody"></div>
+    <!-- Says there is more, when there is more. A scrolling box with no scrollbar and a
+         pinned button bar under it looks exactly like a finished screen. -->
+    <div id="ovMore" class="hidden">more below ▾</div>
     <div id="ovFoot"></div>
   </div>
 </div>
 
 <script>
 "use strict";
-const BUILD = "v12.38 2026-09-13";
+const BUILD = "v12.39 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -4959,9 +4970,15 @@ function drawScene(){
     // Pulses after a pen-down outside it: see the refusal path in down(). Two seconds of
     // a growing ring, which is the only thing on the template that moves, so it cannot be
     // mistaken for part of the drawing.
-    const pulsing = RUN && RUN.startPulseUntil && performance.now() < RUN.startPulseUntil;
+    // Lit while a pass is waiting to begin as well as after a refused contact: between
+    // spirals the green circle is the instruction, so it says so rather than sitting there
+    // looking like scenery.
+    const waiting = RUN && RUN.sustained && RUN.windowStart!=null && RUN.windowEndedAt==null
+                    && !RUN.passStarted;
+    const pulsing = waiting
+      || (RUN && RUN.startPulseUntil && performance.now() < RUN.startPulseUntil);
     if(pulsing){
-      const ph=((RUN.startPulseUntil-performance.now())%700)/700;
+      const ph=((waiting?performance.now():(RUN.startPulseUntil-performance.now()))%700)/700;
       g.save();
       g.strokeStyle=`rgba(76,140,74,${0.55*ph})`; g.lineWidth=3;
       g.beginPath(); g.arc(c0.x,c0.y,mm2px(sd/2)+(1-ph)*26,0,7); g.stroke();
@@ -5217,7 +5234,7 @@ function showOverlay(bodyHTML, buttons){
   // this, display is already "flex" when the next line throws, so the *previous*
   // overlay content is left on screen with no way forward.
   if(!$("ovBody") || !$("ovFoot")){
-    ov.innerHTML='<div id="ovBody"></div><div id="ovFoot"></div>';
+    ov.innerHTML='<div id="ovBody"></div><div id="ovMore" class="hidden">more below ▾</div><div id="ovFoot"></div>';
   }
   ov.style.display="flex";
   $("ovBody").innerHTML=bodyHTML;
@@ -5230,8 +5247,22 @@ function showOverlay(bodyHTML, buttons){
     el.onclick=b.onClick; $("ovFoot").appendChild(el);
   });
   $("ovBody").scrollTop=0;
+  // After layout, not before: scrollHeight is not final while the content is being written.
+  // Three times, because requestAnimationFrame does not fire in a background tab and a
+  // cue that depends on the screen being watched is no cue at all.
+  updateOvMore();
+  requestAnimationFrame(updateOvMore);
+  setTimeout(updateOvMore,60);
+}
+// Shown only while there is something below the fold AND the reader is not already at it.
+function updateOvMore(){
+  const b=$("ovBody"), m=$("ovMore"); if(!b||!m) return;
+  const more = b.scrollHeight - b.clientHeight - b.scrollTop > 8;
+  m.classList.toggle("hidden", !more);
 }
 function hideOverlay(){ $("overlay").style.display="none"; }
+(function(){ const b=$("ovBody"); if(b) b.addEventListener("scroll", updateOvMore, {passive:true}); })();
+window.addEventListener("resize", ()=>{ if($("overlay") && $("overlay").style.display==="flex") updateOvMore(); });
 
 function sessionComplete(){
   stageOn(true);
@@ -5682,6 +5713,9 @@ function runTrial(seq,c){
         // repeated mis-starts are a visuospatial finding, and the count separates "took a
         // while to begin" from "began four times in the wrong place".
         offZoneStarts:[], firstOffZoneMs:null, startPulseUntil:0,
+        // Whether the CURRENT pass has begun. False between the end of one spiral and the
+        // pen's return to the middle; see beginPass.
+        passStarted:false, passStartedMs:null,
         lastContact:null,saved:false,c,voice:null,voicePending:null,fluencyCueMs:null,
         responseLocked, penAnchored, anchored, sustained, sustainedMs,
         windowStart, noResponseCeiling:false, ceilTimer:null, ended:false,
@@ -5768,17 +5802,49 @@ function runTrial(seq,c){
   const drawOK = pt => TRIAL.implement==="pen" ? (pt==="pen"||pt==="mouse") : (pt==="touch"||pt==="mouse");
   const strokeFor=new Map();       // one stroke per pointerId: a tapping finger must
                                    // never end the pen's stroke
+  const startZoneR = () => (+$("startdia").value||14)/2;
+  // A PASS BEGINS IN THE MIDDLE, EVERY TIME, and until v12.39 only the first one did.
+  //
+  // Pass 1 could not begin until the pen was inside the start zone. Passes 2 and up began
+  // the instant the previous one ended -- which is with the pen OUT AT THE RIM, still down,
+  // mid-journey back to the centre. Angle accumulated from there. A metre of travel back
+  // across the template, or any loop made on the way, is angle swept at large radius, and
+  // large radius is where the band test is already satisfied: so the sweep could complete
+  // and the pass advance before the participant had drawn any of it. From the far side of
+  // the glass that is a template disappearing for no reason, which is exactly what it is.
+  //
+  // So the rule is now the same for every pass. The template is up, and nothing counts
+  // until the pen is back in the start zone. It does not need a fresh pen-down -- the pen is
+  // usually still on the glass -- passing through the middle is the start, which is also
+  // physically what starting a spiral is.
+  const beginPass=(t)=>{
+    RUN.passStarted=true;
+    RUN.passStartedAt=performance.now();
+    RUN.passStartedMs=+t.toFixed(2);
+    if(RUN.angle) RUN.angle.reset();
+    RUN.netAngleTotal=0;
+    // The return journey stops being held back the moment it stops being a return journey.
+    if(RUN.carryStrokes) RUN.carryStrokes.clear();
+    $("reminder").innerHTML=reminderText();
+  };
   const addPoint=(st,e,t,co)=>{ const m=toMM(e.clientX,e.clientY);
     st.push({t:+t.toFixed(2),x:+m.x.toFixed(3),y:+m.y.toFixed(3),
              p:+(e.pressure??0).toFixed(4),tx:e.tiltX??null,ty:e.tiltY??null,
              k:e.pointerType,c:co?1:0,
-             // Which template this sample was drawn on, and whether the window was open.
-             // Both are recorded rather than inferred: a reader should not have to
-             // reconstruct them from timestamps.
-             q:RUN.pass, w:inWindow()?1:0});
-    // The angle detector runs on every sample, so backtracking subtracts the way it should.
-    if(RUN.angle) RUN.netAngleTotal=RUN.angle.push(m.x,m.y);
+             // Which template this sample was drawn on, whether the window was open, and
+             // whether the pass had started. All three are recorded rather than inferred: a
+             // reader should not have to reconstruct them from timestamps.
+             q:RUN.pass, w:inWindow()?1:0, s:RUN.passStarted?1:0});
     RUN.penMM=m;
+    // Entering the start zone begins the pass. Checked on the sample, not on pen-down,
+    // because between passes the pen is normally already down.
+    if(RUN.sustained && inWindow() && !RUN.passStarted && Math.hypot(m.x,m.y)<=startZoneR()){
+      beginPass(t);
+    }
+    // The angle detector runs on every sample of a STARTED pass, so backtracking subtracts
+    // the way it should. Before the pass starts there is nothing to accumulate: the pen is
+    // on its way back and none of that is the spiral.
+    if(RUN.angle && RUN.passStarted) RUN.netAngleTotal=RUN.angle.push(m.x,m.y);
   };
   // Window state, asked often enough to deserve a name.
   const inWindow = () => RUN.windowStart!=null && RUN.windowEndedAt==null;
@@ -5850,8 +5916,7 @@ function runTrial(seq,c){
       RUN.windowStart=performance.now();
       clearTimeout(RUN.ceilTimer); RUN.ceilTimer=null;
       if(RUN.startZoneWarned) $("reminder").innerHTML="";
-      if(RUN.angle) RUN.angle.reset();
-      RUN.passStartedAt=performance.now();
+      beginPass(performance.now()-perf0);
       startToneStream();
       if(RUN.sustained) RUN.timer=setTimeout(()=>endWindow(), RUN.sustainedMs);
     }
@@ -5914,8 +5979,9 @@ function runTrial(seq,c){
     RUN.hoverExits=(RUN.hoverExits||0)+1;
   };
   const up=e=>{
-    // The carry-over is over: the pen has lifted, so whatever it draws next is a stroke the
-    // participant meant to make on this template and is drawn like any other.
+    // A lift also ends the carry-over: whatever is drawn after it is a stroke made on this
+    // template rather than the tail of the last one. (beginPass clears the rest, for the
+    // participant who never lifts.)
     const carried=strokeFor.get(e.pointerId);
     if(carried && RUN.carryStrokes) RUN.carryStrokes.delete(carried);
     strokeFor.delete(e.pointerId); RUN.lastContact=performance.now();
@@ -5951,11 +6017,15 @@ function runTrial(seq,c){
   const advancePass=(how)=>{
     if(!RUN || !RUN.sustained || !inWindow()) return;
     const t=performance.now()-perf0;
-    RUN.passes.push({ pass:RUN.pass, ended_ms:+t.toFixed(1), advanced_by:how,
+    RUN.passes.push({ pass:RUN.pass, started_ms:RUN.passStartedMs, ended_ms:+t.toFixed(1),
+                      advanced_by:how,
                       net_angle_rad:+RUN.netAngleTotal.toFixed(4),
                       net_angle_turns:+(RUN.netAngleTotal/(2*Math.PI)).toFixed(3) });
     RUN.pass++;
-    RUN.endZoneSince=null; RUN.passStartedAt=performance.now();
+    RUN.endZoneSince=null;
+    // NOT STARTED. The next pass begins when the pen is back in the middle, not here -- see
+    // beginPass. Nothing accumulates and nothing can advance until then.
+    RUN.passStarted=false; RUN.passStartedMs=null; RUN.passStartedAt=null;
     if(RUN.angle) RUN.angle.reset();
     RUN.netAngleTotal=0;
     // Ink clears because a fresh template is up; the strokes stay in STROKES tagged with the
@@ -5979,11 +6049,16 @@ function runTrial(seq,c){
       const st=[]; STROKES.push(st); strokeFor.set(id,st); RUN.carryStrokes.add(st);
     }
     RUN.penUpAt=null;
+    $("reminder").innerHTML=`<span style="color:var(--warm)"><b>Back to the middle.</b>
+      The next spiral starts when the pen reaches the green circle.</span>`;
     drawScene();
   };
   // Checked every frame while a sustained window is open.
   const checkAdvance=()=>{
     if(!RUN || !RUN.sustained || !inWindow() || !SPIRAL) return;
+    // Nothing can end that has not started. This is the guard that makes the rest of the
+    // rule mean what it says.
+    if(!RUN.passStarted){ RUN.endZoneSince=null; return; }
     const now=performance.now();
     if(RUN.passStartedAt && now-RUN.passStartedAt < MIN_PASS_MS){ RUN.endZoneSince=null; return; }
     // Angle first: it is the cheap test and the one that makes the zone safe.
@@ -7549,8 +7624,18 @@ function showCSVText(){ const r=listTrials().map(t=>getTrial(t.key)).filter(Bool
 
 // Swallow scroll gestures while the stage is up, including two-finger drags that
 // touch-action alone does not stop on iPadOS.
+//
+// EXCEPT INSIDE THE OVERLAY, WHICH IS SUPPOSED TO SCROLL. This guard exists to stop the page
+// moving under a pen that is drawing; it was also eating every scroll gesture on the
+// instruction screen, because that screen lives inside #stage. On a short instruction nobody
+// noticed. PEN_VODD has three emphasised statements, their bullets, two tone buttons and a
+// recording note, which overflows an iPad in landscape -- and the screen then showed the
+// first half with no way to reach the rest and no sign that there was a rest. The overlay
+// already has its own scroll container with its buttons pinned outside it; it just needed to
+// be allowed to use it.
+const inOverlay = e => !!(e.target && e.target.closest && e.target.closest("#overlay"));
 document.addEventListener("touchmove", e=>{
-  if($("stage").classList.contains("on")) e.preventDefault();
+  if($("stage").classList.contains("on") && !inOverlay(e)) e.preventDefault();
 }, {passive:false});
 ["gesturestart","gesturechange","gestureend"].forEach(ev=>
   document.addEventListener(ev, e=>{ if($("stage").classList.contains("on")) e.preventDefault(); },
@@ -7578,6 +7663,7 @@ function offZoneTouchCount(e){
 }
 function pinchGuard(e){
   if(!$("stage").classList.contains("on")) return;
+  if(inOverlay(e)) return;                       // the instruction screen scrolls; see above
   if(e.touches.length>=2 && offZoneTouchCount(e)>1) e.preventDefault();
 }
 document.addEventListener("touchstart", pinchGuard, {passive:false});
@@ -7585,6 +7671,7 @@ document.addEventListener("touchstart", pinchGuard, {passive:false});
 let _lastTap=0;
 document.addEventListener("touchend", e=>{
   if(!$("stage").classList.contains("on")) return;
+  if(inOverlay(e)) return;
   const now=Date.now();
   if(now-_lastTap < 320 && e.target && e.target.tagName!=="BUTTON") e.preventDefault();
   _lastTap=now;
