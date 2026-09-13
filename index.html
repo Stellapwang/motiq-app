@@ -740,7 +740,14 @@
           <div><label for="instr">Instruction</label>
             <select id="instr"><option value="between">Draw between the lines</option>
               <option value="trace" selected>Trace on the line</option></select></div>
-          <div><label for="startdia">Start zone (mm)</label><input id="startdia" type="number" value="8" step="1" min="4" max="20"></div>
+          <!-- 14 mm, raised from 8 in v12.37. 8 mm gives a participant 4 mm of placement
+               tolerance, which is smaller than the aiming error of an unsteady hand and is
+               why a trial could fail to begin at all. 14 mm gives 7 mm, and triples the
+               landing area. Chosen over 16 or 20 because the zone is also the region where
+               angle is not counted: at 20 mm the disc swallows the whole of the first turn
+               of a 10 mm-pitch spiral, at 14 it stops at about 70% of it. Costs 11.7% of the
+               sweep against 6.7%, which angleNeededRad already allows for. -->
+          <div><label for="startdia">Start zone (mm)</label><input id="startdia" type="number" value="14" step="1" min="4" max="20"></div>
           <div><label for="endang">End angle (deg)</label><input id="endang" type="number" value="90" step="15"></div>
           <div><label for="split">Split (drawing share)</label><input id="split" type="number" value="0.70" step="0.05" min="0.4" max="1"></div>
         </div>
@@ -921,7 +928,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.36 2026-09-13";
+const BUILD = "v12.37 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -3767,11 +3774,26 @@ function snapshotShippedFields(){
 }
 // What is about to be thrown away, named before it goes. A reset that silently discards a
 // deliberate change is the same trap as a saved session silently keeping one.
-function protocolDrift(){
+// THE FIELDS ALONE. A saved session restores them like any other STATE_FIELD, so a value
+// changed in a new build does not appear until the session is cleared -- the same trap the
+// tone parameters had until v12.19, and the same answer: say so where the value is edited,
+// rather than leaving the number to look like the build's.
+function fieldDrift(){
   const out=[];
   PROTOCOL_FIELDS.forEach(id=>{ const el=$(id);
     if(el && FIELD_SHIPPED[id]!==undefined && el.value!==FIELD_SHIPPED[id])
       out.push(`${id}: ${el.value} (build ships ${FIELD_SHIPPED[id]})`); });
+  return out;
+}
+function resetFieldsToShipped(){
+  if(!confirm("Reset the geometry and task parameters to this build's defaults?\n\n"
+    +"The screen calibration and the trial plan are not touched.")) return;
+  PROTOCOL_FIELDS.forEach(id=>{ const el=$(id);
+    if(el && FIELD_SHIPPED[id]!==undefined) el.value=FIELD_SHIPPED[id]; });
+  applyCal(); updateGeo(); renderNextUpParams(); renderAudioTable(); saveState();
+}
+function protocolDrift(){
+  const out=fieldDrift();
   if(AUDIO_SHIPPED) streamGroups().forEach(g=>{
     const d=AUDIO_SHIPPED[g.first]; if(!d) return;
     ["floorMs","meanMs","ptg","tone"].forEach(f=>{ if(g.a[f]!==d[f])
@@ -3947,6 +3969,14 @@ function renderAudioTable(){
       so unequal streams add a stream difference to the dual-task cost.
       <button class="ghost sm" onclick="matchStreamPair('${k}','${a.pairWith}')">Match ${a.pairWith} to ${k}</button></div>`;
   });
+  const fd=fieldDrift();
+  if(fd.length) notes+=`<div class="warn"><b>Not this build's geometry or task values.</b>
+    These were edited here, or carried over from a session saved on this device. Anything not
+    listed already follows the build.<br>
+    ${fd.map(esc).join("<br>")}
+    <div style="margin-top:7px"><button class="ghost sm" onclick="resetFieldsToShipped()">
+      Use this build's values instead</button></div></div>`;
+
   const box=$("audioTable").parentElement;
   let sib=box.nextElementSibling;
   if(sib && sib.dataset && sib.dataset.audionotes) sib.remove();
