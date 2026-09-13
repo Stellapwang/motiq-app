@@ -939,7 +939,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.39 2026-09-13";
+const BUILD = "v12.40 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -3012,7 +3012,14 @@ function clearAllSelections(){
 function handsAllowed(c){
   // A task with neither drawing nor tapping has no hand at all -- VOC_VODD is tones and
   // voice only. Without this it would be offered "each hand" and quietly run twice.
-  if(!c.spiral && !c.tap) return ["none"];
+  //
+  // "DRAWING" MEANT "SPIRAL" HERE, AND PEN_PENT IS DRAWN WITH A HAND TOO. The copy task has
+  // spiral 0, tap 0 and zones 0, so it fell through to "none" and was planned as a
+  // hand-less, voice-only condition -- labelled "No hand (voice only)" in its own row. The
+  // queue then carried hand:"none", and physHand("none") takes the not-dominant branch, so
+  // the trial ran with drawHand set to the WRONG side. That is the whole of "PEN_PENT is
+  // not working properly": it was never being set up as a manual task at all.
+  if(!c.spiral && !c.tap && !c.pent) return ["none"];
   if(c.zones===2) return ["both"];
   if(c.spiral && c.tap) return ["roles","one"];
   return ["each","one"];
@@ -4829,7 +4836,7 @@ function layout(){
 
   const c=byId(TRIAL.task);
   let dx0=ux0,dw=uw,tapCx=null,zones=null,splitX=null,pentCx=null,pentSide=null;
-  let pentVertical=false,pentCy=null,copyCy=null,splitY=null;
+  let pentVertical=false,pentCy=null,copyCy=null,splitY=null,pentBox=null;
   const drawSide = TRIAL.drawHand==="left" ? "left" : "right";
 
   if(c.spiral && c.tap){
@@ -4849,16 +4856,19 @@ function layout(){
     const stacked    = pentSideFor(availW, availH/2);
     pentVertical = stacked > sideBySide;
     pentSide = Math.max(sideBySide, stacked);
+    const mg=PENT_MARGIN_MM*p;
     if(pentVertical){
       // Model above, copy below, on the reading order the instruction assumes.
       dw=uw; dx0=ux0;
       pentCy = uy0+topPad+(uh-topPad)*0.27;
       copyCy = uy0+topPad+(uh-topPad)*0.73;
       splitY = uy0+topPad+(uh-topPad)/2;
+      pentBox = { x:ux0+mg, y:splitY+mg, w:uw-2*mg, h:(uy0+uh)-splitY-2*mg };
     } else {
       dw=uw/2;
       if(drawSide==="left"){ dx0=ux0; pentCx=ux0+dw+(uw-dw)/2; splitX=ux0+dw; }
       else { dx0=ux0+(uw-dw); pentCx=ux0+(uw-dw)/2; splitX=ux0+(uw-dw); }
+      pentBox = { x:dx0+mg, y:uy0+topPad+mg, w:dw-2*mg, h:uh-topPad-2*mg };
     }
   }
   else if(c.zones===2){ const gap=(+$("zonegap").value)*p, mid=ux0+uw/2;
@@ -4880,7 +4890,7 @@ function layout(){
   }
 
   L={p,W,H,g,ux0,uy0,uw,uh,dw,dx0,tapCx,zones,splitX,spiralOn:!!c.spiral,
-     pentOn:!!c.pent,pentCx,pentSide,pentVertical,pentCy,copyCy,splitY,
+     pentOn:!!c.pent,pentCx,pentSide,pentVertical,pentCy,copyCy,splitY,pentBox,
      cx:dx0+dw/2,cy,safeAreaMM:sa,topPad};
   buildZones(c);
   $("hud").style.display = (c.tap||c.audio||c.verbal) ? "block" : "none";
@@ -5071,16 +5081,24 @@ function drawScene(){
     // The blank area, marked so it is obvious where to draw. An empty half of a white
     // screen does not say "draw here", and a participant copying into the model's half
     // would be a lost trial rather than a bad copy.
-    g.save();
-    g.strokeStyle="#c9ced6"; g.setLineDash([6,6]); g.lineWidth=1.4;
-    // The same size as the model, plus one margin. Sized from the figure rather than from
-    // the half-width so the two read as a matched pair at 1:1.
-    const bw=(m.width_mm  + PENT_MARGIN_MM)*L.p;
-    const bh=(m.height_mm + PENT_MARGIN_MM)*L.p;
-    g.strokeRect(copyX-bw/2, copyY-bh/2, bw, bh);
-    g.restore();
-    g.fillStyle="#5d6570"; g.font="13px system-ui";
-    g.fillText("draw here", copyX, copyY - bh/2 - 14);
+    // THE BOX IS THE WHOLE HALF, AND IT IS THE REGION THAT ACCEPTS THE PEN.
+    //
+    // It used to be drawn at the model's own size plus a margin, which said two wrong
+    // things: that the copy has to fit a rectangle the size of the original -- people
+    // copying pentagons routinely draw larger, and cramping that is a measurement artefact
+    // rather than a finding -- and that the region outside it was unavailable, when in fact
+    // the whole half accepted the pen. Now the drawn rectangle and the accepted rectangle
+    // are the same rectangle, so "where it says to draw" and "where drawing works" cannot
+    // disagree. That mismatch is the shape of a pen that seems not to register.
+    const box=L.pentBox;
+    if(box){
+      g.save();
+      g.strokeStyle="#c9ced6"; g.setLineDash([6,6]); g.lineWidth=1.4;
+      g.strokeRect(box.x, box.y, box.w, box.h);
+      g.restore();
+      g.fillStyle="#5d6570"; g.font="13px system-ui";
+      g.fillText("draw here", box.x+box.w/2, box.y+16);
+    }
   } else PENTAGON=null;
 
   // tap zones are DOM elements now; see buildZones()
@@ -5204,8 +5222,14 @@ function runAdhoc(taskId){
   TRIAL={ task:taskId, hand, role:null, lengthS:s2.lengthS, sustainedS:s2.sustainedS??null,
           verbalType:c.verbal?(s2.verbalType||null):null,
           status:"pending", skipReason:null, adhoc:true, index:null,
-          drawHand: c.spiral ? physHand(hand) : null,
+          // A COPY TASK IS DRAWN WITH A HAND TOO. drawHand was set for spiral conditions
+          // only, so PEN_PENT carried null -- and every layout decision that asks which side
+          // the hand is on resolved to "right" for everybody. A left-hander got the model
+          // under their own drawing hand, which is the one arrangement the split exists to
+          // prevent. It also left the pen hand recorded in tapHand on a task with no taps.
+          drawHand: (c.spiral||c.pent) ? physHand(hand) : null,
           tapHand:  c.zones===2 ? "both"
+                   : c.pent ? null
                    : c.spiral&&c.tap ? (physHand(hand)==="right"?"left":"right")
                    : physHand(hand),
           implement: c.implement || "pen" };
@@ -5217,8 +5241,9 @@ function runCurrent(){
   if(QPOS>=QUEUE.length){ sessionComplete(); return; }
   const q=QUEUE[QPOS], c=byId(q.task);
   TRIAL={ ...q, index:QPOS,
-    drawHand: c.spiral ? physHand(q.hand) : null,
+    drawHand: (c.spiral||c.pent) ? physHand(q.hand) : null,
     tapHand:  c.zones===2 ? "both"
+             : c.pent ? null
              : c.spiral&&c.tap ? (physHand(q.hand)==="right"?"left":"right")
              : physHand(q.hand),
     implement: c.implement || "pen" };
@@ -5892,6 +5917,31 @@ function runTrial(seq,c){
       RUN.startZoneWarned=true;
       drawScene();
       return;
+    }
+    // A COPY TASK ACCEPTS THE PEN INSIDE ITS DRAWING BOX AND NOWHERE ELSE. The old guard
+    // was a single x threshold, which does not exist in the stacked layout -- so on a
+    // portrait screen the model half took ink, and a participant copying onto the original
+    // is a lost trial rather than a bad copy.
+    if(c.pent && L.pentBox && drawOK(e.pointerType)){
+      const b=L.pentBox;
+      if(e.clientX<b.x-4 || e.clientX>b.x+b.w+4 || e.clientY<b.y-4 || e.clientY>b.y+b.h+4){
+        if(!RUN.pentBoxWarned){
+          RUN.pentBoxWarned=true;
+          $("reminder").innerHTML=`<span style="color:var(--warm)"><b>Outside the drawing
+            box.</b> The copy goes in the dashed area; nothing is recorded elsewhere.</span>`;
+        }
+        return;
+      }
+    }
+    // THE IMPLEMENT REFUSAL IS NO LONGER SILENT. A contact of the wrong kind simply
+    // vanished, which on the only implement in the room reads as a dead screen -- and it is
+    // the first thing to check when somebody reports that the pen does not register.
+    if(!drawOK(e.pointerType) && drawTask && !RUN.implementWarned){
+      RUN.implementWarned=true;
+      $("reminder").innerHTML=`<span style="color:#8c2020"><b>Contact ignored:</b> this task
+        is set to <b>${TRIAL.implement==="pen"?"stylus":"finger"}</b> and that arrived as
+        <b>${esc(e.pointerType)}</b>.${TRIAL.implement==="pen"&&e.pointerType==="touch"&&!deviceEverSawPen()
+          ? " This device has never reported a stylus to the browser." : ""}</span>`;
     }
     if(!drawOK(e.pointerType)){
       // A REFUSED CONTACT USED TO BE SILENT, which is correct for a palm and wrong for the
