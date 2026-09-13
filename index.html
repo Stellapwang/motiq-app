@@ -921,7 +921,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.35 2026-09-13";
+const BUILD = "v12.36 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -4875,7 +4875,19 @@ function drawScene(){
     SPIRAL={radius,turns,pitch,direction:dir,pathMM:sp.pathMM,instruction:$("instr").value,
             implement:TRIAL.implement,template_style:$("tmpl").value};
     const sd=+$("startdia").value,c0=toCanvas(0,0);
-    g.fillStyle="#D9EFD6"; g.strokeStyle="#4C8C4A"; g.lineWidth=1;
+    // Pulses after a pen-down outside it: see the refusal path in down(). Two seconds of
+    // a growing ring, which is the only thing on the template that moves, so it cannot be
+    // mistaken for part of the drawing.
+    const pulsing = RUN && RUN.startPulseUntil && performance.now() < RUN.startPulseUntil;
+    if(pulsing){
+      const ph=((RUN.startPulseUntil-performance.now())%700)/700;
+      g.save();
+      g.strokeStyle=`rgba(76,140,74,${0.55*ph})`; g.lineWidth=3;
+      g.beginPath(); g.arc(c0.x,c0.y,mm2px(sd/2)+(1-ph)*26,0,7); g.stroke();
+      g.restore();
+    }
+    g.fillStyle=pulsing?"#BFE6BA":"#D9EFD6"; g.strokeStyle="#4C8C4A";
+    g.lineWidth=pulsing?2.4:1;
     g.beginPath(); g.arc(c0.x,c0.y,mm2px(sd/2),0,7); g.fill(); g.stroke();
 
     // Template line. Gray by default: continuous, so the guide is unbroken and the
@@ -5585,6 +5597,10 @@ function runTrial(seq,c){
   const scale0=viewportScale();
   RUN={ seq,task:TRIAL.task,perf0,outLat,baseLat,durMs,leadMs,untimed,cfg:cfgL,
         startedISO:new Date().toISOString(),firstContactMs:null,toneClockDone:false,
+        // Pen-downs refused for landing outside the start zone. Not drawing, and not noise:
+        // repeated mis-starts are a visuospatial finding, and the count separates "took a
+        // while to begin" from "began four times in the wrong place".
+        offZoneStarts:[], firstOffZoneMs:null, startPulseUntil:0,
         lastContact:null,saved:false,c,voice:null,voicePending:null,fluencyCueMs:null,
         responseLocked, penAnchored, anchored, sustained, sustainedMs,
         windowStart, noResponseCeiling:false, ceilTimer:null, ended:false,
@@ -5701,11 +5717,33 @@ function runTrial(seq,c){
     // goes wherever the spiral goes; this gates the first contact only.
     if(c.spiral && RUN.penAnchored && RUN.windowStart===null && drawOK(e.pointerType)
        && !inStartZone(e)){
-      if(!RUN.startZoneWarned){
-        RUN.startZoneWarned=true;
-        $("reminder").innerHTML=`<span style="color:var(--warm)"><b>Start inside the green
-          circle.</b> Nothing is recorded until the pen lands there.</span>`;
-      }
+      // REFUSED, NOT IGNORED. The contact does not draw and does not start the trial, but it
+      // happened, and a participant who touches down three times in the wrong place is
+      // telling you something -- so it is counted, timestamped and positioned, and it goes
+      // into the record. Refusing to draw it and refusing to know about it are different
+      // decisions and only the first one was wanted.
+      const m=toMM(e.clientX,e.clientY);
+      RUN.offZoneStarts.push({ t:+t.toFixed(2), x:+m.x.toFixed(3), y:+m.y.toFixed(3),
+                               r:+Math.hypot(m.x,m.y).toFixed(2) });
+      if(RUN.firstOffZoneMs===null) RUN.firstOffZoneMs=+t.toFixed(2);
+      // SHOWN TO THE PARTICIPANT, not only to the examiner. A pen that touches the glass and
+      // produces nothing at all reads as a broken screen, and the examiner's reminder is
+      // 14 px of grey text on the far side of the iPad. The start zone pulses instead: the
+      // answer appears where the question was asked.
+      RUN.startPulseUntil=performance.now()+1400;
+      // The ceiling is a backstop against an UNATTENDED trial. A pen on the glass is proof
+      // of attendance, so each refused contact restarts it rather than counting down to a
+      // "no response" on a participant who is visibly trying.
+      if(RUN.ceilTimer){ clearTimeout(RUN.ceilTimer);
+        RUN.ceilTimer=setTimeout(()=>{ if(!RUN || RUN.windowStart!=null) return;
+          RUN.noResponseCeiling=true; stopTrial(true); }, PEN_CEILING_MS); }
+      const n=RUN.offZoneStarts.length;
+      $("reminder").innerHTML=`<span style="color:var(--warm)"><b>NOT STARTED YET</b>
+        ${n>1?`(${n} attempts)`:""} — the pen touched down outside the green circle, so the
+        trial clock has not begun${seq?" and the tones have not started":""}. Ask them to
+        begin from the middle.</span>`;
+      RUN.startZoneWarned=true;
+      drawScene();
       return;
     }
     if(!drawOK(e.pointerType)){
@@ -6677,6 +6715,13 @@ function buildRecord(){
       response_locked: !!R.responseLocked,
       window_start_ms: R.windowStart!=null && R.perf0
         ? +(R.windowStart-R.perf0).toFixed(2) : null,
+      // Contacts that landed outside the start zone before the trial began. They drew
+      // nothing and started nothing, which is the point, but they are kept because the
+      // difference between one and five of them is a finding rather than housekeeping.
+      off_zone_starts: R.offZoneStarts ? R.offZoneStarts.length : 0,
+      first_off_zone_contact_ms: R.firstOffZoneMs ?? null,
+      off_zone_start_detail: R.offZoneStarts && R.offZoneStarts.length ? R.offZoneStarts : null,
+      off_zone_start_note: "pen-downs outside the start zone while the window was still closed. They produced no ink and did not open the window; the trial began at window_start_ms on a contact inside the zone. A trial with off_zone_starts > 0 and window_start_ms null never began at all.",
       // Time from t_zero to the first tap. On a response-locked trial this is no longer
       // time taken out of the window, so it is kept as what it is: how long the participant
       // took to initiate the movement, which is a measure and not an overhead.
