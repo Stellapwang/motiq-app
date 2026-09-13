@@ -928,7 +928,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.37 2026-09-13";
+const BUILD = "v12.38 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -2136,7 +2136,9 @@ function practiceSetup(){
   g.strokeStyle="#1d5fa8"; g.lineWidth=2.2; g.lineCap="round"; g.lineJoin="round";
   PR.strokes.filter(st=>st.pass===PR.pass && st.pts.length>1).forEach(st=>{
     g.beginPath(); st.pts.forEach((q,i)=>i?g.lineTo(q.x,q.y):g.moveTo(q.x,q.y)); g.stroke(); });
-  return { g,w,h,cx,cy,R,dir,endPx:ec, zonePx:ez };
+  // startPx is the START zone, which is what the angle gate needs; zonePx is the END zone
+  // and was the only one exported, so anything reaching for "the zone" got the wrong circle.
+  return { g,w,h,cx,cy,R,dir,endPx:ec, zonePx:ez, startPx:sd };
 }
 function practiceRender(){
   PR.view=practiceSetup();
@@ -2152,12 +2154,22 @@ function practiceReset(){
   const _h=$("pchand")?$("pchand").value:"right";
   delete PENCHECK[_h];
   PR.pass=1; PR.strokes=[]; PR.lastPt=null; PR.armed=false;
+  PR.passStartedAt=performance.now(); PR.penUpAt=null;
   prLogReset();
-  // Same gate as the trial: no angle inside the start circle, where there is no spiral yet.
-  PR.angle=makeAngleAccumulator(($("pchand")&&$("pchand").value==="left")?"ccw":"cw",
-                                PR.view ? Math.max(10,PR.view.R*0.13) : 12);
   if($("prresult")) $("prresult").innerHTML="";
+  // RENDERED FIRST, so the gate can be built from the zone that is actually on screen.
+  //
+  // This ran in the other order, and on the first call PR.view was still null -- so the
+  // fallback fired and the gate was 12 PIXELS while the drawn start circle is R*0.13, about
+  // nineteen. Angle was therefore counted in the ring between them, INSIDE the visible start
+  // zone, which is the precise fault that produced spurious advances in the trial: near the
+  // centre a small movement sweeps a huge angle, so settling the hand before drawing banks
+  // turns. reset() keeps the minR it was built with, so the wrong gate then survived every
+  // pass and every Start again for the life of the page. It is why the template vanished
+  // part-way through a spiral that was nowhere near finished.
   practiceRender();
+  PR.angle=makeAngleAccumulator(($("pchand")&&$("pchand").value==="left")?"ccw":"cw",
+                                PR.view ? PR.view.startPx : 12);
 }
 (function initPracticePad(){
   const cv=$("prpad"); if(!cv) return;
@@ -2225,6 +2237,7 @@ function practiceReset(){
   const advance=()=>{
     recordPenCheck();
     PR.pass++; PR.armed=false; PR.angle.reset();
+    PR.passStartedAt=performance.now(); PR.penUpAt=null;
     // THE PEN IS STILL DOWN, exactly as in the trial: the advance happens under the
     // participant's hand and they have not lifted. Ending the stroke here would make them
     // lift and touch again to continue -- which is the opposite of the behaviour this
@@ -2232,15 +2245,23 @@ function practiceReset(){
     if(PR.drawing) PR.strokes.push({pass:PR.pass,pts:[]});
     practiceRender();
   };
+  // THE SAME ARRIVAL RULE AS THE TRIAL, including the guard that nobody traces three turns
+  // in four seconds. The practice exists to rehearse the trial; a practice that advances on
+  // rules of its own rehearses something else, and this one had neither the minimum-duration
+  // guard nor the lift and overshoot paths.
   const check=()=>{
     if(!PR.view) return;
     const need=angleNeededRad(PRACTICE_TURNS, PR.view.R, PR.angle ? PR.angle.minR : 0);
     const wasArmed=PR.armed;
     PR.armed = PR.angle.total>=need;
     if(PR.armed!==wasArmed) practiceRender();
-    if(!PR.armed || !PR.lastPt) return;
+    if(PR.passStartedAt && performance.now()-PR.passStartedAt < MIN_PASS_MS) return;
+    if(!PR.armed) return;
+    if(PR.penUpAt!=null && performance.now()-PR.penUpAt >= LIFT_ADVANCE_MS){ advance(); return; }
+    if(!PR.lastPt) return;
     const dx=PR.lastPt.x-PR.view.cx, dy=PR.view.cy-PR.lastPt.y;
-    if(Math.hypot(dx,dy) >= ADVANCE_RADIUS_FRACTION*PR.view.R) advance();
+    const r=Math.hypot(dx,dy);
+    if(r >= ADVANCE_RADIUS_FRACTION*PR.view.R) advance();
   };
   // THE PAD TOOK A FINGER AND IGNORED THE PENCIL, and nothing in this file was rejecting it:
   // neither handler looks at pointerType. The events were never arriving intact.
@@ -2280,7 +2301,7 @@ function practiceReset(){
     let got=false;
     try{ cv.setPointerCapture(e.pointerId); got=cv.hasPointerCapture?cv.hasPointerCapture(e.pointerId):true; }catch(_){}
     PRLOG.captured=got; renderPrLog();
-    PR.pid=e.pointerId; PR.drawing=true;
+    PR.pid=e.pointerId; PR.drawing=true; PR.penUpAt=null;
     PR.strokes.push({pass:PR.pass,pts:[]}); PR.lastPt=rel(e); };
   const move=e=>{ if(!PR.drawing) return; e.preventDefault();
     const p=rel(e); PR.lastPt=p;
@@ -2289,7 +2310,12 @@ function practiceReset(){
     if(PR.view) PR.angle.push(p.x-PR.view.cx, PR.view.cy-p.y);
     practiceRender(); check(); };
   const release=e=>{ if(e&&PR.pid!=null){ try{ cv.releasePointerCapture(PR.pid); }catch(_){} }
-    PR.pid=null; PR.drawing=false; if(PR.angle) PR.angle.lift(); };
+    PR.pid=null; PR.drawing=false; PR.penUpAt=performance.now();
+    if(PR.angle) PR.angle.lift();
+    // A lift can now be the thing that advances, so the check has to run on it as well as on
+    // movement -- nothing moves after the pen is up, and the frame loop the trial has does
+    // not exist here.
+    setTimeout(()=>{ if(!PR.drawing) check(); }, LIFT_ADVANCE_MS+60); };
   // A CANCEL IS NOT A LIFT, and it was being treated as one. Kept apart so that if a device
   // still cancels a pencil despite the capture, the pad says so in words instead of looking
   // like a pad that does not take a pencil.
@@ -3256,15 +3282,23 @@ function sustainedCell(c,s,blocked){
   const on=s.sustainedS>0;
   // Says what the participant does, not what the mechanism is called. "Fixed window" is a
   // term from the engine and means nothing to someone reading the plan table.
-  // Both readings of the blank are stated, because the field is the only place either
-  // option lives. Blank is not "unset": it is the single-spiral condition, chosen.
+  // A NAMED CHOICE, NOT A FIELD TO BE EMPTIED. The mode used to live in the blankness of a
+  // number box: type a number for a sustained window, clear it for a single spiral. Clearing
+  // a number input is awkward on a touchscreen at the best of times, and there was nothing
+  // on screen offering the other mode by name -- so having set a length, an examiner had no
+  // visible way back and reasonably concluded there was none. Two options, both always
+  // present, and the seconds appear only when they mean something.
   return `<div class="note" style="margin:0 0 ${on?0:6}px">
-      <label style="display:flex;align-items:center;gap:5px;margin:0;flex-wrap:wrap">Draws for
-      <input type="number" min="0" max="300" step="5" style="width:64px"
-        value="${on?s.sustainedS:""}" placeholder="off" ${dis}
-        onchange="planSet('${c.id}','sustainedS', +this.value>0 ? +this.value : null)"> s
-      <span>${on ? "— a new spiral each time one is finished"
-                 : "— blank: one spiral only, ending at END"}</span></label>
+      <select ${dis} onchange="planSetSustained('${c.id}',this.value)">
+        <option value="keep" ${on?"selected":""}>Keep drawing for…</option>
+        <option value="one" ${on?"":"selected"}>One spiral only</option>
+      </select>
+      ${on?`<label style="display:flex;align-items:center;gap:5px;margin:5px 0 0;flex-wrap:wrap">
+        <input type="number" min="5" max="300" step="5" style="width:64px"
+          value="${s.sustainedS}" ${dis}
+          onchange="planSet('${c.id}','sustainedS', +this.value>0 ? +this.value : null)"> s
+        <span>— a new spiral each time one is finished</span></label>`
+        : `<div style="margin-top:4px">Ends when you press END.</div>`}
     </div>`;
 }
 // A SPIRAL CONDITION ALWAYS SHOWS THE WINDOW CONTROL, on or off.
@@ -3303,6 +3337,15 @@ function baseLengthCell(c,s,blocked){
     </select>${sub}`;
 }
 
+// Switching back on restores the length it had, or the catalogue's, rather than landing on
+// a blank that would have to be filled before the row meant anything.
+function planSetSustained(id,mode){
+  const c=byId(id);
+  PLAN[id].sustainedS = mode==="keep"
+    ? (PLAN[id].sustainedS>0 ? PLAN[id].sustainedS : (c && c.sustainedS) || 60)
+    : null;
+  renderPlan(); saveState();
+}
 function planSetLength(id,mode){
   PLAN[id].lengthS = mode==="self" ? null : fixedLengthFor(byId(id));
   renderPlan(); saveState();
@@ -4490,9 +4533,17 @@ function tone(at,freq,durMs,level){
   g.gain.setValueAtTime(level,at+d-ramp); g.gain.linearRampToValueAtTime(0,at+d);
   o.connect(g); g.connect(MASTER||c.destination); o.start(at); o.stop(at+d+.02); OSCS.push(o);
 }
+// The oddball rehearsal PLAYED SIX STRICTLY ALTERNATING TONES, which is not an oddball --
+// it is a two-tone metronome, and a participant who counts it correctly has learned that
+// every second beep is high. The real stream has runs of lows and the high one arrives
+// without warning, so the practice opens with two closely spaced highs to establish what
+// "high" sounds like, then makes them wait through three lows for the third. Eight tones:
+// low, high, low, high, low, low, low, high. The answer is three.
+const DEMO_ODDBALL=[0,1,0,1,0,0,0,1];
+const DEMO_ODDBALL_GAP=0.55;
 function demo(w){ const c=audio(), t0=c.currentTime+.08, lv=+$("lvl").value;
   const fs=+$("fstd").value, ft=+$("ftgt").value;
-  if(w==="alt"){ for(let i=0;i<6;i++) tone(t0+i*0.55, i%2?ft:fs, 100, lv); }
+  if(w==="alt"){ DEMO_ODDBALL.forEach((hi,i)=>tone(t0+i*DEMO_ODDBALL_GAP, hi?ft:fs, 100, lv)); }
   else tone(t0, w==="tgt"?ft:fs, 100, lv); }
 
 /* ===========================================================================
@@ -5398,7 +5449,7 @@ function showInstructionScreen(seq,c,returnToReady){
   const soundBtns = c.audio ? `<div style="margin-top:14px">` +
       (twoTones
         ? btn("std","Play the LOW beep") + btn("tgt","Play the HIGH beep")
-          + btn("alt","Practice — count the high ones")
+          + btn("alt","Count the high beep")
         : btn("std","Play the beep")) +
       `<div class="note" style="margin-top:6px">Play ${twoTones?"these":"this"} before
         starting.</div></div>` : ``;
