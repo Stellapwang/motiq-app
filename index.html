@@ -820,7 +820,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.19 2026-09-13";
+const BUILD = "v12.20 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1124,67 +1124,95 @@ let RESTORED_EDITS=[];
 // Values from a session saved before parameters could be told apart from defaults. Not in
 // force -- offered on the Parameters page so a deliberate choice is recoverable.
 let ORPHANED_AUDIO=null;
-const AUDIO_DEFAULTS = {
-  // 2 x 50 s at a 1000 ms mean yields about 100 responses, which is what ex-Gaussian
-  // fitting needs. The FLOOR stays 600 ms: it exists so a response completes before the
-  // next tone arrives, and tapping RT at 90+ runs 300-400 ms. Density comes out of the
-  // mean, never out of the floor.
-  TAP_TONE: { durS:50, floorMs:600, meanMs:1000, ptg:0,    tone:100, lead:500,
-              pairWith:"PEN_TONE",
-              label:"Tones only — tap to every tone" },
-  // The oddball with no drawing. Same stream as its dual-task partner so the only
-  // difference between them is the drawing.
-  // DENSE STANDARDS, RARE TARGETS. Rarity is what makes this a vigilance task: at an 800 ms
-  // mean a target arrived every ~3.2 s, often enough that it reads as a discrimination task
-  // instead, and raising the target rate to get more events would spend the very thing that
-  // made the design worth having. Density comes out of the MEAN instead. At 500 ms over 60 s
-  // that is ~120 tones and ~30 targets, against ~75 and ~19 before.
-  //
-  // Targets are never adjacent -- see makeSequence, where the positions are drawn so that no
-  // two can touch -- so the minimum target-to-target gap is TWO intervals. At a 300 ms floor
-  // that worst case is 610 ms, MEASURED, not the ~1 s it is tempting to assume from the mean.
-  //
-  // A spoken number takes about 800 ms (LANGUAGES.countFloorMs), so on the closest pair the
-  // second target can arrive before the first response is finished. That is rare -- it needs
-  // two floor-length intervals in a row AND targets on both sides of them -- and it costs a
-  // scoreable response rather than corrupting the trial, since the endpoints here are
-  // omission and false-alarm RATE rather than per-target reaction time. It is recorded:
-  // min_target_gap_tones and min_isi_ms are both exported, so how often the worst case
-  // actually occurred is answerable from the data rather than assumed.
-  //
-  // If it turns out to matter, the fix is a minimum target separation of three tones rather
-  // than two, which would put the worst case above 900 ms while keeping the dense standards.
-  // Not done pre-emptively: it is a real constraint on the design and belongs to whoever is
-  // choosing the paradigm, not to whoever is tuning the numbers.
-  //
-  // The usable-window warning on the Parameters page will fire at this floor. It is
-  // calibrated for tapping reaction time in Lewy body dementia and does not describe a
-  // vocally-answered oddball, so read it as information rather than as a fault.
-  VOC_VODD: { durS:60, floorMs:300, meanMs:500,  ptg:0.25, tone:100, lead:500,
-              pairWith:"PEN_VODD",
-              label:"Tones only — count the high tones aloud" },
-  // The manual-response twin of PEN_VODD: same stream, same monitoring load, a tap
-  // instead of a spoken count. The pair isolates response channel from monitoring load.
-  PEN_TODD: { durS:60, floorMs:300, meanMs:500,  ptg:0.25, tone:100, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3, selfPacedDurS:180,
-              pairWith:"PEN_VODD",
-              label:"Dual task — tap the high tones while drawing" },
-  PEN_TONE: { durS:45, floorMs:600, meanMs:1200, ptg:0,    tone:100, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3, selfPacedDurS:180,
-              pairWith:"TAP_TONE",
-              label:"Dual task — tap to every tone while drawing" },
-  // Longer floor: a spoken number takes time to articulate, so a shorter floor would ask
-  // for the next response before the previous one had finished. How much time is a fact
-  // about the language, so the number comes from LANGUAGES.countFloorMs and is re-applied
-  // from the language registry rather than being written here as a bare number.
-  PEN_VCNT: { durS:45, floorMs:LANGUAGES.en.countFloorMs, meanMs:1600, ptg:0,    tone:100, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
-              label:"Dual task — count every tone out loud while drawing" },
-  // Faster and denser ON PURPOSE. Only a quarter of tones need a response, so monitoring
-  // stays continuous while the motor interruptions stay sparse -- that density is the
-  // manipulation. About 12 targets in a 40-second drawing.
-  PEN_VODD: { durS:60, floorMs:300, meanMs:500,  ptg:0.25, tone:100, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
-              label:"Dual task — count the high tones out loud while drawing" },
-  FIN_VCNT: { durS:45, floorMs:800, meanMs:1600, ptg:0,    tone:100, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
-              label:"Dual task, finger drawing — count every tone out loud" }
-};AUDIO_SHIPPED=JSON.parse(JSON.stringify(AUDIO_DEFAULTS));
+// TWO STREAM TYPES, NOT SEVEN ROWS OF NUMBERS.
+//
+// There used to be a per-task row for each of seven tasks, and most of the differences
+// between them were historical rather than reasoned: PEN_TONE at 1200 ms against TAP_TONE at
+// 1000 ms said nothing about the two tasks, it said they had been edited at different times.
+// Seven independent rows also meant seven chances for a single-task baseline and its
+// dual-task partner to drift apart, which turns a dual-task cost into a cost plus a stream
+// difference.
+//
+// What actually distinguishes the streams is what the participant has to DO:
+//
+//   every    a response to every tone. Paced, moderate density.
+//   oddball  a response only to the rare high tone. Dense standards so that rarity means
+//            something, and the targets deliberately sparse -- raising the target rate to get
+//            more events would turn vigilance into discrimination.
+//
+// Everything else is DERIVED, so it cannot drift:
+//
+//   floor    from the RESPONSE CHANNEL, not the task. A tap completes in 300-400 ms even at
+//            90; a spoken number takes about 800 (LANGUAGES.countFloorMs, which is
+//            language-dependent). The floor exists so one response finishes before the next
+//            tone lands, so it belongs to the response, not to the stream.
+//   lead-in  from whether there is drawing to get going first.
+//   length   from the trial, so a 60 s window gets 60 s of tones.
+// THE FLOOR MEANS A DIFFERENT THING IN EACH STREAM, which is why one rule for both does not
+// work and trying it throws outright -- a 500 ms mean cannot sit above an 800 ms floor.
+//
+//   every    every tone is answered, so the tone-to-tone gap IS the response gap. The floor
+//            is the response time: tap 600 ms, spoken number ~800 ms.
+//   oddball  the standards are not answered. Their spacing only has to be perceptually
+//            separable, and it should be SHORT, because dense standards are what make the
+//            target rare. The response constraint applies to TARGET-to-target spacing, and
+//            is enforced where the targets are placed rather than by the floor.
+const STREAMS = {
+  // The mean follows the FLOOR at a fixed ratio rather than being a number of its own. Both
+  // have to move together: the gap between floor and mean IS the randomness -- a floor of 800
+  // under a mean of 1000 leaves 200 ms of spread, which is a metronome. Holding the ratio
+  // keeps the same feel on both channels and makes the count fall out correctly: a tap floor
+  // of 600 gives a 1000 ms mean, which is 50 responses in a 50 s trial and 100 across the two
+  // TAP_TONE trials -- the number ex-Gaussian fitting needs. A voice floor of 800 gives about
+  // 1340 ms, because a spoken number cannot be asked for every second.
+  every:   { meanOverFloor:1.67, ptg:0, tone:100, floorFrom:"response",
+             label:"Respond to every tone" },
+  oddball: { meanMs:500,  ptg:0.25, tone:100, floorFrom:"separation", floorMs:300,
+             label:"Respond only to the high tone" }
+};
+// The floor a response channel needs. Voice reads from the language registry, because how
+// long a number takes to say is a fact about the language.
+const RESPONSE_FLOOR = { tap:600, voice:null };   // voice resolved at read time
+const responseFloorMs = ch => ch==="voice" ? countFloorMs() : RESPONSE_FLOOR.tap;
+// Which stream a task uses, and how it answers. Two fields instead of a row of numbers.
+const TASK_STREAM = {
+  TAP_TONE:{ stream:"every",   respond:"tap"   },
+  PEN_TONE:{ stream:"every",   respond:"tap"   },
+  PEN_VCNT:{ stream:"every",   respond:"voice" },
+  FIN_VCNT:{ stream:"every",   respond:"voice" },
+  VOC_VODD:{ stream:"oddball", respond:"voice" },
+  PEN_VODD:{ stream:"oddball", respond:"voice" },
+  PEN_TODD:{ stream:"oddball", respond:"tap"   }
+};
+// Built from the two above. AUDIO_DEFAULTS keeps its shape so everything downstream -- the
+// sequence generator, the record, the CSV -- is unchanged; what has gone is seven sets of
+// numbers that could disagree with each other.
+function buildAudioDefaults(){
+  const out={};
+  Object.entries(TASK_STREAM).forEach(([id,cfg])=>{
+    const st=STREAMS[cfg.stream], c=CATALOGUE.find(x=>x.id===id);
+    const drawing=!!(c&&c.spiral);
+    const floor = st.floorFrom==="response" ? responseFloorMs(cfg.respond) : st.floorMs;
+    const mean  = st.meanOverFloor ? Math.round(floor*st.meanOverFloor/10)*10 : st.meanMs;
+    out[id]={ ...st, meanMs:mean,
+      floorMs: st.floorFrom==="response" ? responseFloorMs(cfg.respond) : st.floorMs,
+      lead: drawing ? 1000 : 500,
+      durS: c ? (c.lengthS ?? c.sustainedS ?? 60) : 60,
+      stream:cfg.stream, respond:cfg.respond,
+      stopMode: drawing ? "drawEnd" : "fixed",
+      floorS: drawing ? 20 : undefined,
+      tailS:  drawing ? 3 : undefined,
+      selfPacedDurS: drawing ? 180 : undefined,
+      pairWith: cfg.stream==="every"
+        ? (id==="TAP_TONE"?"PEN_TONE":id==="PEN_TONE"?"TAP_TONE":null)
+        : (id==="VOC_VODD"?"PEN_VODD":id==="PEN_VODD"?"VOC_VODD":null),
+      label: st.label + (drawing?" while drawing":" (tones only)")
+             + (cfg.respond==="voice"?" — out loud":"") };
+  });
+  return out;
+}
+let AUDIO_DEFAULTS = buildAudioDefaults();
+AUDIO_SHIPPED=JSON.parse(JSON.stringify(AUDIO_DEFAULTS));
 
 
 // H1. Identical on every dual task, every participant and every visit, and written verbatim
@@ -3674,7 +3702,7 @@ function hash32(str){ let h=5381; for(let i=0;i<str.length;i++) h=((h<<5)+h+str.
    Intervals beyond 4x the mean are redrawn: the exponential tail is unbounded and a
    single 20-second gap inside a 45-second stream is not a stream.
    --------------------------------------------------------------------------- */
-function makeSequence(durationS,floorMs,meanMs,pTarget,seed){
+function makeSequence(durationS,floorMs,meanMs,pTarget,seed,respond){
   const det = pTarget<=0;
   const rng=mulberry32(seed>>>0), durMs=durationS*1000;
   if(!(meanMs>floorMs)) throw new Error(
@@ -3721,9 +3749,13 @@ function makeSequence(durationS,floorMs,meanMs,pTarget,seed){
   // 3. NOTHING MAY LAND AT THE VERY END. A target in the last moments leaves no room for
   //    the response, and the beep itself can be clipped by the window closing. The last
   //    target is held back from the end by a full response time.
-  const SAY_1_DIGIT_MS = 800;                 // LANGUAGES.countFloorMs, the single-digit case
-  const SAY_2_DIGIT_MS = 1150;                // "twenty-seven" against "seven"
-  const TAIL_GUARD_MS  = 1400;                // clear of the end, response included
+  // The gap a target needs is the time its RESPONSE takes, and that depends on the channel:
+  // a tap is over in a few hundred milliseconds, a spoken number is not -- and a spoken
+  // number gets longer once the count reaches two digits.
+  const voiceAnswer = respond!=="tap";
+  const SAY_1_DIGIT_MS = voiceAnswer ? 800  : 550;
+  const SAY_2_DIGIT_MS = voiceAnswer ? 1150 : 550;
+  const TAIL_GUARD_MS  = voiceAnswer ? 1400 : 900;
   const gapNeededFor = k => (k>=10 ? SAY_2_DIGIT_MS : SAY_1_DIGIT_MS);
 
   let pos=[], targetPlan=null;
@@ -4547,7 +4579,7 @@ function openTrial(showInstruction){
   let seq=null;
   const cfg=audioCfgFor(TRIAL.task);
   if(cfg){
-    try{ seq=makeSequence(cfg.durS,cfg.floorMs,cfg.meanMs,cfg.ptg,drawSeed()); }
+    try{ seq=makeSequence(cfg.durS,cfg.floorMs,cfg.meanMs,cfg.ptg,drawSeed(),cfg.respond); }
     catch(e){ alert("Cannot build the stream for this trial:\n\n"+e.message); return; }
     audio();
   }
