@@ -128,8 +128,12 @@
      sits in a bar pinned to the bottom so it can never be pushed out of reach. */
   #overlay { position:absolute; inset:0; display:flex; flex-direction:column;
              background:rgba(255,255,255,.98); z-index:3; }
+  /* justify-content:center centres the column -- right while it fits, WRONG the moment it
+     does not: an overflowing centred column has its top pushed outside the scroll area, and
+     scrolling cannot bring it back. The instruction screen lost its first line that way,
+     which is the line saying what to do. "safe center" centres only while there is room. */
   #ovBody { flex:1 1 auto; overflow-y:auto; -webkit-overflow-scrolling:touch;
-            display:flex; flex-direction:column; align-items:center; justify-content:center;
+            display:flex; flex-direction:column; align-items:center; justify-content:safe center;
             text-align:center; padding:26px 30px 10px; }
   #ovFoot { flex:0 0 auto; display:flex; gap:12px; justify-content:center;
             padding:12px 20px calc(12px + env(safe-area-inset-bottom));
@@ -151,6 +155,8 @@
               animation:flashfade 2.2s ease-out; }
   @keyframes flashfade { 0%,55% { background:#fdf0e6; } 100% { background:transparent; } }
   @media (prefers-reduced-motion:reduce){ .flashrow { animation:none; background:#fdf0e6; } }
+  .req { color:#8c2020; font-weight:700; }
+  .missingfield { outline:2px solid #8c2020; outline-offset:2px; border-radius:6px; }
   .racegrid { display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:4px 16px;
               margin-top:4px; }
   .racegrid label { display:flex; align-items:center; gap:7px; font-size:14px; font-weight:400;
@@ -334,19 +340,19 @@
     <fieldset>
       <legend>Participant</legend>
       <div class="r3">
-        <div><label for="pid">Participant ID</label>
+        <div><label for="pid">Participant ID <span class="req">✱</span></label>
           <input id="pid" type="text"></div>
         <div><label for="grp">Group / note</label><input id="grp" type="text" placeholder="control"></div>
-        <div><label for="sex">Sex assigned at birth</label>
+        <div><label for="sex">Sex assigned at birth <span class="req">✱</span></label>
           <select id="sex"><option value="">—</option>
             <option value="1">Male</option><option value="2">Female</option>
             <option value="3">Decline to answer</option></select></div>
       </div>
       <div id="pidnote"></div>
       <div class="r3">
-        <div><label for="byear">Birth year</label>
+        <div><label for="byear">Birth year <span class="req">✱</span></label>
           <input id="byear" type="number" min="1900" max="2020" placeholder="1948"></div>
-        <div><label for="bmonth">Birth month</label>
+        <div><label for="bmonth">Birth month <span class="req">✱</span></label>
           <select id="bmonth"><option value="">—</option>
             <option value="1">January</option><option value="2">February</option>
             <option value="3">March</option><option value="4">April</option>
@@ -354,7 +360,7 @@
             <option value="7">July</option><option value="8">August</option>
             <option value="9">September</option><option value="10">October</option>
             <option value="11">November</option><option value="12">December</option></select></div>
-        <div><label for="domhand">Handedness</label>
+        <div><label for="domhand">Handedness <span class="req">✱</span></label>
           <select id="domhand"><option value="right">Right</option><option value="left">Left</option>
             <option value="ambidextrous">Ambidextrous</option></select></div>
         <!-- Required whenever handedness is ambidextrous. Every task set to "the dominant
@@ -619,11 +625,8 @@
 
     <fieldset>
       <legend>Spiral geometry</legend>
-      <p class="note" style="margin-top:0"><b>Pitch and turns are set separately for the stylus
-      and the finger.</b> Every task uses the set that matches its own implement, so a task and
-      its single-task baseline always share a geometry — dual-task cost is the change from
-      single to dual, and a mismatched baseline would confound load with geometry. Everything
-      below this pair is shared by both.</p>
+      <p class="note" style="margin-top:0"><b>Set separately for the stylus and the finger.</b>
+      Each task uses the set matching its implement.</p>
       <div class="r4">
         <div><label for="pitch_pen">Stylus — pitch (mm)</label>
           <input id="pitch_pen" type="number" value="10" step="0.5" min="6" max="25"></div>
@@ -836,7 +839,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.13 2026-09-12";
+const BUILD = "v12.14 2026-09-12";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1135,7 +1138,7 @@ const AUDIO_DEFAULTS = {
   // fitting needs. The FLOOR stays 600 ms: it exists so a response completes before the
   // next tone arrives, and tapping RT at 90+ runs 300-400 ms. Density comes out of the
   // mean, never out of the floor.
-  TAP_TONE: { durS:50, floorMs:600, meanMs:1000, ptg:0,    tone:50, lead:500,
+  TAP_TONE: { durS:50, floorMs:600, meanMs:1000, ptg:0,    tone:100, lead:500,
               pairWith:"PEN_TONE",
               label:"Tones only — tap to every tone" },
   // The oddball with no drawing. Same stream as its dual-task partner so the only
@@ -1166,29 +1169,29 @@ const AUDIO_DEFAULTS = {
   // The usable-window warning on the Parameters page will fire at this floor. It is
   // calibrated for tapping reaction time in Lewy body dementia and does not describe a
   // vocally-answered oddball, so read it as information rather than as a fault.
-  VOC_VODD: { durS:60, floorMs:300, meanMs:500,  ptg:0.25, tone:50, lead:500,
+  VOC_VODD: { durS:60, floorMs:300, meanMs:500,  ptg:0.25, tone:100, lead:500,
               pairWith:"PEN_VODD",
               label:"Tones only — count the high tones aloud" },
   // The manual-response twin of PEN_VODD: same stream, same monitoring load, a tap
   // instead of a spoken count. The pair isolates response channel from monitoring load.
-  PEN_TODD: { durS:60, floorMs:300, meanMs:500,  ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3, selfPacedDurS:180,
+  PEN_TODD: { durS:60, floorMs:300, meanMs:500,  ptg:0.25, tone:100, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3, selfPacedDurS:180,
               pairWith:"PEN_VODD",
               label:"Dual task — tap the high tones while drawing" },
-  PEN_TONE: { durS:45, floorMs:600, meanMs:1200, ptg:0,    tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3, selfPacedDurS:180,
+  PEN_TONE: { durS:45, floorMs:600, meanMs:1200, ptg:0,    tone:100, lead:1000, stopMode:"drawEnd", floorS:20, tailS:3, selfPacedDurS:180,
               pairWith:"TAP_TONE",
               label:"Dual task — tap to every tone while drawing" },
   // Longer floor: a spoken number takes time to articulate, so a shorter floor would ask
   // for the next response before the previous one had finished. How much time is a fact
   // about the language, so the number comes from LANGUAGES.countFloorMs and is re-applied
   // from the language registry rather than being written here as a bare number.
-  PEN_VCNT: { durS:45, floorMs:LANGUAGES.en.countFloorMs, meanMs:1600, ptg:0,    tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
+  PEN_VCNT: { durS:45, floorMs:LANGUAGES.en.countFloorMs, meanMs:1600, ptg:0,    tone:100, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
               label:"Dual task — count every tone out loud while drawing" },
   // Faster and denser ON PURPOSE. Only a quarter of tones need a response, so monitoring
   // stays continuous while the motor interruptions stay sparse -- that density is the
   // manipulation. About 12 targets in a 40-second drawing.
-  PEN_VODD: { durS:60, floorMs:300, meanMs:500,  ptg:0.25, tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
+  PEN_VODD: { durS:60, floorMs:300, meanMs:500,  ptg:0.25, tone:100, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
               label:"Dual task — count the high tones out loud while drawing" },
-  FIN_VCNT: { durS:45, floorMs:800, meanMs:1600, ptg:0,    tone:50, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
+  FIN_VCNT: { durS:45, floorMs:800, meanMs:1600, ptg:0,    tone:100, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
               label:"Dual task, finger drawing — count every tone out loud" }
 };
 
@@ -1304,10 +1307,11 @@ const overheadFor = taskId => blockOf(taskId) ? BLOCK_GAP_S : OVERHEAD_S;
 function drawingRules(tool, mode){
   return [
     mode==="between"
-      ? `**Start in the middle and follow the white path all the way out.**`
-      : `**Start in the middle and TRACE the spiral line all the way out.**`,
-    `Go at a comfortable speed, as accurately as you can.`,
-    `Keep your ${tool} down the whole time, and your hand off the table.`
+      ? `**Start inside the green circle and follow the white path all the way out.**`
+      : `**Start inside the green circle and TRACE the spiral line all the way out.**`,
+    `**One continuous line — do not lift the ${tool}.**`,
+    `Trace as accurately as you can, at a comfortable speed.`,
+    `Keep your hand and arm off the table.`
   ];
 }
 // The sustained conditions do not end when the spiral does, and that is the single thing
@@ -1315,7 +1319,8 @@ function drawingRules(tool, mode){
 // trial as far as they are concerned. It goes in its own emphasised line, not appended to
 // another one.
 const KEEP_GOING_LINE =
-  "**When you reach the end, a new spiral appears. Keep going until you see STOP.**";
+  "**When you finish one spiral a new one appears — start again from the middle and keep "+
+  "going until you see STOP.**";
 function instructionFor(taskId, opts){
   const c=byId(taskId); if(!c) return null;
   const mode = (opts&&opts.mode) || ($("instr")?$("instr").value:"trace");
@@ -1331,10 +1336,12 @@ function instructionFor(taskId, opts){
   // here would tell the participant not to lift the pen, which is wrong for a figure drawn
   // in separate lines.
   if(c.pent){
-    lines.push("Sit comfortably.");
-    lines.push("Look at the shape on the left.");
-    lines.push("Copy it in the box on the right, as accurately as you can.");
-    lines.push("Take as long as you need. Lift the pen whenever you want to.");
+    // Deliberately close in register to the standard copy instruction without reproducing its
+    // wording. The size disclaimer matters: without it participants try to match the model's
+    // dimensions, and the criterion is the angles and the overlap, not the scale.
+    lines.push("**Here is a drawing. Copy it in the box, as accurately as you can.**");
+    lines.push("The size of your drawing does not matter.");
+    lines.push("Take as long as you need, and lift the pen whenever you like.");
     lines.push("Tell me when you have finished.");
     // Same shape as the normal return -- an early return of a bare array left ins.lines
     // undefined and took the instruction screen down with it. No spiral figure: the model
@@ -1352,7 +1359,11 @@ function instructionFor(taskId, opts){
     if(sustained) lines.push(KEEP_GOING_LINE);
   } else if(dualTask){
     // Short on screen; the identical rules are one click away. See drawingRules().
+    // The dual tasks were reduced to "exactly as before", which assumes the participant is
+    // still holding four rules from a screen they saw several minutes and several trials ago.
+    // The two that decay first -- accuracy under load, and not lifting -- are repeated.
     lines.push(`**Trace the spiral with your ${tool}, exactly as before.**`);
+    lines.push(`Accurately, at a comfortable speed, without lifting the ${tool}.`);
     if(sustained) lines.push(KEEP_GOING_LINE);
   }
 
@@ -1670,6 +1681,26 @@ function inputDeviceFingerprint(){
 // Fires on plug and unplug where the platform supports it. It does not fire for every
 // route change on every browser, which is why the fingerprint is ALSO sampled in the trial
 // loop; the two are belt and braces for the same event.
+// A ROUTE CHANGE IS A CHANGE IN LATENCY, NOT A CHANGE IN A STRING. Two things made string
+// comparison wrong, and both fired the alarm on trials where nothing had happened.
+//
+// outputLatency reads 0 until the AudioContext is actually running, then jumps to its real
+// value -- so the first sample of every tone trial is taken before the stream starts and the
+// second is not, and 0 -> 0.032 looked identical to unplugging a headset. And the value
+// carries small jitter between reads, which a five-decimal string turns into a difference.
+//
+// So the test is numeric, with a tolerance, and a transition OUT OF ZERO is not a change at
+// all -- it is the context waking up. A real speaker-to-headphone switch moves output latency
+// by tens of milliseconds and clears this comfortably.
+const ROUTE_LATENCY_TOL_MS=8;
+function routeLatencyMs(){
+  try{
+    const a=(typeof ctx!=="undefined" && ctx) ? ctx : null;
+    if(!a || typeof a.outputLatency!=="number") return null;
+    const ms=a.outputLatency*1000;
+    return ms>0 ? ms : null;          // 0 means "not reporting yet", not "zero latency"
+  }catch(e){ return null; }
+}
 function noteRouteSample(){
   if(!RUN || RUN.ready || !RUN.route) return;
   const R=RUN.route, fp=routeFingerprint();
@@ -1681,14 +1712,23 @@ function noteRouteSample(){
   // is still answerable from the data.
   const inFp=inputDeviceFingerprint();
   if(inFp){ if(R.input_at_start==null) R.input_at_start=inFp; R.input_last=inFp; }
-  if(R.fingerprint_at_start==null){ R.fingerprint_at_start=fp; R.fingerprint_last=fp; return; }
-  if(fp!==R.fingerprint_last){
+  if(R.fingerprint_at_start==null){ R.fingerprint_at_start=fp; R.fingerprint_last=fp; }
+  R.fingerprint_last=fp;
+
+  // The latency itself is the signal.
+  const ms=routeLatencyMs();
+  if(ms==null) return;                       // not reporting yet; nothing to compare
+  if(R.latency_ms_at_start==null){           // first MEANINGFUL reading, not the first sample
+    R.latency_ms_at_start=+ms.toFixed(2); R.latency_ms_last=+ms.toFixed(2); return;
+  }
+  if(Math.abs(ms-R.latency_ms_last) > ROUTE_LATENCY_TOL_MS){
     R.change_count++;
-    R.fingerprint_last=fp;
+    R.latency_ms_last=+ms.toFixed(2);
     if(!R.changed){
       R.changed=true;
       R.change_first_ms=RUN.perf0 ? +(performance.now()-RUN.perf0).toFixed(1) : null;
       R.fingerprint_at_change=fp;
+      R.latency_ms_at_change=+ms.toFixed(2);
       // Examiner-facing and immediate: the trial is still worth finishing, but whoever is
       // running it needs to know before they move on to the next one.
       const el=$("reminder");
@@ -2783,17 +2823,50 @@ function planSummary(){
 function ambiHandMissing(){
   return $("domhand").value==="ambidextrous" && !($("ambihand") && $("ambihand").value);
 }
+// The fields a session cannot run without. Handedness and the birth fields are here for the
+// same reason the participant ID is: the battery is specified in terms of the DOMINANT hand,
+// so without handedness there is no hand to run half the trials on, and an age that arrives
+// after the fact cannot be matched to the session it belongs to.
+const REQUIRED_FIELDS=[
+  { id:"pid",     label:"Participant ID" },
+  { id:"sex",     label:"Sex assigned at birth" },
+  { id:"byear",   label:"Birth year" },
+  { id:"bmonth",  label:"Birth month" },
+  { id:"domhand", label:"Handedness" },
+];
+function missingRequired(){
+  const out=REQUIRED_FIELDS.filter(f=>!($(f.id) && String($(f.id).value).trim()));
+  if(ambiHandMissing()) out.push({ id:"ambihand", label:"Preferred dominant hand" });
+  return out;
+}
+// Marks what is missing rather than only naming it -- on a page this long, a list of field
+// names is not the same as knowing where to look.
+function flagMissingRequired(miss){
+  document.querySelectorAll(".missingfield").forEach(e=>e.classList.remove("missingfield"));
+  miss.forEach(f=>{ const el=$(f.id); if(el) el.classList.add("missingfield"); });
+  if(miss[0] && $(miss[0].id)){
+    $(miss[0].id).scrollIntoView({block:"center",behavior:"smooth"});
+    try{ $(miss[0].id).focus({preventScroll:true}); }catch(e){}
+  }
+}
+function requireParticipantFields(){
+  const miss=missingRequired();
+  if(!miss.length) return true;
+  goPage(2);
+  flagMissingRequired(miss);
+  alert("These are needed before a session can start:\n\n  "
+        + miss.map(f=>f.label).join("\n  ")
+        + "\n\nThe battery is specified in terms of the dominant hand, and an age recorded "
+        + "afterwards cannot be tied back to the session it belongs to.");
+  return false;
+}
 const AMBI_PROMPT="Choose the preferred dominant hand before starting.\n\n"+
   "This participant is recorded as ambidextrous, and most of the battery is specified as "+
   "\"the dominant hand\". Without a nominated side there is no hand to run those trials on, "+
   "and defaulting to one would put an arbitrary choice into the data with nothing recording "+
   "that it was arbitrary.";
 function buildQueue(){
-  if(ambiHandMissing()){ alert(AMBI_PROMPT); goPage(2); return; }
-  if(!$("pid").value.trim()){
-    alert("Enter a participant ID before building the trial list.\n\nWithout one, trials save as \"unnamed\" and cannot be told apart later.");
-    goPage(2); return;
-  }
+  if(!requireParticipantFields()) return;
   const omitted=[];
   QUEUE=[]; QPOS=0;
   CATALOGUE.slice().sort((a,b)=>a.order-b.order).forEach(c=>{
@@ -3156,9 +3229,18 @@ function renderAudioTable(){
   // else that used to be here -- how the distribution works, how self-paced streams are
   // generated, that the values are unpiloted -- is in the source, not on screen in front of
   // an administrator running a session.
-  let notes=`<div class="note"><b>Usable window</b> is the longest response still attributable
-    to one tone. It follows from the floor and is not set directly. <b>Tones</b> is how many a
-    full stream contains at the current mean.</div>`;
+  let notes=`<div class="note">
+    <b>Tones</b> is how many tones the whole stream contains — <i>every</i> tone, not only the
+    high ones. On an oddball, the number of HIGH tones is roughly Tones × Target prob., and it
+    is deliberately not a fixed number: it is jittered per trial so a participant cannot learn
+    the answer. It scales with the trial length, so changing a task's length changes it.<br>
+    <b>Intervals are not evenly spaced and not Gaussian.</b> Each gap is a fixed <b>floor</b>
+    plus a random draw from an exponential with the given <b>mean</b>. An exponential above a
+    floor has a flat hazard: having waited a while tells the participant nothing about when the
+    next tone is due, so they cannot anticipate it. Even spacing or symmetric jitter both let
+    them.<br>
+    <b>Usable window</b> is the longest response still attributable to one tone. It follows
+    from the floor and is not set directly.</div>`;
 
   const slow=Object.entries(AUDIO_DEFAULTS).filter(([k,a])=>bindingLimitMs(k,a)<950).map(([k])=>k);
   if(slow.length) notes+=`<div class="warn">Usable window under 900 ms on
@@ -4197,11 +4279,7 @@ let LAST_TASK=null, LAST_HAND=null;      // what the participant was last shown
 // adhoc:true -- a trial run while tuning a parameter must never look like a protocol trial
 // in the export.
 function runAdhoc(taskId){
-  if(ambiHandMissing()){ alert(AMBI_PROMPT); goPage(2); return; }
-  if(!$("pid").value.trim()){
-    alert("Enter a participant ID before running a trial.\n\nWithout one the trial saves as \"unnamed\" and cannot be told apart later.");
-    goPage(2); return;
-  }
+  if(!requireParticipantFields()) return;
   if(!storageGuard()){ goPage(6); return; }
   const c=byId(taskId), s2=PLAN[taskId];
   // Same resolution the row displays, and from the same source -- the plan, not the
@@ -4246,6 +4324,8 @@ function showOverlay(bodyHTML, buttons){
   }
   ov.style.display="flex";
   $("ovBody").innerHTML=bodyHTML;
+  // A screen that opens already scrolled has lost its first line.
+  $("ovBody").scrollTop=0;
   $("ovFoot").innerHTML="";
   (buttons||[]).forEach(b=>{
     const el=document.createElement("button");
@@ -4687,7 +4767,9 @@ function runTrial(seq,c){
         route:{ declared:$("audioroute").value, changed:false, change_first_ms:null,
                 change_count:0, samples:0, samples_null:0,
                 fingerprint_at_start:null, fingerprint_last:null, fingerprint_at_change:null,
-                input_at_start:null, input_last:null },
+                input_at_start:null, input_last:null,
+                latency_ms_at_start:null, latency_ms_last:null, latency_ms_at_change:null,
+                latency_tolerance_ms:ROUTE_LATENCY_TOL_MS },
         viewport:{ scale_at_start:scale0, scale_at_end:null,
                    scale_max:scale0, scale_min:scale0,
                    // A plain window resize rebuilt the canvas and re-scaled the template
@@ -5331,9 +5413,11 @@ function finish(){
 function askCount(seq){
   const c=RUN.c;
   const what = c.countOf==="all" ? "How many beeps in total?" : "How many high beeps?";
-  const sub  = "Ask the participant for the number they reached, before showing anything else.";
+  // The heading already asks the question, and the examiner is the only person who can see
+  // this screen. A line telling them to ask is one they have to read past every trial.
+  const sub  = "";
   showOverlay(`<h3>${what}</h3>
-    <p>${sub}</p>
+    ${sub?`<p>${sub}</p>`:""}
     <input id="countInput" type="number" min="0" max="500"
       style="max-width:200px;font-size:26px;text-align:center;margin-top:6px">
     <p style="font-size:15px;color:#5d6570;margin-top:14px">Leave blank if they did not give a number.</p>`,
@@ -5647,7 +5731,7 @@ function buildRecord(){
     // output latency landing inside it. See routeFingerprint() for what is and is not
     // observable here.
     audio_route_watch: R.route ? { ...R.route,
-      watched: R.route.fingerprint_at_start!=null,
+      watched: R.route.latency_ms_at_start!=null,
       input_device_changed: !!(R.route.input_at_start && R.route.input_last
                                && R.route.input_at_start!==R.route.input_last),
       note: R.route.fingerprint_at_start==null
