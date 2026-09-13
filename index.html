@@ -820,7 +820,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.21 2026-09-13";
+const BUILD = "v12.22 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1801,7 +1801,8 @@ function safeAreaMM(){
 // what is rehearsed is what happens, not an approximation of it. Three turns instead of six,
 // because the point is the transition, not the endurance.
 const PRACTICE_TURNS=3;
-const PR={ pass:1, angle:null, lastPt:null, drawing:false, view:null, strokes:[], armed:false };
+const PR={ pass:1, angle:null, lastPt:null, drawing:false, view:null, strokes:[], armed:false,
+           pid:null };
 function practiceSetup(){
   const cv=$("prpad"); if(!cv) return null;
   const dpr=window.devicePixelRatio||1;
@@ -1840,6 +1841,12 @@ function practiceRender(){
               : "";
 }
 function practiceReset(){
+  // THE STORED READING GOES WITH IT. PENCHECK keeps the first completed spiral per hand and
+  // ignores every later one, so a first attempt that went wrong -- a pencil the pad refused,
+  // a spiral drawn with a finger by accident -- was frozen in as the reading for that hand
+  // and no amount of trying again replaced it. Start again has to mean start again.
+  const _h=$("pchand")?$("pchand").value:"right";
+  delete PENCHECK[_h];
   PR.pass=1; PR.strokes=[]; PR.lastPt=null; PR.armed=false;
   // Same gate as the trial: no angle inside the start circle, where there is no spiral yet.
   PR.angle=makeAngleAccumulator(($("pchand")&&$("pchand").value==="left")?"ccw":"cw",
@@ -1883,8 +1890,21 @@ function practiceReset(){
       <b>${rate.toFixed(0)} Hz</b>. Pointer: ${kinds}.
       Pressure ${varied?`varied ${pmin.toFixed(2)}–${pmax.toFixed(2)}`:`did not vary (${pmax.toFixed(2)})`}.
       ${rate<55?" Under 60 Hz means one sample per frame — browser kinematics will be coarse.":""}
-      ${!varied&&impl==="pen"?" No pressure variation from a stylus suggests it is being seen as a plain touch.":""}
-    </div>`;
+      ${!varied&&impl==="pen"&&kinds.includes("pen")?" No pressure variation from a stylus suggests it is being seen as a plain touch.":""}
+    </div>` +
+      // SAYS WHICH IMPLEMENT ACTUALLY DREW IT. The Implement selector records what the
+      // examiner meant to use, and until now nothing compared the two -- so a spiral drawn
+      // with a finger was filed as a stylus reading, with only a "Pointer: touch" buried in a
+      // sentence to say otherwise. Where the pad refuses a pencil outright this is also the
+      // line that names the problem.
+      // Mouse counts as a stylus here for the same reason drawOK accepts it in the trial:
+      // it is how the app is reviewed on a desktop, and flagging it would cry wolf on every
+      // review pass.
+      (impl==="pen" && !kinds.includes("pen") && !kinds.includes("mouse")
+        ? `<div class="bad"><b>Recorded as a stylus, drawn with a finger</b> — every sample
+           arrived as "${esc(kinds)}". Either the pencil is not reaching the pad, or this
+           spiral was drawn by hand. Set Implement to Index finger, or draw it again with the
+           pencil.</div>` : "");
   };
   const advance=()=>{
     recordPenCheck();
@@ -1906,8 +1926,25 @@ function practiceReset(){
     const dx=PR.lastPt.x-PR.view.cx, dy=PR.view.cy-PR.lastPt.y;
     if(Math.hypot(dx,dy) >= ADVANCE_RADIUS_FRACTION*PR.view.R) advance();
   };
+  // THE PAD TOOK A FINGER AND IGNORED THE PENCIL, and nothing in this file was rejecting it:
+  // neither handler looks at pointerType. The events were never arriving intact.
+  //
+  // The trial canvas gets away without this because the stage locks the body -- position
+  // fixed, overflow hidden, touchmove and the gesture events swallowed document-wide -- so
+  // there is no competing page gesture for Safari to award the pencil to. The Checks page is
+  // an ordinary scrolling page, and on iPadOS a pencil drag there is a candidate for
+  // scrolling, selection and Scribble. Safari resolves that by issuing pointerdown, deciding
+  // the gesture belongs to the page, and then sending POINTERCANCEL -- which lands on the
+  // same handler as a pen lift and ends the stroke before a single sample is kept. A finger
+  // is unaffected because touch-action:none settles it for touch, and this file already
+  // records that touch-action alone is not enough on iPadOS (see the stage guard).
+  //
+  // setPointerCapture is the fix: once captured, every event for that pointer is delivered
+  // here regardless of what the page would rather do with it.
   const down=e=>{ if(!PR.view) practiceRender();
-    e.preventDefault(); PR.drawing=true;
+    e.preventDefault();
+    try{ cv.setPointerCapture(e.pointerId); }catch(_){}
+    PR.pid=e.pointerId; PR.drawing=true;
     PR.strokes.push({pass:PR.pass,pts:[]}); PR.lastPt=rel(e); };
   const move=e=>{ if(!PR.drawing) return; e.preventDefault();
     const p=rel(e); PR.lastPt=p;
@@ -1915,9 +1952,29 @@ function practiceReset(){
       {...p, t:performance.now(), pr:e.pressure??0, k:e.pointerType});
     if(PR.view) PR.angle.push(p.x-PR.view.cx, PR.view.cy-p.y);
     practiceRender(); check(); };
-  const up=()=>{ PR.drawing=false; if(PR.angle) PR.angle.lift(); };
+  const release=e=>{ if(e&&PR.pid!=null){ try{ cv.releasePointerCapture(PR.pid); }catch(_){} }
+    PR.pid=null; PR.drawing=false; if(PR.angle) PR.angle.lift(); };
+  // A CANCEL IS NOT A LIFT, and it was being treated as one. Kept apart so that if a device
+  // still cancels a pencil despite the capture, the pad says so in words instead of looking
+  // like a pad that does not take a pencil.
+  const cancel=e=>{
+    if(e && e.pointerType==="pen"){
+      const r=$("prresult");
+      if(r) r.innerHTML=`<div class="warn"><b>The stylus stroke was cancelled by the
+        browser</b> — the pencil was seen, but the gesture was taken by the page rather than
+        by the pad. The reading is not valid. Reload the page and try once more; if it
+        repeats, report it.</div>`;
+    }
+    release(e);
+  };
   cv.addEventListener("pointerdown",down); cv.addEventListener("pointermove",move);
-  cv.addEventListener("pointerup",up);     cv.addEventListener("pointercancel",up);
+  cv.addEventListener("pointerup",release); cv.addEventListener("pointercancel",cancel);
+  // Belt and braces for the same problem, for the window between pointerdown and the capture
+  // taking effect. Non-passive, because a passive listener cannot preventDefault and Safari
+  // registers touchmove as passive unless told otherwise.
+  cv.addEventListener("touchmove", e=>e.preventDefault(), {passive:false});
+  ["gesturestart","gesturechange"].forEach(ev=>
+    cv.addEventListener(ev, e=>e.preventDefault(), {passive:false}));
   practiceReset();
 })();
 // The checks moved to their own page in v12.05 and this kept watching the old one, so the
