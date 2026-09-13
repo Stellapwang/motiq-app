@@ -818,7 +818,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.24 2026-09-13";
+const BUILD = "v12.25 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1814,10 +1814,17 @@ const PR={ pass:1, angle:null, lastPt:null, drawing:false, view:null, strokes:[]
 //           between the two is taking it.
 //   page    what reached the document at all. Zero pen here means Safari is not delivering
 //           pencil events to this page, and no amount of handler work on the pad will help.
-const PRLOG={ canvas:{}, page:{}, captured:null, cancels:0, rejected:0, lastRejected:null };
+// COUNTING ONLY pointerdown WAS THE HOLE IN THE FIRST VERSION OF THIS. If iPadOS delivers
+// the pencil's hover and movement but never resolves the contact into a pointerdown -- which
+// is what a contact taken as a system gesture looks like from in here -- then a
+// pointerdown-only counter reports "no pencil at all", which is the same answer it gives for
+// a pencil that is flat. Those are opposite problems. Every pointer event type is counted,
+// and the pen's event types are named, so "hover but never down" is visible as itself.
+const PRLOG={ canvas:{}, page:{}, penEvents:{}, captured:null, cancels:0,
+              rejected:0, lastRejected:null };
 function prCount(bucket,k){ bucket[k]=(bucket[k]||0)+1; }
 function prLogReset(){
-  PRLOG.canvas={}; PRLOG.page={}; PRLOG.captured=null; PRLOG.cancels=0;
+  PRLOG.canvas={}; PRLOG.page={}; PRLOG.penEvents={}; PRLOG.captured=null; PRLOG.cancels=0;
   PRLOG.rejected=0; PRLOG.lastRejected=null; renderPrLog();
 }
 function renderPrLog(){
@@ -1830,7 +1837,13 @@ function renderPrLog(){
   // never picked up.
   const wantPen=($("pcimpl")?$("pcimpl").value:"pen")==="pen";
   let verdict="";
-  if(wantPen && penOnPage===0 && PRLOG.rejected>0)
+  const penTypes=Object.keys(PRLOG.penEvents);
+  if(wantPen && penTypes.length && !PRLOG.penEvents.pointerdown)
+    verdict=`<div class="bad" style="margin:6px 0 0"><b>The stylus is seen, but its contact
+      never registers.</b> It delivered ${esc(penTypes.join(", "))} and no
+      <code>pointerdown</code> — iPadOS is taking the contact as a system gesture rather than
+      handing it to the page. Report this line.</div>`;
+  else if(wantPen && penOnPage===0 && PRLOG.rejected>0)
     verdict=`<div class="bad" style="margin:6px 0 0"><b>No stylus events have reached this
       page at all.</b> Every contact so far arrived as ${esc(Object.keys(PRLOG.page).join(", "))}.
       The pencil is not being delivered to the browser, so no handler on this pad can recover
@@ -1849,6 +1862,7 @@ function renderPrLog(){
   el.innerHTML=`<div class="note" style="margin:6px 0 0;font-size:12px">
     Input seen — <b>pad:</b> ${fmt(PRLOG.canvas)} &nbsp;·&nbsp; <b>page:</b> ${fmt(PRLOG.page)}
     ${PRLOG.captured===null?"":` &nbsp;·&nbsp; capture ${PRLOG.captured?"taken":"<b>refused</b>"}`}
+    ${penTypes.length?`<br><b>stylus events:</b> ${penTypes.map(k=>`${k} ${PRLOG.penEvents[k]}`).join(" · ")}`:""}
     </div>${verdict}`;
 }
 function practiceSetup(){
@@ -1998,7 +2012,6 @@ function practiceReset(){
   const implOK=k=>{ const want=$("pcimpl")?$("pcimpl").value:"pen";
     return k==="mouse" || (want==="pen" ? k==="pen" : k==="touch"); };
   const down=e=>{ if(!PR.view) practiceRender();
-    prCount(PRLOG.canvas, e.pointerType);
     if(!implOK(e.pointerType)){
       PRLOG.rejected++; PRLOG.lastRejected=e.pointerType; renderPrLog(); return;
     }
@@ -2020,20 +2033,52 @@ function practiceReset(){
   // still cancels a pencil despite the capture, the pad says so in words instead of looking
   // like a pad that does not take a pencil.
   const cancel=e=>{ PRLOG.cancels++; renderPrLog(); release(e); };
-  cv.addEventListener("pointerdown",down); cv.addEventListener("pointermove",move);
-  cv.addEventListener("pointerup",release); cv.addEventListener("pointercancel",cancel);
-  // Counts what reaches the DOCUMENT, which is the half of the question the pad cannot
-  // answer: a pad that sees no pencil and a browser that sends none look identical from
-  // inside the pad. Capture phase, passive, and only while the Checks page is up.
+  // DRIVEN FROM THE DOCUMENT, CAPTURE PHASE, hit-tested against the pad's rectangle --
+  // rather than from listeners on the canvas itself.
+  //
+  // Listening on the element assumes the event reaches the element, and that assumption is
+  // exactly what is in doubt here. Anything that stops a pencil event on its way down the
+  // tree -- a Safari gesture recognizer, an ancestor handler, a stray overlay -- leaves a
+  // canvas listener waiting for something that never arrives, which is indistinguishable
+  // from hardware that sends nothing. At capture phase on the document there is nothing left
+  // above to intercept: if the browser dispatches the event into this page at all, this sees
+  // it first.
+  //
+  // Costs a rect test per pointer event on the Checks page, and buys the pad the same
+  // position the stage has.
+  // Kept purely as a counter, so "pad" still means what reached the CANVAS ELEMENT and
+  // "page" what reached the document. The two disagreeing is the finding.
+  cv.addEventListener("pointerdown", e=>{ prCount(PRLOG.canvas, e.pointerType); renderPrLog(); },
+    {passive:true});
+  const onPad = e => { const pg=$("pg7");
+    if(pg && pg.classList.contains("hidden")) return false;
+    const r=cv.getBoundingClientRect();
+    return e.clientX>=r.left && e.clientX<=r.right && e.clientY>=r.top && e.clientY<=r.bottom; };
   document.addEventListener("pointerdown", e=>{
-    if($("pg7") && !$("pg7").classList.contains("hidden")){
-      prCount(PRLOG.page, e.pointerType); renderPrLog();
-    }
-  }, {capture:true, passive:true});
-  // Belt and braces for the same problem, for the window between pointerdown and the capture
-  // taking effect. Non-passive, because a passive listener cannot preventDefault and Safari
-  // registers touchmove as passive unless told otherwise.
-  cv.addEventListener("touchmove", e=>e.preventDefault(), {passive:false});
+    const pg=$("pg7"); if(pg && pg.classList.contains("hidden")) return;
+    prCount(PRLOG.page, e.pointerType);
+    if(onPad(e)) down(e); else renderPrLog();
+  }, {capture:true});
+  document.addEventListener("pointermove", e=>{ if(PR.drawing) move(e); },
+    {capture:true, passive:false});
+  document.addEventListener("pointerup",     e=>{ if(PR.drawing) release(e); }, {capture:true});
+  document.addEventListener("pointercancel", e=>{ if(PR.drawing) cancel(e);  }, {capture:true});
+  // EVERY pointer event type the pen produces, named. pointerover and pointermove without a
+  // pointerdown is a pencil the browser sees and will not let the page have; see PRLOG.
+  ["pointerover","pointerenter","pointermove","pointerdown","pointerup","pointerout",
+   "pointercancel","pointerleave"].forEach(t=>
+    document.addEventListener(t, e=>{
+      const pg=$("pg7"); if(pg && pg.classList.contains("hidden")) return;
+      if(e.pointerType!=="pen") return;
+      prCount(PRLOG.penEvents, t); renderPrLog();
+    }, {capture:true, passive:true}));
+  // The stage swallows touchmove and the gesture events document-wide while it is up, and
+  // that -- not touch-action, which this file already records as insufficient on iPadOS -- is
+  // why the trial canvas never loses a pencil stroke. The pad gets the same treatment, scoped
+  // to the pad's own rectangle so the rest of the Checks page still scrolls.
+  const padTouch = e => (e.touches&&e.touches[0]) ? onPad(e.touches[0]) : false;
+  document.addEventListener("touchmove", e=>{ if(padTouch(e)) e.preventDefault(); },
+    {capture:true, passive:false});
   ["gesturestart","gesturechange"].forEach(ev=>
     cv.addEventListener(ev, e=>e.preventDefault(), {passive:false}));
   practiceReset();
