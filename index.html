@@ -811,7 +811,7 @@
   </div>
   <!-- End-of-window signal for a timed trial. The participant is given no clock while the
        trial runs, so the end has to be unmissable rather than inferred. -->
-  <div id="stopsign" aria-hidden="true"><span>END<small>you can stop drawing</small></span></div>
+  <div id="stopsign" aria-hidden="true"><span>END<small id="stopsub"></small></span></div>
   <div id="overlay">
     <div id="ovBody"></div>
     <div id="ovFoot"></div>
@@ -820,7 +820,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.16 2026-09-12";
+const BUILD = "v12.17 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1114,6 +1114,10 @@ const langEntry = code => LANGUAGES[code] || null;
 // rather than implying the number was chosen for the language actually used.
 const countFloorMs = () => (langEntry(ADMIN_LANG) || LANGUAGES.en).countFloorMs;
 
+// A snapshot of what the BUILD ships, taken before restoreState() can overlay a saved
+// session on top. Without it there is no way to tell a value the examiner chose from a value
+// that is simply old, and every parameter change in a new build looks like it did not happen.
+let AUDIO_SHIPPED=null;
 const AUDIO_DEFAULTS = {
   // 2 x 50 s at a 1000 ms mean yields about 100 responses, which is what ex-Gaussian
   // fitting needs. The FLOOR stays 600 ms: it exists so a response completes before the
@@ -1174,7 +1178,8 @@ const AUDIO_DEFAULTS = {
               label:"Dual task — count the high tones out loud while drawing" },
   FIN_VCNT: { durS:45, floorMs:800, meanMs:1600, ptg:0,    tone:100, lead:1000, stopMode:"drawEnd", floorS:20, tailS:0, selfPacedDurS:180,
               label:"Dual task, finger drawing — count every tone out loud" }
-};
+};AUDIO_SHIPPED=JSON.parse(JSON.stringify(AUDIO_DEFAULTS));
+
 
 // H1. Identical on every dual task, every participant and every visit, and written verbatim
 // into the record. With no instruction, how a participant splits attention is free to vary,
@@ -3263,6 +3268,25 @@ function renderAudioTable(){
     <b>Usable window</b> is the longest response still attributable to one tone. It follows
     from the floor and is not set directly.</div>`;
 
+  // WHICH VALUES ARE NOT THIS BUILD'S. A saved session restores the parameters it was saved
+  // with, which is right -- an examiner's edits should survive a reload. But it also means a
+  // parameter changed in a new build does not appear until the session is cleared, and the
+  // only symptom is that the number looks unchanged. Saying so is the difference between a
+  // setting and a trap.
+  const drifted=[];
+  if(AUDIO_SHIPPED) Object.entries(AUDIO_DEFAULTS).forEach(([k,a])=>{
+    const d=AUDIO_SHIPPED[k]; if(!d) return;
+    ["floorMs","meanMs","ptg","tone","lead","durS"].forEach(f=>{
+      if(a[f]!==d[f]) drifted.push(`${k} ${f}: ${a[f]} (this build ships ${d[f]})`);
+    });
+  });
+  if(drifted.length) notes+=`<div class="warn"><b>Some values are not this build's defaults.</b>
+    They came from the saved session on this device, which is why a parameter changed in a new
+    build can look as though it did not change.<br>
+    ${drifted.map(esc).join("<br>")}
+    <div style="margin-top:7px"><button class="ghost sm" onclick="resetAudioToShipped()">
+      Reset these to the build defaults</button></div></div>`;
+
   const slow=Object.entries(AUDIO_DEFAULTS).filter(([k,a])=>bindingLimitMs(k,a)<950).map(([k])=>k);
   if(slow.length) notes+=`<div class="warn">Usable window under 900 ms on
     <b>${slow.join(", ")}</b>. Reported reaction time in Lewy body dementia sits near 900 ms
@@ -3285,6 +3309,16 @@ function renderAudioTable(){
   if(sib && sib.dataset && sib.dataset.audionotes) sib.remove();
   const div=document.createElement("div"); div.dataset.audionotes="1"; div.innerHTML=notes;
   box.insertAdjacentElement("afterend",div);
+}
+// Restores the build's own numbers without touching anything else in the session.
+function resetAudioToShipped(){
+  if(!AUDIO_SHIPPED) return;
+  if(!confirm("Reset the tone parameters to this build's defaults?\n\nAny values edited on "
+    +"this device are replaced. Nothing else about the session changes.")) return;
+  Object.keys(AUDIO_SHIPPED).forEach(k=>{
+    if(AUDIO_DEFAULTS[k]) Object.assign(AUDIO_DEFAULTS[k], JSON.parse(JSON.stringify(AUDIO_SHIPPED[k])));
+  });
+  renderAudioTable(); planSummary(); saveState();
 }
 function audioSet(k,f,v){ AUDIO_DEFAULTS[k][f]=v; renderAudioTable(); planSummary(); saveState(); }
 // Offered, never applied automatically. Copies the stream parameters of one half of a pair
@@ -4293,8 +4327,25 @@ let STOP_TIMER=null;
 // The participant is deliberately given no clock during a timed trial, so the end of the
 // window has to announce itself. Timed trials only: a self-paced spiral has no window to
 // end, and covering the drawing the moment the pen lifts would hide the thing just drawn.
+// The caption names what the participant was actually doing. It said "you can stop drawing"
+// on every task, including the tapping ones where nobody was drawing -- an instruction that
+// does not match what the person in front of you just did reads as a mistake, and on a
+// tapping task it is one.
+function stopCaptionFor(c){
+  if(!c) return "you can stop now";
+  const bits=[];
+  if(c.spiral || c.pent) bits.push("drawing");
+  if(c.tap) bits.push("tapping");
+  if(c.count || c.verbal) bits.push("counting");
+  if(!bits.length) return "you can stop now";
+  const list = bits.length===1 ? bits[0]
+             : bits.slice(0,-1).join(", ")+" and "+bits[bits.length-1];
+  return "you can stop "+list;
+}
 function showStopSign(){
   const el=$("stopsign"); if(!el) return;
+  const sub=$("stopsub");
+  if(sub) sub.textContent=stopCaptionFor(RUN && RUN.c ? RUN.c : (TRIAL?byId(TRIAL.task):null));
   el.classList.add("on");
   if($("zones")) $("zones").classList.add("off");
   clearTimeout(STOP_TIMER);
