@@ -190,9 +190,11 @@
      rather than sitting in the admin bar where the hidden clock used to be. Below the
      admin bar (z-index 2) so END and Reset stay reachable, and pointer-events:none so it
      cannot swallow a press. */
+  /* A full red screen reads as an error, and the participant has just done nothing wrong --
+     they finished. Calm, and the word says what happened rather than shouting an order. */
   #stopsign { position:absolute; inset:54px 0 0 0; z-index:1; display:none;
               align-items:center; justify-content:center; pointer-events:none;
-              background:#8c2020; }
+              background:rgba(247,249,251,.94); }
   #stopsign.on { display:flex; animation:stopin .12s ease-out; }
   /* The window has closed. Everything the participant drew stays on screen and simply
      recedes -- blanking mid-stroke removes the reference they were working against. */
@@ -200,8 +202,10 @@
   /* The zones are hidden while STOP is up. Taps are already rejected once the window has
      closed, but a zone still sitting there looks tappable, and it out-stacks the sign. */
   #zones.off { display:none; }
-  #stopsign span { color:#fff; font-size:min(28vw,220px); font-weight:800; letter-spacing:.06em;
-                   line-height:1; }
+  #stopsign span { color:#1d5fa8; font-size:min(20vw,150px); font-weight:800;
+                   letter-spacing:.04em; line-height:1; text-align:center; }
+  #stopsign small { display:block; font-size:.22em; font-weight:600; color:var(--muted);
+                    letter-spacing:0; margin-top:.35em; }
   @keyframes stopin { from { opacity:.4; } to { opacity:1; } }
   /* Respects a reduced-motion preference: the signal still appears at full strength, it
      simply does not fade in. */
@@ -444,61 +448,6 @@
        The first is typed once and rarely revisited; the second is worked through with
        the participant in front of you, and two of the three write their own records. -->
   <div id="pg7" class="hidden">
-    <fieldset>
-      <legend>Pen check <span style="font-weight:400;color:var(--muted)">— per participant</span></legend>
-      <p class="note" style="margin-top:0">Ask the participant to draw the spiral below, once
-      with each hand. This checks that the stylus registers, that samples arrive at a usable
-      rate, and that pressure varies. A spiral is used rather than a straight line: the same
-      four measures are obtained over a longer stroke, so the sample-rate estimate is less
-      dependent on stroke length, and it familiarizes the participant with the spiral
-      instruction. This is a device check, not a trial; no trial record is written.</p>
-      <div class="r4">
-        <div><label for="pchand">Hand</label>
-          <select id="pchand" onchange="penPadClear()"><option value="right">Right</option><option value="left">Left</option></select></div>
-        <div><label for="pcimpl">Implement</label>
-          <select id="pcimpl"><option value="pen">Stylus</option><option value="finger">Index finger</option></select></div>
-        <div><label for="pcmode">Instruction</label>
-          <select id="pcmode" onchange="penPadClear()">
-            <option value="between">Draw between the lines</option>
-            <option value="trace" selected>Trace on the line</option></select></div>
-        <div><label>&nbsp;</label><div class="btnrow" style="margin:0">
-          <button class="ghost" onclick="penPadClear()">Clear</button></div></div>
-      </div>
-      <canvas id="penpad" class="screenpad"></canvas>
-      <div id="pcinstr" class="note"></div>
-      <div id="pcresult" class="note"></div>
-    </fieldset>
-
-    <!-- Screening screens. Unlike the pen and sound checks these DO write a record --
-         one per administration, per participant rather than per trial, under their own
-         storage prefix and their own export. They are covariates for the analysis, not
-         trials, so they are deliberately not in CATALOGUE and never enter the queue.
-
-         Mini Trail B was removed in v11.03: it duplicates a trail-making item already in
-         the MoCA, which is administered in the same visit, and two administrations of
-         trail making in one session are not independent -- the second benefits from the
-         first. Records written by earlier builds are still listed and still exported;
-         see SCREEN_LABEL and SCREEN_HEAD. -->
-    <fieldset>
-      <legend>Dot tap screen <span style="font-weight:400;color:var(--muted)">— screening, per participant</span></legend>
-      <p class="note" style="margin-top:0">Ten seconds. A dot appears somewhere in the box; the
-      participant taps it, and the next one appears somewhere else. Tell them to tap each dot as
-      soon as they see it. A dot that is not tapped within 1.5 s counts as a miss and disappears
-      on its own.</p>
-      <div class="r3">
-        <div><label for="dothand">Hand</label>
-          <select id="dothand"><option value="dominant">Dominant</option>
-            <option value="nondominant">Non-dominant</option></select></div>
-        <div><label for="dotimpl">Implement</label>
-          <select id="dotimpl"><option value="finger">Index finger</option>
-            <option value="pen">Stylus</option></select></div>
-        <div><label>&nbsp;</label><div class="btnrow" style="margin:0">
-          <button class="ghost" id="dotstart" onclick="dotStart()">Start 10 s</button></div></div>
-      </div>
-      <canvas id="dotpad" class="screenpad"></canvas>
-      <div id="dotresult"></div>
-    </fieldset>
-
     <!-- The behaviour the sustained conditions depend on, rehearsed before it costs a trial.
          A participant meeting "finish one spiral and another appears" for the first time
          DURING PEN_SPRL spends the first pass working out what happened, and that pass is
@@ -507,7 +456,17 @@
       <legend>Spiral practice <span style="font-weight:400;color:var(--muted)">— per participant</span></legend>
       <p class="note" style="margin-top:0"><b>Demonstrate first, then hand the iPad over.</b>
       A smaller spiral than the trial uses, so a practice run takes seconds rather than a
-      minute. Nothing here is recorded.</p>
+      minute. This replaces the separate pen check: the first completed spiral on each hand
+      is measured for sample rate, pressure and pointer type, which is what that check was
+      for. It was the same drawing twice.</p>
+      <div class="r4">
+        <div><label for="pchand">Hand</label>
+          <select id="pchand" onchange="practiceReset()"><option value="right">Right</option>
+            <option value="left">Left</option></select></div>
+        <div><label for="pcimpl">Implement</label>
+          <select id="pcimpl" onchange="practiceReset()"><option value="pen">Stylus</option>
+            <option value="finger">Index finger</option></select></div>
+      </div>
       <div style="color:#1d5fa8;font-weight:700;font-size:15px;line-height:1.5;margin:6px 0 4px">
         Start inside the green circle and trace the line all the way out.<br>
         One continuous line — do not lift the pen.<br>
@@ -852,7 +811,7 @@
   </div>
   <!-- End-of-window signal for a timed trial. The participant is given no clock while the
        trial runs, so the end has to be unmissable rather than inferred. -->
-  <div id="stopsign" aria-hidden="true"><span>STOP</span></div>
+  <div id="stopsign" aria-hidden="true"><span>END<small>you can stop drawing</small></span></div>
   <div id="overlay">
     <div id="ovBody"></div>
     <div id="ovFoot"></div>
@@ -861,7 +820,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.15 2026-09-12";
+const BUILD = "v12.16 2026-09-12";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1362,8 +1321,7 @@ function instructionFor(taskId, opts){
     // wording. The size disclaimer matters: without it participants try to match the model's
     // dimensions, and the criterion is the angles and the overlap, not the scale.
     lines.push("**Here is a drawing. Copy it in the box, as accurately as you can.**");
-    lines.push("The size of your drawing does not matter.");
-    lines.push("Take as long as you need, and lift the pen whenever you like.");
+    lines.push("The size of your drawing does not matter. Take as long as you need.");
     lines.push("Tell me when you have finished.");
     // Same shape as the normal return -- an early return of a bare array left ins.lines
     // undefined and took the instruction screen down with it. No spiral figure: the model
@@ -1377,6 +1335,8 @@ function instructionFor(taskId, opts){
   const sustained = !!(TRIAL && TRIAL.task===taskId && TRIAL.sustainedS>0)
                  || !!(PLAN && PLAN[taskId] && PLAN[taskId].sustainedS>0);
   if(c.spiral && !dualTask){
+    if(tool==="finger")
+      lines.push("**Use the tip of your index finger — no pen for this one.**");
     rules.forEach(l=>lines.push(l));
     if(sustained) lines.push(KEEP_GOING_LINE);
   } else if(dualTask){
@@ -1410,7 +1370,7 @@ function instructionFor(taskId, opts){
       if(c.countOf==="all"){
         lines.push(`**${also?"At the same time, count":"Count"} every beep OUT LOUD — one, two, three, and so on.**`);
       } else {
-        lines.push(`**${also?"At the same time, count":"Count"} only the HIGH beeps out loud. Say the new number each time.**`);
+        lines.push(`**${also?"At the same time, count":"Count"} the HIGH beeps out loud.**`);
         lines.push("The low beeps are more common. Ignore them.");
       }
       lines.push("I will ask for your final number at the end.");
@@ -1465,7 +1425,9 @@ function instructionFor(taskId, opts){
   return { id:taskId, title:c.label, lines,
            drawingRules: c.spiral ? rules : null,
            rulesShownInline: !!(c.spiral && !dualTask),
-           figure: !!c.spiral && !dualTask, mode, implement:impl,
+           // The figure shows a hand holding a STYLUS. On a finger task it shows the wrong
+           // thing to a participant who is about to be asked to use their fingertip.
+           figure: !!c.spiral && !dualTask && impl!=="finger", mode, implement:impl,
            // A sustained trial is not "until the administrator stops it" -- it runs its
            // window and shows STOP, which is what the emphasised line above already tells
            // the participant. Saying both contradicted the instruction being read out.
@@ -1540,6 +1502,7 @@ $("buildstamp").textContent = "Build " + BUILD;
 // setup and calls penPadClear(), which assigns pcPts. A `let` further down the file is
 // still in its temporal dead zone at that point and throws.
 const PENCHECK={};                 // by hand: {samples, rate, pressure_varied, ...}
+
 let pcPts=null;
 const PC_TURNS=3;                  // rotations in the pen-check spiral; see penPadSetup()
 // Declared here, not down in the geometry section, for the reason above: updateGeo() is
@@ -1558,7 +1521,7 @@ function goPage(n){
   // its real width. Measure on the next frame instead.
   if(n===2) onVoiceConsentChange();
   if(n===7){ onVoiceConsentChange();
-    requestAnimationFrame(()=>{ dotReset(); penPadClear(); practiceRender(); }); }
+    requestAnimationFrame(()=>{ dotReset(); practiceRender(); }); }
   if(n===3){ renderPlan(); renderQueue(); }
   renderStatus();
   if(n===4){ renderAudioTable(); updateGeo(); }
@@ -1617,7 +1580,11 @@ function applyCal(){
   renderCalWarn();
   $("calnote").innerHTML=`<div class="good">1 mm = ${p.toFixed(3)} CSS px
     (${(p*25.4).toFixed(1)} px/inch). A 12 mm pitch renders ${(12*p).toFixed(1)} px wide.</div>`;
-  updateGeo(); penPadClear();
+  // NOT practiceRender(). applyCal() runs during start-up, above the practice code, so every
+  // constant that code touches is still in its temporal dead zone -- and a const read there
+  // throws rather than returning undefined, which takes the rest of the script with it. The
+  // pad is laid out when the Checks page opens and on resize, which is when it can be seen.
+  updateGeo();
 }
 $("ppmm").addEventListener("input",()=>{ setManual(); applyCal(); });
 const savedCal=store.get("motiq_ppmm");
@@ -1788,52 +1755,6 @@ function safeAreaMM(){
 // is drawn either way, because that is how SP is administered in both modes.
 // PC_TURNS is declared up with pcPts, not here: applyCal() reaches penPadSetup() during
 // start-up, before this point in the file has been evaluated.
-function penPadSetup(){
-  const cv=$("penpad"), dpr=window.devicePixelRatio||1;
-  const w=cv.clientWidth||600, h=Math.round(clamp(w*0.42,220,340));
-  cv.width=w*dpr; cv.height=h*dpr; cv.style.height=h+"px";
-  const g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0);
-  g.clearRect(0,0,w,h); g.fillStyle="#fff"; g.fillRect(0,0,w,h);
-  const cx=w/2, cy=h/2, R=Math.min(w,h)/2-30;
-  // Wound the way the trial winds it for this hand, so the movement rehearsed is the
-  // movement performed.
-  const dir = ($("pchand")&&$("pchand").value==="left") ? "ccw" : "cw";
-  const sp=spiralPath(R,PC_TURNS,dir,90,1200);          // radius in px here, not mm
-  const pt=q=>({x:cx+q.x, y:cy-q.y});
-  const sd=Math.max(9,R*0.11);
-  g.fillStyle="#D9EFD6"; g.strokeStyle="#4C8C4A"; g.lineWidth=1;
-  g.beginPath(); g.arc(cx,cy,sd,0,7); g.fill(); g.stroke();
-
-  const style=$("tmpl")?$("tmpl").value:"grey";
-  g.strokeStyle = style==="black" ? "#16191d" : "#737a85";
-  g.lineWidth   = style==="black" ? 1.6 : 1.8;
-  if(style==="dotted"){ g.setLineDash([0.1, 4.2]); g.lineCap="round"; g.lineWidth=2.2; }
-  else g.lineCap="butt";
-  g.beginPath(); sp.pts.forEach((q,i)=>{const t=pt(q); i?g.lineTo(t.x,t.y):g.moveTo(t.x,t.y);});
-  g.stroke(); g.setLineDash([]); g.lineCap="butt";
-
-  const last=sp.pts[sp.pts.length-1], ec=pt(last);
-  g.strokeStyle="#b4531f"; g.lineWidth=2; g.fillStyle="#fff";
-  g.beginPath(); g.arc(ec.x,ec.y,7,0,7); g.fill(); g.stroke();
-  g.fillStyle="#b4531f"; g.font="600 12px system-ui"; g.textAlign="center";
-  g.fillText("End", ec.x+Math.cos(last.a)*22, ec.y-Math.sin(last.a)*22+4);
-  g.fillStyle="#2F6B2D"; g.font="12px system-ui"; g.fillText("start",cx,cy+sd+14);
-  return {g,w,h,radius_px:R,turns:PC_TURNS,direction:dir};
-}
-// The wording the examiner reads out, taken from the same two instructions SP uses.
-function renderPenCheckMode(){
-  if(!$("pcinstr")) return;
-  const mode=$("pcmode")?$("pcmode").value:"between";
-  const tool=($("pcimpl")&&$("pcimpl").value==="finger")?"finger":"pen";
-  $("pcinstr").innerHTML = mode==="trace"
-    ? `<b>Start in the middle and trace the line all the way out, as accurately as you can.
-       Keep your ${tool} on the screen.</b>`
-    : `<b>Start in the middle and follow the path all the way out, staying between the lines.
-       Keep your ${tool} on the screen.</b>`;
-}
-function penPadClear(){ pcPts=null; penPadSetup(); renderPenCheckMode();
-  $("pcresult").innerHTML=""; }
-
 /* ------------------------------------------------------- spiral practice */
 // Rehearses the one thing about the sustained conditions a participant cannot be told in a
 // sentence: that finishing a spiral clears it and puts up another, and that they should keep
@@ -1881,28 +1802,64 @@ function practiceRender(){
 }
 function practiceReset(){
   PR.pass=1; PR.strokes=[]; PR.lastPt=null; PR.armed=false;
-  PR.angle=makeAngleAccumulator(($("pchand")&&$("pchand").value==="left")?"ccw":"cw");
+  // Same gate as the trial: no angle inside the start circle, where there is no spiral yet.
+  PR.angle=makeAngleAccumulator(($("pchand")&&$("pchand").value==="left")?"ccw":"cw",
+                                PR.view ? Math.max(10,PR.view.R*0.13) : 12);
   if($("prresult")) $("prresult").innerHTML="";
   practiceRender();
 }
 (function initPracticePad(){
   const cv=$("prpad"); if(!cv) return;
   const rel=e=>{ const r=cv.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; };
+  // The numbers the separate Pen check used to collect, taken from the FIRST completed
+  // spiral on each hand. Same drawing, same measurements, one task instead of two -- and
+  // measured over a whole spiral rather than whatever stroke the participant happened to
+  // make, so the sample-rate estimate is less dependent on stroke length.
+  const recordPenCheck=()=>{
+    const pts=PR.strokes.filter(st=>st.pass===PR.pass).flatMap(st=>st.pts);
+    const res=$("prresult");
+    if(pts.length<5){ if(res) res.innerHTML=`<div class="bad">Too few samples — the stroke was
+      very short, or this implement is not registering.</div>`; return; }
+    const dur=(pts[pts.length-1].t-pts[0].t)/1000;
+    const rate=dur>0?(pts.length-1)/dur:0;
+    const prs=pts.map(p=>p.pr??0), pmin=Math.min(...prs), pmax=Math.max(...prs);
+    const varied=(pmax-pmin)>0.02;
+    const kinds=[...new Set(pts.map(p=>p.k))].join(", ");
+    const hand=$("pchand")?$("pchand").value:"right";
+    const impl=$("pcimpl")?$("pcimpl").value:"pen";
+    const ppmm=parseFloat($("ppmm").value)||3.78;
+    if(!PENCHECK[hand]){
+      PENCHECK[hand]={ samples:pts.length, rate:+rate.toFixed(1),
+        pressure_min:+pmin.toFixed(3), pressure_max:+pmax.toFixed(3),
+        pressure_varied:varied, pointer_types:kinds, implement:impl,
+        task:"spiral_practice", template_style:$("tmpl")?$("tmpl").value:null,
+        turns:PRACTICE_TURNS, direction:(hand==="left"?"ccw":"cw"),
+        radius_mm: PR.view ? +(PR.view.R/ppmm).toFixed(1) : null,
+        duration_s:+dur.toFixed(2), checked_iso:new Date().toISOString() };
+    }
+    if(res) res.innerHTML=`<div class="${rate<55?"warn":"good"}">
+      <b>That is the whole idea</b> — the spiral cleared and a new one appeared. In the real
+      task this keeps going until the time is up.<br>
+      <b>${hand} hand</b>: ${pts.length} samples over ${dur.toFixed(2)} s, about
+      <b>${rate.toFixed(0)} Hz</b>. Pointer: ${kinds}.
+      Pressure ${varied?`varied ${pmin.toFixed(2)}–${pmax.toFixed(2)}`:`did not vary (${pmax.toFixed(2)})`}.
+      ${rate<55?" Under 60 Hz means one sample per frame — browser kinematics will be coarse.":""}
+      ${!varied&&impl==="pen"?" No pressure variation from a stylus suggests it is being seen as a plain touch.":""}
+    </div>`;
+  };
   const advance=()=>{
+    recordPenCheck();
     PR.pass++; PR.armed=false; PR.angle.reset();
     // THE PEN IS STILL DOWN, exactly as in the trial: the advance happens under the
     // participant's hand and they have not lifted. Ending the stroke here would make them
     // lift and touch again to continue -- which is the opposite of the behaviour this
     // practice exists to rehearse, and is the same mistake the trial engine had.
     if(PR.drawing) PR.strokes.push({pass:PR.pass,pts:[]});
-    if($("prresult")) $("prresult").innerHTML =
-      `<div class="good">That is the whole idea — the spiral cleared and a new one appeared.
-       In the real task this keeps going until STOP.</div>`;
     practiceRender();
   };
   const check=()=>{
     if(!PR.view) return;
-    const need=ADVANCE_ANGLE_FRACTION*PRACTICE_TURNS*2*Math.PI;
+    const need=angleNeededRad(PRACTICE_TURNS, PR.view.R, PR.angle ? PR.angle.minR : 0);
     const wasArmed=PR.armed;
     PR.armed = PR.angle.total>=need;
     if(PR.armed!==wasArmed) practiceRender();
@@ -1915,7 +1872,8 @@ function practiceReset(){
     PR.strokes.push({pass:PR.pass,pts:[]}); PR.lastPt=rel(e); };
   const move=e=>{ if(!PR.drawing) return; e.preventDefault();
     const p=rel(e); PR.lastPt=p;
-    PR.strokes[PR.strokes.length-1].pts.push(p);
+    PR.strokes[PR.strokes.length-1].pts.push(
+      {...p, t:performance.now(), pr:e.pressure??0, k:e.pointerType});
     if(PR.view) PR.angle.push(p.x-PR.view.cx, PR.view.cy-p.y);
     practiceRender(); check(); };
   const up=()=>{ PR.drawing=false; if(PR.angle) PR.angle.lift(); };
@@ -1923,63 +1881,10 @@ function practiceReset(){
   cv.addEventListener("pointerup",up);     cv.addEventListener("pointercancel",up);
   practiceReset();
 })();
-(function initPenPad(){
-  const cv=$("penpad");
-  let drawing=false, view=null;
-  const rel=e=>{ const r=cv.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; };
-  cv.addEventListener("pointerdown",e=>{
-    const want=$("pcimpl").value;
-    if(want==="pen" && !(e.pointerType==="pen"||e.pointerType==="mouse")) return;
-    if(want==="finger" && !(e.pointerType==="touch"||e.pointerType==="mouse")) return;
-    e.preventDefault(); drawing=true; view=penPadSetup(); pcPts=[];
-    const p=rel(e); pcPts.push({t:performance.now(),...p,pr:e.pressure??0,k:e.pointerType});
-  });
-  cv.addEventListener("pointermove",e=>{
-    if(!drawing) return; e.preventDefault();
-    const evs=e.getCoalescedEvents?e.getCoalescedEvents():[e];
-    const g=view.g; g.strokeStyle="#1d5fa8"; g.lineWidth=2.4; g.lineCap="round";
-    for(const ev of evs){ const p=rel(ev);
-      const last=pcPts[pcPts.length-1];
-      g.beginPath(); g.moveTo(last.x,last.y); g.lineTo(p.x,p.y); g.stroke();
-      pcPts.push({t:performance.now(),...p,pr:ev.pressure??0,k:ev.pointerType}); }
-  });
-  const finish=()=>{
-    if(!drawing) return; drawing=false;
-    if(!pcPts||pcPts.length<5){ $("pcresult").innerHTML=`<div class="bad">Too few samples —
-      the stroke was very short, or this implement is not registering.</div>`; return; }
-    const dur=(pcPts[pcPts.length-1].t-pcPts[0].t)/1000;
-    const rate=dur>0?(pcPts.length-1)/dur:0;
-    const prs=pcPts.map(p=>p.pr), pmin=Math.min(...prs), pmax=Math.max(...prs);
-    const varied=(pmax-pmin)>0.02;
-    const kinds=[...new Set(pcPts.map(p=>p.k))].join(", ");
-    const hand=$("pchand").value;
-    const ppmm=parseFloat($("ppmm").value)||3.78;
-    PENCHECK[hand]={ samples:pcPts.length, rate:+rate.toFixed(1), pressure_min:+pmin.toFixed(3),
-                     pressure_max:+pmax.toFixed(3), pressure_varied:varied, pointer_types:kinds,
-                     implement:$("pcimpl").value,
-                     task:"spiral", mode:$("pcmode")?$("pcmode").value:"between",
-                     template_style:$("tmpl")?$("tmpl").value:null,
-                     turns:view?view.turns:null, direction:view?view.direction:null,
-                     radius_mm: view ? +(view.radius_px/ppmm).toFixed(1) : null,
-                     duration_s:+dur.toFixed(2),
-                     checked_iso:new Date().toISOString() };
-    $("pcresult").innerHTML=`<div class="${rate<55?"warn":"good"}">
-      <b>${hand} hand</b> — ${pcPts.length} samples over ${dur.toFixed(2)} s,
-      about <b>${rate.toFixed(0)} Hz</b>. Pointer: ${kinds}.
-      Pressure ${varied?`varied ${pmin.toFixed(2)}–${pmax.toFixed(2)}`:`did not vary (${pmax.toFixed(2)})`}.
-      ${rate<55?" Under 60 Hz means one sample per frame — browser kinematics will be coarse.":""}
-      ${!varied&&$("pcimpl").value==="pen"?" No pressure variation from a stylus suggests it is being seen as a plain touch.":""}
-    </div>`;
-  };
-  cv.addEventListener("pointerup",finish);
-  cv.addEventListener("pointercancel",finish);
-  cv.addEventListener("pointerleave",finish);
-  penPadClear();
-})();
 // The checks moved to their own page in v12.05 and this kept watching the old one, so the
 // pads stopped re-laying-out on rotation -- the one orientation change an iPad makes most.
 window.addEventListener("resize",()=>{
-  if(!$("pg7").classList.contains("hidden")){ penPadClear(); practiceRender(); } });
+  if(!$("pg7").classList.contains("hidden")){ practiceRender(); } });
 
 /* ===========================================================================
    SCREENING SCREENS — per participant, not per trial.
@@ -3297,7 +3202,7 @@ function newParticipant(){
   Object.keys(ROOMCHECK).forEach(k=>delete ROOMCHECK[k]); ROOMCHECK.floor_dbfs=null;
   if($("roomresult")) $("roomresult").innerHTML="";
   if($("roomBtn")){ $("roomBtn").disabled=false; $("roomBtn").textContent="Run room check (5 s)"; }
-  penPadClear(); renderAudioCheck(); dotReset(); onVoiceConsentChange();
+  practiceReset(); renderAudioCheck(); dotReset(); onVoiceConsentChange();
   onParamExploreChange();
   SERIES=0;
   Object.keys(REPEATS).forEach(k=>delete REPEATS[k]);
@@ -3447,6 +3352,10 @@ const END_ZONE_PITCH_FRACTION=0.95;
 // measured. A RADIUS BAND asks the same thing and cannot be missed: the pen simply has to be
 // out near the rim, which it unavoidably is if the spiral was actually traced.
 const ADVANCE_RADIUS_FRACTION=0.82;
+// A second guard against a pass ending before one was drawn. Nobody traces six turns in four
+// seconds, so an advance sooner than this is evidence of a detector fault rather than of a
+// fast participant -- and the cost of being wrong is the participant's drawing.
+const MIN_PASS_MS=4000;
 const endZoneDiaMM = pitch => END_ZONE_PITCH_FRACTION*pitch;
 // How long the pen must stay in the zone. Short enough not to feel like a wait, long enough
 // that a pen sweeping through the zone on its way elsewhere does not trigger it.
@@ -3455,18 +3364,37 @@ const END_ZONE_DWELL_MS=200;
 // degrees are inside the end zone anyway, and demanding all of them would strand a
 // participant who stopped a hair short of the marker.
 const ADVANCE_ANGLE_FRACTION=0.95;
+// THE THRESHOLD HAS TO ALLOW FOR THE ANGLE THAT IS NEVER COUNTED. Angle is not accumulated
+// inside the start zone, and on an Archimedean spiral the radius grows in proportion to the
+// angle -- so a start zone at 4 mm of a 60 mm spiral silently swallows 4/60 of the turns.
+// At six turns that is 0.4 of them, which leaves 5.6 available against a 5.7 threshold: the
+// spiral could be traced perfectly and never advance. Requiring a fraction of the angle
+// ACTUALLY AVAILABLE outside the gate keeps the threshold meaning what it says.
+function angleNeededRad(turns, outerR, gateR){
+  const total=turns*2*Math.PI;
+  const reachable=total*(1-Math.min(0.9,(gateR||0)/(outerR||1)));
+  return ADVANCE_ANGLE_FRACTION*reachable;
+}
 
 // Signed angle accumulated about the spiral centre, unwrapped. Called per pen sample with
 // millimetre coordinates in the spiral's own frame, where the centre is the origin.
 // Returns the running total in radians, signed in the direction the template is drawn.
-function makeAngleAccumulator(direction){
+// minR is the radius below which angle is NOT counted, and it has to be generous. Near the
+// centre a small movement sweeps a huge angle: at 1 mm out, half a millimetre sideways is
+// about 30 degrees. The guard used to be 0.5 mm, while the START ZONE ITSELF is 4 mm across
+// -- so a participant settling their hand inside the start circle before drawing racked up
+// angle without drawing anything. Measured: three seconds of fidgeting produced 35 turns,
+// against the 5.7 needed to advance. The next time the pen reached the rim the pass advanced
+// and the drawing was discarded, which is exactly what was reported.
+//
+// Below minR the pen is in the start zone, where there is no spiral to be tracing yet.
+function makeAngleAccumulator(direction, minR){
   const s = direction==="cw" ? -1 : 1;
+  const gate = Math.max(minR||0, 0.5);
   let last=null, total=0;
   return {
     push(x,y){
-      // Inside a few tenths of a millimetre of the centre the angle is undefined and jumps
-      // wildly; the start zone lives there, so ignore it rather than accumulate noise.
-      if(Math.hypot(x,y)<0.5) return total;
+      if(Math.hypot(x,y)<gate){ last=null; return total; }
       const a=Math.atan2(y,x);
       if(last!==null){
         let d=a-last;
@@ -3479,6 +3407,7 @@ function makeAngleAccumulator(direction){
       return total;
     },
     get total(){ return total; },
+    get minR(){ return gate; },
     // THE PEN LEAVING THE GLASS IS NOT MOTION. last used to survive a lift, so if the
     // participant lifted at one angle and touched down at another, the jump between them
     // was read as travel and added -- and if they touched down "behind" where they lifted,
@@ -3540,10 +3469,16 @@ function pentagonModel(sideMM){
   const side = sideMM || PENT_MIN_SIDE_MM;
   const R = side/(2*Math.sin(Math.PI/5));
   const dx = R*PENT_OVERLAP;
-  const left  = pentagonPts(side, 0  ).map(q=>({x:q.x-dx, y:q.y}));
-  const right = pentagonPts(side, 180).map(q=>({x:q.x+dx, y:q.y}));
+  // Each pentagon is tilted, and by DIFFERENT amounts. Two upright pentagons meeting
+  // vertex-to-vertex give an overlap with axes the copier can read off the page, and a
+  // figure that is easier than the instrument this is modelled on. Tilting them means every
+  // one of the ten angles has to be judged rather than inferred from symmetry, and the
+  // overlap is a quadrilateral whose shape carries information.
+  const left  = pentagonPts(side, -14).map(q=>({x:q.x-dx, y:q.y}));
+  const right = pentagonPts(side, 166).map(q=>({x:q.x+dx, y:q.y+side*0.10}));
   const all=[...left,...right];
   return { left, right, side_mm:+side.toFixed(2), overlap:PENT_OVERLAP,
+           rotation_deg:{ left:-14, right:166 }, vertical_offset_frac:0.10,
            circumradius_mm:+R.toFixed(2), centre_separation_mm:+(2*dx).toFixed(2),
            width_mm:+(Math.max(...all.map(q=>q.x))-Math.min(...all.map(q=>q.x))).toFixed(2),
            height_mm:+(Math.max(...all.map(q=>q.y))-Math.min(...all.map(q=>q.y))).toFixed(2) };
@@ -4245,8 +4180,19 @@ function drawScene(){
       // Lights up once the angle condition is met, so "you have drawn enough, go to the end"
       // is visible rather than something the participant has to infer. Before that it is a
       // quiet marker; after it, it is the thing to head for.
-      const armed = RUN && RUN.angle &&
-        RUN.netAngleTotal >= ADVANCE_ANGLE_FRACTION*turns*2*Math.PI;
+      const need = angleNeededRad(turns, radius, RUN && RUN.angle ? RUN.angle.minR : 0);
+      const armed = RUN && RUN.angle && RUN.netAngleTotal >= need;
+      // HOW CLOSE THIS SPIRAL IS TO FINISHING, drawn as an arc filling round the outside.
+      // Without it neither the participant nor the examiner can tell whether the next pass
+      // is imminent or a turn away, and the only feedback was the moment it happened.
+      if(RUN && RUN.angle && !armed && RUN.netAngleTotal>0.05){
+        const frac=Math.max(0,Math.min(1,RUN.netAngleTotal/need));
+        g.save();
+        g.strokeStyle="rgba(29,95,168,.28)"; g.lineWidth=4; g.lineCap="round";
+        g.beginPath();
+        g.arc(c0.x,c0.y,mm2px(radius)+10,-Math.PI/2,-Math.PI/2+frac*2*Math.PI);
+        g.stroke(); g.restore();
+      }
       const ez=endZoneDiaMM(pitch);
       g.fillStyle = armed ? "#F6C79E" : "#FBE6D8";
       g.strokeStyle="#b4531f"; g.lineWidth = armed ? 2.4 : 1.2;
@@ -4666,7 +4612,8 @@ function showInstructionScreen(seq,c,returnToReady){
         onclick="demo('${w}')">${txt}</button>`;
   const soundBtns = c.audio ? `<div style="margin-top:14px">` +
       (twoTones
-        ? btn("std","Play the LOW beep") + btn("tgt","Play the HIGH beep") + btn("alt","Play both")
+        ? btn("std","Play the LOW beep") + btn("tgt","Play the HIGH beep")
+          + btn("alt","Practice — count the high ones")
         : btn("std","Play the beep")) +
       `<div class="note" style="margin-top:6px">Play ${twoTones?"these":"this"} before
         starting.</div></div>` : ``;
@@ -4865,7 +4812,7 @@ function runTrial(seq,c){
         tonesStarted:false, toneT0Ms:null,
         // Sustained trials present one template per PASS. Passes are not trials: one window
         // is one record and one save, and every sample carries the pass it belongs to.
-        pass:1, passes:[], angle:null, netAngleTotal:0, endZoneSince:null,
+        pass:1, passes:[], angle:null, netAngleTotal:0, endZoneSince:null, passStartedAt:null,
         windowEndedAt:null,
         // Initiation measures taken BEFORE the pen ever touches. On a spiral task the
         // interval between the pen appearing above the glass and committing to the first
@@ -4896,7 +4843,9 @@ function runTrial(seq,c){
   noteRouteSample();
   // Signed the way the template is drawn, so tracing it counts up and backtracking counts
   // down. Direction comes from the drawing hand, the same way drawScene picks it.
-  if(c.spiral) RUN.angle=makeAngleAccumulator(TRIAL.drawHand==="left"?"ccw":"cw");
+  // Angle is only counted outside the start zone, where a spiral is actually being traced.
+  if(c.spiral) RUN.angle=makeAngleAccumulator(TRIAL.drawHand==="left"?"ccw":"cw",
+                                              (+$("startdia").value||8)/2);
   // A trial whose window opens at START gets its tone stream NOW, exactly as before v12.01.
   // Only an anchored trial defers the stream, and only because its window is deferred with
   // it. Missing this call is how TAP_TONE briefly became a silent task.
@@ -4975,6 +4924,7 @@ function runTrial(seq,c){
       clearTimeout(RUN.ceilTimer); RUN.ceilTimer=null;
       if(RUN.startZoneWarned) $("reminder").innerHTML="";
       if(RUN.angle) RUN.angle.reset();
+      RUN.passStartedAt=performance.now();
       startToneStream();
       if(RUN.sustained) RUN.timer=setTimeout(()=>endWindow(), RUN.sustainedMs);
     }
@@ -5073,7 +5023,7 @@ function runTrial(seq,c){
                       net_angle_rad:+RUN.netAngleTotal.toFixed(4),
                       net_angle_turns:+(RUN.netAngleTotal/(2*Math.PI)).toFixed(3) });
     RUN.pass++;
-    RUN.endZoneSince=null;
+    RUN.endZoneSince=null; RUN.passStartedAt=performance.now();
     if(RUN.angle) RUN.angle.reset();
     RUN.netAngleTotal=0;
     // Ink clears because a fresh template is up; the strokes stay in STROKES tagged with the
@@ -5094,8 +5044,11 @@ function runTrial(seq,c){
   const checkAdvance=()=>{
     if(!RUN || !RUN.sustained || !inWindow() || !SPIRAL) return;
     const now=performance.now();
+    if(RUN.passStartedAt && now-RUN.passStartedAt < MIN_PASS_MS){ RUN.endZoneSince=null; return; }
     // Angle first: it is the cheap test and the one that makes the zone safe.
-    const needed=ADVANCE_ANGLE_FRACTION*geomTurns(TRIAL.implement)*2*Math.PI;
+    const needed=angleNeededRad(geomTurns(TRIAL.implement),
+      geomPitch(TRIAL.implement)*geomTurns(TRIAL.implement),
+      RUN.angle ? RUN.angle.minR : 0);
     if(RUN.netAngleTotal < needed){ RUN.endZoneSince=null; return; }
     // Then position -- but as a band, not a bullseye. Out near the rim is enough.
     if(!RUN.penMM){ RUN.endZoneSince=null; return; }
