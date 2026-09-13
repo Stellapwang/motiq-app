@@ -133,6 +133,22 @@
              font:16px system-ui; touch-action:none; user-select:none;
              -webkit-user-select:none; -webkit-tap-highlight-color:transparent; }
   .tapzone.lit { background:#1d5fa8; border-color:#1d5fa8; color:#fff; }
+  /* The practice target is the trial's target, minus the absolute positioning. Rehearsing
+     against something that looks different rehearses the wrong thing. It sits on the tapping
+     side of its box for the same reason the trial's does. */
+  .tappracticebox { border:1px solid var(--line); border-radius:10px; background:#fff;
+                    margin-top:10px; height:210px; display:flex; align-items:center;
+                    padding:0 7%; touch-action:none; user-select:none;
+                    -webkit-user-select:none; -webkit-touch-callout:none; }
+  .tappracticebox.left  { justify-content:flex-start; }
+  .tappracticebox.right { justify-content:flex-end; }
+  .tapdot { width:150px; height:150px; border-radius:50%;
+            display:flex; flex-direction:column; align-items:center; justify-content:center;
+            text-align:center; line-height:1.2; gap:2px;
+            border:2px solid #8a929c; background:#f2f5f8; color:#5d6570;
+            font:16px system-ui; touch-action:none; user-select:none;
+            -webkit-user-select:none; -webkit-tap-highlight-color:transparent; }
+  .tapdot.lit { background:#1d5fa8; border-color:#1d5fa8; color:#fff; }
   /* The instruction can be taller than the screen. Content scrolls; the action button
      sits in a bar pinned to the bottom so it can never be pushed out of reach. */
   #overlay { position:absolute; inset:0; display:flex; flex-direction:column;
@@ -513,6 +529,28 @@
         <span>The participant confirms both tones are clearly audible.</span></label>
       <div id="soundnote"></div>
 
+      <!-- AFTER the sound check on purpose: it plays tones, so the level has to be settled
+           first. Before it, the practice would be the thing that sets the volume. -->
+      <div style="border-top:1px solid var(--line);margin-top:16px;padding-top:12px">
+        <b style="font-size:14px">Tapping practice <span style="font-weight:400;color:var(--muted)">— per participant</span></b>
+        <p class="note" style="margin-top:4px">Ten seconds of the TAP_TONE stream, so the
+        first tones a participant hears are not the first tones of a scored trial. TAP_TONE
+        measures the whole response distribution, and the opening responses of an unpractised
+        trial are the participant working out the task. <b>Nothing here is scored.</b></p>
+        <div class="r3" style="margin-top:8px">
+          <div><label for="tphand">Hand</label>
+            <select id="tphand" onchange="tapPracticeReset()">
+              <option value="right">Right</option><option value="left">Left</option></select></div>
+          <div></div><div></div>
+        </div>
+        <div id="tpbox" class="tappracticebox"><div id="tppad" class="tapdot"></div></div>
+        <div class="btnrow" style="margin-top:8px">
+          <button class="ghost" id="tpbtn" onclick="tapPracticeStart()">Start 10 s</button>
+          <span id="tpcount" class="note" style="margin:0"></span>
+        </div>
+        <div id="tpresult" class="note"></div>
+      </div>
+
       <div style="border-top:1px solid var(--line);margin-top:16px;padding-top:12px">
         <b style="font-size:14px">Room check</b>
         <p class="note" style="margin-top:4px">Five seconds of silence, once per session, with
@@ -776,9 +814,10 @@
         <button class="ghost" onclick="renderScreens()">Refresh</button>
         <button class="ghost" onclick="delAllScreens()">Delete all screening</button>
       </div>
-      <div class="note">One row per administration rather than per trial. The dot tap screen is
-      a participant-level covariate and is stored separately from the trial file. Records from
-      screens that have since been retired are still listed and exported here.</div>
+      <div class="note">One row per administration rather than per trial: these are
+      participant-level covariates and are stored separately from the trial file. No screen in
+      the current build writes here — records from retired screens are still listed and
+      exported, so nothing already collected is stranded.</div>
     </fieldset>
 
     <fieldset>
@@ -825,7 +864,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.28 2026-09-13";
+const BUILD = "v12.29 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1588,7 +1627,7 @@ function goPage(n){
   // its real width. Measure on the next frame instead.
   if(n===2) onVoiceConsentChange();
   if(n===7){ onVoiceConsentChange();
-    requestAnimationFrame(()=>{ dotReset(); practiceRender(); }); }
+    requestAnimationFrame(()=>{ tapPracticeReset(); practiceRender(); }); }
   if(n===3){ renderPlan(); renderQueue(); }
   renderStatus();
   if(n===4){ renderAudioTable(); updateGeo(); }
@@ -2291,142 +2330,123 @@ window.addEventListener("resize",()=>{
    =========================================================================== */
 const SCREEN_PREFIX="motiq_screen:";
 
-/* ------------------------------------------------------- dot tap screen */
-// A screen, not a covariate-grade measure. Ten seconds cannot support an estimate of
-// response-time variability -- see measure_grade in the record it writes.
-const DOT_RUN_MS=10000;      // total screen duration
-const DOT_LIFETIME_MS=1500;  // a dot not tapped within this is a miss and disappears
-const DOT_GAP_MS=250;        // blank between one dot going and the next appearing
-const DOT={};
+/* ------------------------------------------------------- retired: dot tap screen
+   A 10 s visual reaction-time screen, removed from the page when the checks were split out
+   in v12.05. Its markup went; its ~150 lines of JavaScript, its record schema and its
+   mention on the Results page did not, and every entry point began `if(!$("dotpad")) return`
+   -- so it read like a feature the battery has and was in fact unreachable.
 
-function dotGeom(){
-  const cv=$("dotpad"), dpr=window.devicePixelRatio||1;
-  const w=cv.clientWidth||700, h=Math.round(clamp(w*0.55,220,460));
-  cv.width=w*dpr; cv.height=h*dpr; cv.style.height=h+"px";
-  const g=cv.getContext("2d"); g.setTransform(dpr,0,0,dpr,0,0);
-  return {g,w,h,r:clamp(Math.min(w,h)*0.085,22,46)};
+   Not replaced like for like. Its own record carried measure_grade "screen" and a note that
+   a 10 s window yields far too few responses to estimate response-time variability, so what
+   was lost was a measure that could not be used. The tapping practice below is what the
+   space is worth: a rehearsal rather than a measurement.
+
+   Records written by it before v12.05 still exist on devices, are still listed on the
+   Results page, and still export -- which is why the screening storage layer stays even
+   though nothing writes to it now.
+   ------------------------------------------------------------------------------------ */
+/* ------------------------------------------------------- tapping practice */
+// A REHEARSAL, NOT A MEASUREMENT, and the distinction decides every choice here.
+//
+// TAP_TONE's measure is the whole response distribution -- ex-Gaussian tau is the point of
+// it -- so the opening responses of an unpractised trial, where the participant is still
+// working out that a beep means a tap, land in the data as slow responses rather than as the
+// learning they are. The sound check plays the tones but never asks for a response, so
+// nothing confirmed the pairing before the scored trial did.
+//
+// Ten seconds, not five. At the tap stream's floor of 600 and mean of 1000 ms, five seconds
+// is about five tones, which is roughly how many it takes to realise what is being asked;
+// ten leaves a few after the penny drops, and is still shorter than a TAP_FAST trial.
+const TAP_PRACTICE_S=10;
+// OUTSIDE THE TRIAL SEED SPACE. Trial seeds are hash32(task#hand#repeat); a fixed constant
+// here cannot collide with one, so the practice can never hand a participant the sequence
+// they are about to be scored on.
+const TAP_PRACTICE_SEED=0x7A9C1B;
+const TP={ running:false, taps:[], kinds:{}, tones:0, timer:null, flash:null };
+function tapPracticeHand(){ return $("tphand") ? $("tphand").value : "right"; }
+function tapPracticeReset(){
+  const box=$("tpbox"), pad=$("tppad"); if(!box||!pad) return;
+  tapPracticeStop();
+  TP.taps=[]; TP.kinds={}; TP.tones=0;
+  const h=tapPracticeHand();
+  box.classList.toggle("left", h==="left"); box.classList.toggle("right", h!=="left");
+  pad.innerHTML=`<span style="font-size:26px;font-weight:700;letter-spacing:.03em">${h.toUpperCase()}</span>
+    <span style="font-size:15px">index finger</span>`;
+  pad.classList.remove("lit");
+  if($("tpbtn")){ $("tpbtn").disabled=false; $("tpbtn").textContent="Start 10 s"; }
+  if($("tpcount")) $("tpcount").textContent="";
+  if($("tpresult")) $("tpresult").innerHTML="";
 }
-function dotDraw(msg){
-  const {g,w,h}=DOT.geom;
-  g.clearRect(0,0,w,h); g.fillStyle="#fff"; g.fillRect(0,0,w,h);
-  if(DOT.cur && DOT.cur.visible){
-    g.fillStyle="#1d5fa8"; g.beginPath(); g.arc(DOT.cur.x,DOT.cur.y,DOT.geom.r,0,7); g.fill();
-  }
-  if(msg){ g.fillStyle="#5d6570"; g.font="16px system-ui"; g.textAlign="center";
-    g.fillText(msg,w/2,h/2); }
+function tapPracticeStop(){
+  if(TP.timer){ clearTimeout(TP.timer); TP.timer=null; }
+  if(TP.flash){ clearTimeout(TP.flash); TP.flash=null; }
+  if(TP.running) stopAudio();
+  TP.running=false;
 }
-function dotStop(){
-  if(DOT.tick){ clearInterval(DOT.tick); DOT.tick=null; }
-  DOT.running=false;
+function tapPracticeStart(){
+  if(TP.running) return;
+  const a=AUDIO_DEFAULTS.TAP_TONE; if(!a) return;
+  let seq;
+  try{ seq=makeSequence(TAP_PRACTICE_S, a.floorMs, a.meanMs, 0, TAP_PRACTICE_SEED, "tap"); }
+  catch(e){ $("tpresult").innerHTML=`<div class="bad">Cannot build the practice stream: ${esc(e.message)}</div>`; return; }
+  TP.taps=[]; TP.kinds={}; TP.tones=seq.n; TP.running=true;
+  if($("tpresult")) $("tpresult").innerHTML="";
+  if($("tpbtn")){ $("tpbtn").disabled=true; $("tpbtn").textContent="Running…"; }
+  // Scheduled on the audio clock, like the trial's stream -- setTimeout per tone would put
+  // the timer's jitter into a rehearsal of a task whose whole subject is timing.
+  newMaster();
+  const c=audio(), lead=(a.lead||500)/1000, t0=c.currentTime+lead;
+  const f=+$("fstd").value, lv=+$("lvl").value;
+  seq.onsets.forEach(ms=>tone(t0+ms/1000, f, a.tone, lv));
+  TP.t0=performance.now()+lead*1000;
+  TP.timer=setTimeout(tapPracticeFinish, lead*1000+seq.durationMs+600);
+  if($("tpcount")) $("tpcount").textContent=`${seq.n} tones over ${TAP_PRACTICE_S} s.`;
 }
-function dotReset(){
-  if(!$("dotpad")) return;
-  dotStop();
-  DOT.geom=dotGeom(); DOT.running=false; DOT.cur=null; DOT.dots=[]; DOT.offTarget=0;
-  DOT.t0=null; DOT.nextAt=0;
-  dotDraw("Press Start, then tap each dot as it appears.");
-  if($("dotstart")) { $("dotstart").disabled=false; $("dotstart").textContent="Start 10 s"; }
-  $("dotresult").innerHTML="";
-}
-// A new dot has to be somewhere else, or "appears at a random position" degenerates
-// into "appears where your finger already is".
-function dotPlace(){
-  const {w,h,r}=DOT.geom, pad=r+8, minHop=Math.min(w,h)*0.35;
-  const prev=DOT.cur;
-  for(let k=0;k<60;k++){
-    const x=pad+Math.random()*(w-2*pad), y=pad+Math.random()*(h-2*pad);
-    if(!prev || Math.hypot(x-prev.x,y-prev.y)>=minHop) return {x,y};
-  }
-  return {x:pad+Math.random()*(w-2*pad), y:pad+Math.random()*(h-2*pad)};
-}
-function dotStart(){
-  DOT.geom=dotGeom(); DOT.dots=[]; DOT.offTarget=0; DOT.cur=null;
-  dotStop();
-  DOT.running=true; DOT.t0=performance.now(); DOT.nextAt=DOT.t0;
-  $("dotstart").disabled=true; $("dotstart").textContent="Running…";
-  $("dotresult").innerHTML=`<div class="note">Running.</div>`;
-  // A timer, not requestAnimationFrame. rAF stops entirely while the page is not
-  // visible, which would leave a run open for ever if the examiner switched away
-  // mid-screen -- the participant would come back to a box that never ends.
-  const loop=()=>{
-    if(!DOT.running) return;
-    const now=performance.now(), elapsed=now-DOT.t0;
-    if(elapsed>=DOT_RUN_MS){
-      if(DOT.cur && DOT.cur.visible){ DOT.cur.visible=false; DOT.cur.outcome="unscored"; }
-      dotStop(); dotDraw("Finished."); dotFinish(); return;
-    }
-    if(DOT.cur && DOT.cur.visible && now-DOT.cur.onsetPerf>=DOT_LIFETIME_MS){
-      DOT.cur.visible=false; DOT.cur.outcome="miss"; DOT.nextAt=now+DOT_GAP_MS;
-    }
-    if((!DOT.cur || !DOT.cur.visible) && now>=DOT.nextAt){
-      const p=dotPlace();
-      DOT.cur={ i:DOT.dots.length+1, x:p.x, y:p.y, visible:true, onsetPerf:now,
-                onset_ms:+(now-DOT.t0).toFixed(1), rt_ms:null, outcome:null };
-      DOT.dots.push(DOT.cur);
-    }
-    dotDraw();
-  };
-  DOT.tick=setInterval(loop,16);
-  loop();
-}
-(function initDot(){
-  const cv=$("dotpad"); if(!cv) return;
-  cv.addEventListener("pointerdown",e=>{
-    if(!DOT.running) return;
-    const want=$("dotimpl").value;
-    if(want==="pen" && !(e.pointerType==="pen"||e.pointerType==="mouse")) return;
-    if(want==="finger" && !(e.pointerType==="touch"||e.pointerType==="mouse")) return;
-    e.preventDefault();
-    const b=cv.getBoundingClientRect(), x=e.clientX-b.left, y=e.clientY-b.top;
-    const now=performance.now(), d=DOT.cur;
-    if(d && d.visible && Math.hypot(x-d.x,y-d.y)<=DOT.geom.r*1.25){
-      d.visible=false; d.outcome="hit"; d.rt_ms=+(now-d.onsetPerf).toFixed(1);
-      DOT.nextAt=now+DOT_GAP_MS; dotDraw();
-    } else DOT.offTarget++;
-  });
-})();
-function dotFinish(){
-  if($("dotstart")){ $("dotstart").disabled=false; $("dotstart").textContent="Run again"; }
-  const scored=DOT.dots.filter(d=>d.outcome==="hit"||d.outcome==="miss");
-  // A run that presented nothing is a run that did not happen. Saving it would put a
-  // row of zeros in the screening file that reads exactly like a participant who
-  // tapped nothing at all.
-  if(!scored.length){
-    $("dotresult").innerHTML=`<div class="warn">No dots were presented; no record was
-      saved. Run the screen again with the iPad in front of the participant.</div>`;
+function tapPracticeFinish(){
+  tapPracticeStop();
+  if($("tpbtn")){ $("tpbtn").disabled=false; $("tpbtn").textContent="Practise again"; }
+  const n=TP.taps.length, kinds=Object.keys(TP.kinds);
+  const el=$("tpresult"); if(!el) return;
+  // NO REACTION TIMES ON SCREEN, deliberately. The retired dot screen reported a mean and an
+  // SD from about a dozen responses and had to carry a paragraph warning nobody to read them
+  // as variability. Ten seconds is no better, and a number printed next to a task is read as
+  // a result whatever the caption says. What a rehearsal can honestly report is whether the
+  // taps arrived at all, and with what.
+  if(!n){
+    el.innerHTML=`<div class="bad"><b>No taps registered.</b> ${TP.tones} tones played and
+      nothing reached the circle. Either the participant did not tap it, or this device is not
+      registering touches on it — check the spiral practice above before running a scored
+      trial.</div>`;
     return;
   }
-  const hits=scored.filter(d=>d.outcome==="hit");
-  const rts=hits.map(d=>d.rt_ms);
-  const m=meanOf(rts), s=sdOf(rts);
-  const rec={
-    ...screenRecordBase("dot_tap"),
-    hand:$("dothand").value, implement:$("dotimpl").value,
-    run_duration_ms:DOT_RUN_MS, dot_lifetime_ms:DOT_LIFETIME_MS, dot_gap_ms:DOT_GAP_MS,
-    dots_presented:scored.length,
-    dots_unscored_at_cutoff:DOT.dots.length-scored.length,
-    hits:hits.length, misses:scored.length-hits.length,
-    off_target_taps:DOT.offTarget,
-    rt_mean_ms: Number.isFinite(m)?+m.toFixed(1):null,
-    rt_sd_ms:   Number.isFinite(s)?+s.toFixed(1):null,
-    dots:DOT.dots.map(d=>({i:d.i,onset_ms:d.onset_ms,rt_ms:d.rt_ms,outcome:d.outcome})),
-    measure_grade:"screen",
-    measure_grade_note:"SCREEN, NOT A COVARIATE-GRADE MEASURE. A 10 s window yields roughly 8-14 responses, which is far too few to estimate response-time variability. rt_sd_ms is reported for completeness and must not be used as an index of intra-individual variability; rt_mean_ms is a coarse screen only."
-  };
-  const res=putScreen(rec);
-  $("dotresult").innerHTML=`<div class="good"><b>${hits.length}</b> of
-    ${scored.length} tapped, ${rec.misses} missed${rec.off_target_taps?`, ${rec.off_target_taps} tap${rec.off_target_taps===1?"":"s"} off target`:""}.
-    Mean RT ${rec.rt_mean_ms==null?"–":Math.round(rec.rt_mean_ms)+" ms"},
-    SD ${rec.rt_sd_ms==null?"–":Math.round(rec.rt_sd_ms)+" ms"}.</div>
-    <div class="warn">This is a screening measure. Ten seconds yields too few responses for
-    the SD to be a usable estimate of response-time variability. The record states this in
-    <code>measure_grade</code>.</div>` +
-    (res.ok ? `<div class="note">Saved as a screening record (<code>${esc(rec.screen_uid)}</code>).</div>`
-            : `<div class="bad">Not saved — ${esc(res.error)}. ${res.error==="no participant id"
-               ? "Enter a Participant ID at the top of this page, then run it again."
-               : "Export and clear storage from Results and data."}</div>`);
-  renderScreens();
+  const many = kinds.length>1;
+  const cls = (n < TP.tones*0.5 || many) ? "warn" : "good";
+  el.innerHTML=`<div class="${cls}"><b>${n}</b> tap${n===1?"":"s"} registered against
+    <b>${TP.tones}</b> tones${kinds.length?`, arriving as ${esc(kinds.join(", "))}`:""}.
+    ${n < TP.tones*0.5
+      ? ` Fewer than half the tones drew a tap. Check the participant can hear them at this
+         level and understands that every beep wants one.` : ""}
+    ${many ? ` More than one kind of contact reached the circle — the task is one index
+         finger.` : ""}
+    Nothing was scored.</div>`;
 }
+(function initTapPractice(){
+  const pad=$("tppad"); if(!pad) return;
+  pad.addEventListener("pointerdown", e=>{
+    e.preventDefault();
+    noteSeenType(e.pointerType);
+    pad.classList.add("lit");
+    if(TP.flash) clearTimeout(TP.flash);
+    TP.flash=setTimeout(()=>pad.classList.remove("lit"), 90);
+    // Taps outside the run are ignored rather than counted: a participant settling a finger
+    // on the circle before Start is not a response, and counting it would make the one
+    // number this reports wrong in the direction that looks fine.
+    if(!TP.running) return;
+    TP.kinds[e.pointerType]=(TP.kinds[e.pointerType]||0)+1;
+    TP.taps.push({ t:+(performance.now()-TP.t0).toFixed(1), k:e.pointerType });
+  });
+  tapPracticeReset();
+})();
 
 /* ------------------------------------------------------- screening storage */
 function screenRecordBase(which){
@@ -3616,7 +3636,7 @@ function newParticipant(){
   Object.keys(ROOMCHECK).forEach(k=>delete ROOMCHECK[k]); ROOMCHECK.floor_dbfs=null;
   if($("roomresult")) $("roomresult").innerHTML="";
   if($("roomBtn")){ $("roomBtn").disabled=false; $("roomBtn").textContent="Run room check (5 s)"; }
-  practiceReset(); renderAudioCheck(); dotReset(); onVoiceConsentChange();
+  practiceReset(); renderAudioCheck(); tapPracticeReset(); onVoiceConsentChange();
   onParamExploreChange();
   SERIES=0;
   Object.keys(REPEATS).forEach(k=>delete REPEATS[k]);
@@ -7466,7 +7486,7 @@ window.addEventListener("resize",()=>{
   const running = RUN && !RUN.ready;
   if(running){ noteTrialResize(); return; }
   if($("stage").classList.contains("on")){ layout(); drawScene(); }
-  else if(!$("pg7").classList.contains("hidden")){ dotReset(); }
+  else if(!$("pg7").classList.contains("hidden")){ tapPracticeReset(); }
 });
 // Recorded on the same footing as a mid-trial zoom, and invalidating the trial through the
 // same geometry_valid field, because the consequence is the same: the millimeters in this
@@ -7491,7 +7511,7 @@ if(/[?&]reset\b/.test(location.search)){ clearState(); }
 
 onLanguageChange();
 renderPlan(); renderAudioTable(); renderSaved(); renderScreens(); renderStatus();
-renderSecureNote(); onVoiceConsentChange(); dotReset(); renderAudioStore();
+renderSecureNote(); onVoiceConsentChange(); renderAudioStore();
 renderZoomBanner();
 
 // Nothing below start-up should be able to leave a blank page.
