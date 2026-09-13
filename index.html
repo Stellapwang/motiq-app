@@ -475,6 +475,12 @@
         <span id="prcount" class="note" style="margin:0"></span>
       </div>
       <div id="prlog"></div>
+      <div class="btnrow" style="margin-top:6px">
+        <button class="ghost sm" onclick="prSendReport()">Send input diagnostics</button>
+        <span class="note" style="margin:0">Sends what this pad has seen to the reviewing
+          machine. No participant data is included.</span>
+      </div>
+      <div id="prsendnote"></div>
       <div id="prresult" class="note"></div>
     </fieldset>
 
@@ -818,7 +824,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.25 2026-09-13";
+const BUILD = "v12.26 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1820,12 +1826,67 @@ const PR={ pass:1, angle:null, lastPt:null, drawing:false, view:null, strokes:[]
 // pointerdown-only counter reports "no pencil at all", which is the same answer it gives for
 // a pencil that is flat. Those are opposite problems. Every pointer event type is counted,
 // and the pen's event types are named, so "hover but never down" is visible as itself.
-const PRLOG={ canvas:{}, page:{}, penEvents:{}, captured:null, cancels:0,
-              rejected:0, lastRejected:null };
+const PRLOG={ canvas:{}, page:{}, penEvents:{}, touchTypes:{}, raw:[], captured:null,
+              cancels:0, rejected:0, lastRejected:null };
 function prCount(bucket,k){ bucket[k]=(bucket[k]||0)+1; }
+// RAW EVENTS, not just totals. Totals answer "how many"; a report that has to travel to
+// somebody without the device in front of them needs "in what order", because a pointerdown
+// followed immediately by a pointercancel and a pointerdown that is never followed by
+// anything are different faults with identical totals.
+//
+// Runs of one event type are collapsed, otherwise a single stroke is four hundred identical
+// lines and the three events that matter are off the end of the buffer.
+const PR_RAW_MAX=48;
+function prRaw(type,kind,extra){
+  const last=PRLOG.raw[PRLOG.raw.length-1];
+  if(last && last.type===type && last.kind===kind){ last.n++; return; }
+  PRLOG.raw.push({type,kind,n:1,extra:extra||"",ms:Math.round(performance.now())});
+  if(PRLOG.raw.length>PR_RAW_MAX) PRLOG.raw.shift();
+}
 function prLogReset(){
-  PRLOG.canvas={}; PRLOG.page={}; PRLOG.penEvents={}; PRLOG.captured=null; PRLOG.cancels=0;
-  PRLOG.rejected=0; PRLOG.lastRejected=null; renderPrLog();
+  PRLOG.canvas={}; PRLOG.page={}; PRLOG.penEvents={}; PRLOG.touchTypes={}; PRLOG.raw=[];
+  PRLOG.captured=null; PRLOG.cancels=0; PRLOG.rejected=0; PRLOG.lastRejected=null;
+  renderPrLog();
+}
+// The whole report as plain text, for sending rather than transcribing.
+function prReportText(){
+  const L=[];
+  L.push("MotiQ input diagnostics");
+  L.push("build: "+BUILD);
+  L.push("url: "+location.href);
+  L.push("ua: "+navigator.userAgent);
+  L.push("maxTouchPoints: "+(navigator.maxTouchPoints==null?"?":navigator.maxTouchPoints)+
+         "  PointerEvent: "+(typeof PointerEvent!=="undefined")+
+         "  TouchEvent: "+(typeof TouchEvent!=="undefined"));
+  L.push("implement setting: "+($("pcimpl")?$("pcimpl").value:"?"));
+  const fmt=b=>{ const k=Object.keys(b); return k.length?k.map(x=>x+"="+b[x]).join(" "):"none"; };
+  L.push("pointerdown on canvas: "+fmt(PRLOG.canvas));
+  L.push("pointerdown on document: "+fmt(PRLOG.page));
+  L.push("pen event types: "+fmt(PRLOG.penEvents));
+  L.push("touch.touchType seen: "+fmt(PRLOG.touchTypes));
+  L.push("capture: "+(PRLOG.captured===null?"not attempted":PRLOG.captured?"taken":"refused")
+         +"  cancels: "+PRLOG.cancels+"  refused by implement: "+PRLOG.rejected);
+  L.push("--- raw, oldest first ---");
+  PRLOG.raw.forEach(r=>L.push(String(r.ms).padStart(7)+"  "+r.type+" ["+r.kind+"]"
+    +(r.n>1?" x"+r.n:"")+(r.extra?"  "+r.extra:"")));
+  if(!PRLOG.raw.length) L.push("(no pointer or touch events recorded at all)");
+  return L.join("\n");
+}
+// Posts to the review server this page was served from, which already has an endpoint for
+// exactly this. Falls back to putting the text on screen to be copied, because the endpoint
+// only exists when the app is opened through that server.
+function prSendReport(){
+  const el=$("prsendnote"), txt=prReportText();
+  const show=msg=>{ if(el) el.innerHTML=msg; };
+  show(`<div class="note" style="margin:6px 0 0">Sending…</div>`);
+  fetch("/report",{method:"POST",headers:{"Content-Type":"text/plain"},body:txt})
+    .then(r=>{ if(!r.ok) throw new Error("HTTP "+r.status); return r.text(); })
+    .then(()=>show(`<div class="good" style="margin:6px 0 0"><b>Sent.</b> Nothing else to
+      do — the report is on the reviewing machine.</div>`))
+    .catch(err=>show(`<div class="warn" style="margin:6px 0 0"><b>Could not send</b>
+      (${esc(String(err.message||err))}) — this address has no report endpoint. Copy the text
+      below instead.<textarea rows="12" style="width:100%;font-family:ui-monospace,monospace;
+      font-size:11px;margin-top:6px">${esc(txt)}</textarea></div>`));
 }
 function renderPrLog(){
   const el=$("prlog"); if(!el) return;
@@ -1859,10 +1920,14 @@ function renderPrLog(){
     verdict=`<div class="note" style="margin:6px 0 0">${PRLOG.rejected} contact${PRLOG.rejected===1?"":"s"}
       ignored: Implement is set to <b>${PRLOG.lastRejected==="touch"?"Stylus":"Index finger"}</b>
       and ${PRLOG.lastRejected==="touch"?"that was a finger":"that was a stylus"}.</div>`;
+  const rawTail=PRLOG.raw.slice(-10).map(r=>
+    r.type+" ["+r.kind+"]"+(r.n>1?" x"+r.n:"")).join(" → ");
   el.innerHTML=`<div class="note" style="margin:6px 0 0;font-size:12px">
-    Input seen — <b>pad:</b> ${fmt(PRLOG.canvas)} &nbsp;·&nbsp; <b>page:</b> ${fmt(PRLOG.page)}
+    <b>${esc(BUILD)}</b> — input seen: <b>pad:</b> ${fmt(PRLOG.canvas)} &nbsp;·&nbsp; <b>page:</b> ${fmt(PRLOG.page)}
     ${PRLOG.captured===null?"":` &nbsp;·&nbsp; capture ${PRLOG.captured?"taken":"<b>refused</b>"}`}
     ${penTypes.length?`<br><b>stylus events:</b> ${penTypes.map(k=>`${k} ${PRLOG.penEvents[k]}`).join(" · ")}`:""}
+    ${Object.keys(PRLOG.touchTypes).length?`<br><b>touch.touchType:</b> ${Object.keys(PRLOG.touchTypes).map(k=>`${k} ${PRLOG.touchTypes[k]}`).join(" · ")}`:""}
+    ${rawTail?`<br><span style="font-family:ui-monospace,monospace;font-size:11px">${esc(rawTail)}</span>`:""}
     </div>${verdict}`;
 }
 function practiceSetup(){
@@ -2057,6 +2122,12 @@ function practiceReset(){
   document.addEventListener("pointerdown", e=>{
     const pg=$("pg7"); if(pg && pg.classList.contains("hidden")) return;
     prCount(PRLOG.page, e.pointerType);
+    // DISARMS THE TOUCH FALLBACK. A real pen pointerdown proves pointer events work on this
+    // device, and leaving the fallback armed after that point feeds every stroke in twice --
+    // once from the pointer stream and once from the touch stream Safari sends alongside it.
+    // Arming is one-way only in the sense that matters: it survives a reset, but not
+    // evidence that it was never needed.
+    if(e.pointerType==="pen" && touchFallback){ touchFallback=false; prRaw("fallback:off","pen"); }
     if(onPad(e)) down(e); else renderPrLog();
   }, {capture:true});
   document.addEventListener("pointermove", e=>{ if(PR.drawing) move(e); },
@@ -2065,12 +2136,59 @@ function practiceReset(){
   document.addEventListener("pointercancel", e=>{ if(PR.drawing) cancel(e);  }, {capture:true});
   // EVERY pointer event type the pen produces, named. pointerover and pointermove without a
   // pointerdown is a pencil the browser sees and will not let the page have; see PRLOG.
+  const onChecks = () => { const pg=$("pg7"); return !(pg && pg.classList.contains("hidden")); };
   ["pointerover","pointerenter","pointermove","pointerdown","pointerup","pointerout",
    "pointercancel","pointerleave"].forEach(t=>
     document.addEventListener(t, e=>{
-      const pg=$("pg7"); if(pg && pg.classList.contains("hidden")) return;
-      if(e.pointerType!=="pen") return;
-      prCount(PRLOG.penEvents, t); renderPrLog();
+      if(!onChecks()) return;
+      prRaw(t, e.pointerType||"?");
+      if(e.pointerType==="pen") prCount(PRLOG.penEvents, t);
+      renderPrLog();
+    }, {capture:true, passive:true}));
+  // TOUCH EVENTS TOO, AND THIS IS NOT REDUNDANT. On iOS a Touch carries `touchType`, which is
+  // "direct" for a finger and "stylus" for an Apple Pencil. If Safari is delivering the
+  // pencil as a touch and withholding the pointer event, nothing in the Pointer Events API
+  // can see it -- from there it is indistinguishable from a pencil that is not there at all.
+  // This is the one place the two hypotheses separate, and if it is the answer it is also the
+  // fix: read the touch stream.
+  // AND IF THAT IS THE ANSWER, THIS IS THE FIX, armed in the same handler that detects it.
+  //
+  // Safari fires pointerdown BEFORE touchstart, so on a device where pointer events work the
+  // pen pointerdown is already counted by the time the first stylus touch is seen and the
+  // fallback never arms. It can only turn on where a stylus has touched the pad and no pen
+  // pointerdown has ever arrived -- which is precisely the case that has been costing round
+  // trips. Once armed it stays armed, because a device that withholds the pointer event once
+  // will withhold it every time.
+  let touchFallback=false;
+  // A Touch is not a PointerEvent. down/move/release read five fields; this supplies them.
+  // pressure comes from force, which is 0 on hardware that does not report it -- the pen
+  // check already treats an unvarying pressure as its own finding, so a zero is informative
+  // rather than a lie.
+  const shimTouch = t => ({ clientX:t.clientX, clientY:t.clientY, pressure:t.force||0,
+                            pointerType:"pen", pointerId:t.identifier,
+                            preventDefault(){}, });
+  const padTouchOf = e => {
+    const list=e.touches&&e.touches.length?e.touches:e.changedTouches;
+    for(const t of (list||[])) if(onPad(t)) return t;
+    return null;
+  };
+  ["touchstart","touchmove","touchend","touchcancel"].forEach(t=>
+    document.addEventListener(t, e=>{
+      if(!onChecks()) return;
+      const tt=(e.touches&&e.touches[0]&&e.touches[0].touchType)
+            || (e.changedTouches&&e.changedTouches[0]&&e.changedTouches[0].touchType) || "?";
+      prCount(PRLOG.touchTypes, tt);
+      prRaw(t, tt);
+      if(tt==="stylus" && !PRLOG.penEvents.pointerdown && t==="touchstart" && padTouchOf(e)){
+        if(!touchFallback){ touchFallback=true; prRaw("fallback:armed","stylus"); }
+      }
+      if(touchFallback && tt==="stylus"){
+        const pt=padTouchOf(e);
+        if(t==="touchstart" && pt) down(shimTouch(pt));
+        else if(t==="touchmove" && pt && PR.drawing) move(shimTouch(pt));
+        else if((t==="touchend"||t==="touchcancel") && PR.drawing) release(null);
+      }
+      renderPrLog();
     }, {capture:true, passive:true}));
   // The stage swallows touchmove and the gesture events document-wide while it is up, and
   // that -- not touch-action, which this file already records as insufficient on iPadOS -- is
