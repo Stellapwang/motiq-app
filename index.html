@@ -820,7 +820,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.17 2026-09-13";
+const BUILD = "v12.18 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1118,6 +1118,9 @@ const countFloorMs = () => (langEntry(ADMIN_LANG) || LANGUAGES.en).countFloorMs;
 // session on top. Without it there is no way to tell a value the examiner chose from a value
 // that is simply old, and every parameter change in a new build looks like it did not happen.
 let AUDIO_SHIPPED=null;
+// Values the examiner deliberately changed, carried over from a saved session. Listed on the
+// Parameters page so a non-default number is never quietly in force.
+let RESTORED_EDITS=[];
 const AUDIO_DEFAULTS = {
   // 2 x 50 s at a 1000 ms mean yields about 100 responses, which is what ex-Gaussian
   // fitting needs. The FLOOR stays 600 ms: it exists so a response completes before the
@@ -3280,12 +3283,12 @@ function renderAudioTable(){
       if(a[f]!==d[f]) drifted.push(`${k} ${f}: ${a[f]} (this build ships ${d[f]})`);
     });
   });
-  if(drifted.length) notes+=`<div class="warn"><b>Some values are not this build's defaults.</b>
-    They came from the saved session on this device, which is why a parameter changed in a new
-    build can look as though it did not change.<br>
+  if(drifted.length) notes+=`<div class="warn"><b>${drifted.length} value${drifted.length===1?" differs":"s differ"} from this build's defaults</b>
+    — edited here, or carried over from an earlier session on this device. Everything not listed
+    already follows the build.<br>
     ${drifted.map(esc).join("<br>")}
     <div style="margin-top:7px"><button class="ghost sm" onclick="resetAudioToShipped()">
-      Reset these to the build defaults</button></div></div>`;
+      Use this build's values instead</button></div></div>`;
 
   const slow=Object.entries(AUDIO_DEFAULTS).filter(([k,a])=>bindingLimitMs(k,a)<950).map(([k])=>k);
   if(slow.length) notes+=`<div class="warn">Usable window under 900 ms on
@@ -6751,7 +6754,12 @@ function saveState(){
       race: raceCode(),
       explShown:[...EXPL_SHOWN],
       series:SERIES, repeats:REPEATS, lastTask:LAST_TASK, lastHand:LAST_HAND,
-      audio:AUDIO_DEFAULTS, savedAt:new Date().toISOString()
+      audio:AUDIO_DEFAULTS,
+      // What the build that saved this session shipped. On the way back in it is the only
+      // way to tell a value the examiner CHOSE from a value that is simply the old default:
+      // if the saved value still equals the saved default, nobody touched it.
+      audioShipped:AUDIO_SHIPPED,
+      savedAt:new Date().toISOString()
     }));
   }catch(e){}
 }
@@ -6816,8 +6824,32 @@ function restoreState(){
     SERIES=Number(st.series)||0;
     if(st.repeats && typeof st.repeats==="object") Object.assign(REPEATS, st.repeats);
     LAST_TASK=st.lastTask||st.lastCond||null; LAST_HAND=st.lastHand||null;
-    if(st.audio) Object.entries(st.audio).forEach(([k,v])=>{
-      if(AUDIO_DEFAULTS[k] && v && typeof v==="object") Object.assign(AUDIO_DEFAULTS[k],v); });
+    // PARAMETERS FOLLOW THE BUILD UNLESS THE EXAMINER MOVED THEM. Restoring the saved values
+    // wholesale meant a parameter changed in a new build never appeared -- the session kept
+    // handing back the old number, and the only symptom was a value that looked unchanged.
+    // Restoring nothing would throw away deliberate edits, which is worse.
+    //
+    // With the shipping defaults saved alongside, the two cases separate cleanly: a saved
+    // value that still equals the default it was saved against was never touched, so it
+    // follows this build. A value that differs was chosen, so it is kept. Anything kept is
+    // listed on the Parameters page, so an old number is never silently in force.
+    if(st.audio){
+      const wasShipped=st.audioShipped||null;
+      RESTORED_EDITS=[];
+      Object.entries(st.audio).forEach(([k,v])=>{
+        if(!AUDIO_DEFAULTS[k] || !v || typeof v!=="object") return;
+        Object.entries(v).forEach(([f,val])=>{
+          if(typeof val==="object") return;
+          const oldDefault = wasShipped && wasShipped[k] ? wasShipped[k][f] : undefined;
+          const untouched = wasShipped ? (val===oldDefault) : false;
+          if(untouched) return;                       // let this build's value stand
+          if(AUDIO_DEFAULTS[k][f]!==val){
+            RESTORED_EDITS.push(`${k} ${f}: ${val} (build ships ${AUDIO_DEFAULTS[k][f]})`);
+            AUDIO_DEFAULTS[k][f]=val;
+          }
+        });
+      });
+    }
 
     // The language is restored from STATE_FIELDS like any other field. Its side effects
 
