@@ -360,6 +360,34 @@
         </div>
       </div>
     </fieldset>
+    <!-- THINGS THE APP CANNOT DO FOR ITSELF. A web page cannot set the brightness, cannot
+         stop the iPad sliding on the table, and cannot hold the screen still -- but every one
+         of them changes the data if it is wrong, and none of them announces itself
+         afterwards. They describe the iPad rather than the person, so they survive a new
+         participant the way the calibration does. -->
+    <fieldset>
+      <legend>Before the session <span style="font-weight:400;color:var(--muted)">— set on the iPad, not in here</span></legend>
+      <p class="note" style="margin-top:0">None of these can be set by the app, and each one
+      changes the measurement if it is wrong.</p>
+      <label class="checkrow" for="setup_bright"><input id="setup_bright" type="checkbox" onchange="renderSetupNote()">
+        <span><b>Brightness at maximum, Auto-Brightness off.</b> The spiral template is a grey
+        line on white; a dim screen makes it harder to see, and auto-brightness changes that
+        part-way through a trial without saying so.</span></label>
+      <label class="checkrow" for="setup_fixed"><input id="setup_fixed" type="checkbox" onchange="renderSetupNote()">
+        <span><b>iPad flat and secured on the table.</b> Tapping and drawing push it. A device
+        that slides changes where the participant is reaching and is a source of movement the
+        pen cannot tell apart from the participant's own.</span></label>
+      <label class="checkrow" for="setup_lock"><input id="setup_lock" type="checkbox" onchange="renderSetupNote()">
+        <span><b>Rotation locked and Auto-Lock set to Never.</b> A rotation mid-trial rebuilds
+        the drawing area under the pen and invalidates the millimetre measures; the screen
+        dimming or sleeping during a long spiral ends the trial for the participant.</span></label>
+      <label class="checkrow" for="setup_guided"><input id="setup_guided" type="checkbox" onchange="renderSetupNote()">
+        <span><b>Guided Access on</b> (Settings → Accessibility → Guided Access; triple-click
+        the side button to start). It pins the iPad to this one screen, so a stray palm cannot
+        switch apps, pull down a notification or leave the trial.</span></label>
+      <div id="setupnote"></div>
+    </fieldset>
+
     <fieldset>
       <legend>Screen calibration <span style="font-weight:400;color:var(--muted)">— per device, done once</span></legend>
       <div id="detected" class="note"></div>
@@ -800,9 +828,36 @@
             <option value="random">New random each trial</option>
             <option value="fixed">Fixed seed (one stream everywhere)</option></select></div>
       </div>
-      <div class="note"><b>Tone level is not the volume.</b> It is the digital amplitude of the
-      synthesised tone before the iPad's own volume control: 1.0 is the loudest undistorted
-      signal, 0.5 about −6 dBFS. Leave it at 0.5 and set loudness with the iPad volume.</div>
+      <div class="note" style="line-height:1.6"><table>
+        <tr><th>Setting</th><th>What it is</th><th>Range</th></tr>
+        <tr><td><b>Standard (Hz)</b></td>
+            <td>The pitch of the common, low beep — the one that is ignored on an oddball and
+                answered on every other stream.</td>
+            <td>500–1500 Hz.<br>1000 is the default.</td></tr>
+        <tr><td><b>Target (Hz)</b></td>
+            <td>The pitch of the rare, high beep. What matters is the SEPARATION from the
+                standard, not the absolute pitch: the two must be told apart instantly by
+                someone who is also drawing, so this is not a discrimination test. An octave
+                (double the standard) is unmistakable. Below about 1.3× they start to be
+                confusable under load. Keep both under 4 kHz, where age-related hearing loss
+                begins to bite.</td>
+            <td>1.5–2× the standard.<br>2000 against 1000 is the default.</td></tr>
+        <tr><td><b>Tone level</b></td>
+            <td><b>Not the volume.</b> It is the digital amplitude of the synthesised tone
+                BEFORE the iPad's own volume control: 1.0 is the loudest undistorted signal,
+                0.5 about −6 dBFS. Loudness is set with the iPad's volume buttons and
+                confirmed in the sound check; this only decides how much headroom there is
+                above the digital noise floor. Leave it alone.</td>
+            <td>0.05–1.0.<br>Leave at 0.5.</td></tr>
+        <tr><td><b>Sequence</b></td>
+            <td>Where the random stream comes from. <b>Matched</b> gives every participant the
+                same stream for a given task and repeat, so a difference between two people
+                is a difference between the people. <b>New random each trial</b> gives a fresh
+                stream every time, which is right for piloting and wrong for comparing.
+                <b>Fixed seed</b> gives one single stream everywhere, including across
+                different tasks.</td>
+            <td>Matched, for a study.</td></tr>
+      </table></div>
       <div class="btnrow">
         <button class="ghost sm" onclick="demo('std')">Play standard</button>
         <button class="ghost sm" onclick="demo('tgt')">Play target</button>
@@ -939,7 +994,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.41 2026-09-13";
+const BUILD = "v12.42 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1722,6 +1777,7 @@ function goPage(n){
   // v12.30; leaving its render call on the old Checks hook would have left it blank until
   // somebody opened a page it is no longer on. The room check writes only into #roomresult
   // when it runs, so it has nothing to render on arrival.
+  if(n===1) renderSetupNote();
   if(n===2){ onVoiceConsentChange(); renderAudioCheck(); }
   if(n===7) requestAnimationFrame(()=>{ tapPracticeReset(); practiceRender(); });
   if(n===3){ renderPlan(); renderQueue(); }
@@ -2832,6 +2888,20 @@ const VOICE_TASKS = () => CATALOGUE.filter(c=>c.voice).map(c=>c.id);
 // question about the participant -- two different things, and the one an examiner can act on
 // is the tick. It belongs with the other three platform limits, and now always says which
 // way round it currently is instead of appearing only when broken.
+// Not a blocker. The app cannot verify any of it, so a tick here is the examiner's word,
+// and treating an unticked box as a hard stop would only teach people to tick it.
+const SETUP_ITEMS=[["setup_bright","brightness"],["setup_fixed","device secured"],
+                   ["setup_lock","rotation and auto-lock"],["setup_guided","Guided Access"]];
+function setupDone(){ return SETUP_ITEMS.filter(([id])=>$(id)&&$(id).checked).map(([,w])=>w); }
+function renderSetupNote(){
+  const el=$("setupnote"); if(!el) return;
+  const done=setupDone(), miss=SETUP_ITEMS.filter(([id])=>!($(id)&&$(id).checked)).map(([,w])=>w);
+  el.innerHTML = miss.length
+    ? `<div class="note">Not confirmed: <b>${miss.join(", ")}</b>. Recorded with every trial
+       either way.</div>`
+    : `<div class="good">Device set up for a session.</div>`;
+  saveState();
+}
 function renderSecureNote(){
   const el=$("securenote"); if(!el) return;
   const ok=secureOrigin();
@@ -3963,17 +4033,54 @@ function renderAudioTable(){
   // else that used to be here -- how the distribution works, how self-paced streams are
   // generated, that the values are unpiloted -- is in the source, not on screen in front of
   // an administrator running a session.
-  let notes=`<div class="note">
-    <b>Tones</b> is how many tones the whole stream contains — <i>every</i> tone, not only the
-    high ones. On an oddball the number of HIGH tones is roughly Tones × Target prob., jittered
-    per trial so the answer cannot be learned. A range means the tasks in that row run for
-    different lengths.<br>
+  // A COLUMN AT A TIME, with the range and what moving it costs. A number an examiner can
+  // edit and cannot interpret is a number that gets edited by guess.
+  let notes=`<div class="note" style="line-height:1.6">
+    <b>Intervals are not evenly spaced.</b> Every gap is a fixed <b>floor</b> plus a random
+    draw whose average brings the gap up to the <b>mean</b>, so the next tone cannot be
+    anticipated.
+    <table style="margin-top:8px">
+      <tr><th>Column</th><th>What it is</th><th>Range</th></tr>
+      <tr><td><b>Floor</b></td>
+          <td>The shortest gap the stream will ever produce. It exists so one response can
+              finish before the next tone lands, so it is a property of the RESPONSE: a tap
+              needs about 600 ms, a spoken number about 800. Raising it makes the stream
+              slower and more forgiving and widens the usable window; lowering it packs the
+              tones together and starts losing slow responses.</td>
+          <td>150 ms minimum.<br>Tap 500–700, spoken 700–900.</td></tr>
+      <tr><td><b>Mean interval</b></td>
+          <td>The average gap. <b>The gap between floor and mean IS the randomness</b> — a
+              mean only a little above the floor is a metronome, a mean far above it is
+              sparse and slow. Must be greater than the floor or the stream cannot be built.
+              It also sets how many tones a trial contains: tones ≈ length ÷ mean.</td>
+          <td>Above the floor, always.<br>1.5–2× the floor.</td></tr>
+      <tr><td><b>Target prob.</b></td>
+          <td>The share of tones that are HIGH, on an oddball. Rarity is what makes a target
+              a target, so this stays low; raising it turns vigilance into discrimination.
+              Blank on a stream where every tone is answered.</td>
+          <td>0.15–0.30.<br>Above 0.35 it stops being an oddball.</td></tr>
+      <tr><td><b>Tone (ms)</b></td>
+          <td>How long each beep sounds. Long enough to be clearly heard and pitched, short
+              enough not to overlap the response to it. Does not change the timing of the
+              stream, only the sound.</td>
+          <td>30–200 ms.<br>80–120 is the useful range.</td></tr>
+      <tr><td><b>Tones</b></td>
+          <td>Read-only. How many tones the whole stream contains — <i>every</i> tone, not
+              only the high ones. On an oddball the number of HIGH tones is roughly Tones ×
+              Target prob., jittered per trial so the answer cannot be learned. A range means
+              the tasks in that row run for different lengths.</td>
+          <td>Follows from length and mean.</td></tr>
+      <tr><td><b>Usable window</b></td>
+          <td>Read-only. The longest response that can still be attributed to the right tone.
+              A response slower than this cannot be told apart from an early response to the
+              NEXT tone, so it is counted as a miss rather than as a slow answer. Equal to
+              the floor where every tone is answered, twice the floor on an oddball, since no
+              two targets are adjacent.</td>
+          <td>Follows from the floor.</td></tr>
+    </table>
     <b>Length and lead-in are not set here.</b> Length belongs to the trial and is in the plan
-    table; the lead-in is 1 s where there is drawing to get going first and 0.5 s otherwise.<br>
-    <b>Intervals are not evenly spaced.</b> Each gap is a fixed <b>floor</b> plus a random
-    draw with the given <b>mean</b>, so the next tone cannot be anticipated.<br>
-    <b>Usable window</b> is the longest response still attributable to one tone. It follows
-    from the floor and is not set directly.</div>`;
+    table; the lead-in is 1 s where there is drawing to get going first and 0.5 s
+    otherwise.</div>`;
 
   // WHICH VALUES ARE NOT THIS BUILD'S. A saved session restores the parameters it was saved
   // with, which is right -- an examiner's edits should survive a reload. But it also means a
@@ -3991,9 +4098,11 @@ function renderAudioTable(){
       .map(f=>`${FIELD_LABEL[f]} ${g.a[f]} (ships ${d[f]})`);
     if(bits.length) drifted.push(`<b>${(STREAM_ROW_LABEL[g.key]||[g.key])[0]}</b> — ${bits.join(", ")}`);
   });
-  if(drifted.length) notes+=`<div class="warn"><b>Not this build's values.</b> These were
-    edited here, or carried over from a session saved on this device. Anything not listed
-    already follows the build.<br>
+  if(drifted.length) notes+=`<div class="warn"><b>These numbers are not the ones this
+    version of the app was released with.</b> Either they were typed in on this page, or the
+    session saved on this iPad is older than the app and is still handing back its own
+    values. Either way the trials you run now will use what is listed here, not what is
+    printed in brackets. If you did not change them on purpose, press the button.<br>
     ${drifted.join("<br>")}
     <div style="margin-top:7px"><button class="ghost sm" onclick="resetAudioToShipped()">
       Use this build's values instead</button></div></div>`;
@@ -4012,10 +4121,12 @@ function renderAudioTable(){
 
   const slow=streamGroups().filter(g=>bindingLimitMs(g.first,g.a)<950)
     .map(g=>(STREAM_ROW_LABEL[g.key]||[g.key])[0]);
-  if(slow.length) notes+=`<div class="warn">Usable window under 900 ms on
-    <b>${slow.join(", ")}</b>. Reported reaction time in Lewy body dementia sits near 900 ms
-    before dual-task load, so these load attention but lose the slowest responses as a
-    measure. Raise the floor to widen the window.</div>`;
+  if(slow.length) notes+=`<div class="warn"><b>Usable window under 900 ms on
+    ${slow.join(", ")}.</b> Any response slower than the window cannot be attributed to the
+    tone that prompted it, so it is recorded as a miss rather than as a slow answer. On these
+    settings the participants who respond slowest — which on a dual task is most of them —
+    have their slowest responses removed from the measure rather than measured. Raise the
+    floor to widen the window.</div>`;
 
   Object.entries(AUDIO_DEFAULTS).forEach(([k,a])=>{
     const pair=a.pairWith && AUDIO_DEFAULTS[a.pairWith];
@@ -6829,6 +6940,9 @@ function paramSet(){
     pitch_mm:geomPitch(c.implement), turns:geomTurns(c.implement),
     geometry_note:"pitch and turns come from the geometry set for this task's implement; the stylus and finger families differ deliberately and are not comparable as measures",
     end_angle_deg:+$("endang").value, instruction:$("instr").value,
+    // The examiner's word on the four things the app cannot check for itself. Recorded
+    // because a trial run on a dim, sliding, unlocked iPad is not the same trial.
+    device_setup: SETUP_ITEMS.reduce((o,[id,w])=>{ o[w.replace(/[^a-z]+/g,"_")]=!!($(id)&&$(id).checked); return o; },{}),
     start_zone_mm:+$("startdia").value, split:+$("split").value,
     template_style:$("tmpl").value, idle_stop_s:+$("idle").value };
   if(c.tap) p.tap={ zone_mm:+$("tapdia").value, zones:c.zones, spacing_mm:+$("zonegap").value };
@@ -7839,6 +7953,8 @@ function saveState(){
       // Checkboxes carry no .value, so STATE_FIELDS cannot see them. Losing the race
       // selection on a reload would silently blank a demographic that was collected.
       race: raceCode(),
+      // Same reason: a checkbox has no .value for STATE_FIELDS to persist.
+      setup: SETUP_ITEMS.reduce((o,[id])=>{ o[id]=!!($(id)&&$(id).checked); return o; },{}),
       explShown:[...EXPL_SHOWN],
       series:SERIES, repeats:REPEATS, lastTask:LAST_TASK, lastHand:LAST_HAND,
       audio:AUDIO_DEFAULTS,
@@ -7861,6 +7977,8 @@ function restoreState(){
     Object.entries(st.fields).forEach(([id,v])=>{ if($(id)) $(id).value=v; });
     if(st.sessionKey) SESSION_KEY=st.sessionKey;
     if($("paramexplore")) $("paramexplore").checked=!!st.paramExplore;
+    if(st.setup) SETUP_ITEMS.forEach(([id])=>{ if($(id)) $(id).checked=!!st.setup[id]; });
+    renderSetupNote();
     if(st.race!=null) document.querySelectorAll(".racebox").forEach(bx=>{ bx.checked=!!(st.race & +bx.value); });
     // Renamed codes resolve through the alias, so a pulled-in task survives the rename.
     if(Array.isArray(st.explShown)) EXPL_SHOWN=new Set(st.explShown.map(taskId).filter(id=>byId(id)));
@@ -8032,7 +8150,7 @@ if(/[?&]reset\b/.test(location.search)){ clearState(); }
 
 onLanguageChange();
 renderPlan(); renderAudioTable(); renderSaved(); renderScreens(); renderStatus();
-renderSecureNote(); onVoiceConsentChange(); renderAudioStore();
+renderSecureNote(); onVoiceConsentChange(); renderAudioStore(); renderSetupNote();
 renderZoomBanner();
 
 // THE BUILD'S OWN PROTOCOL VALUES, captured before restoreState() overlays a saved session
