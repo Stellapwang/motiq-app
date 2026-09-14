@@ -798,14 +798,42 @@
                a single self-paced spiral throughout. 5 s is inside the range a participant
                with a tremor pauses to steady their hand. -->
           <div><label for="idle">Idle auto-stop (s)</label><input id="idle" type="number" value="8" step="1" min="3" max="30"></div>
-          <div><label for="longtrial">Long-trial notice (s)</label>
+          <div><label for="longtrial">Remind me after (s)</label>
             <input id="longtrial" type="number" value="90" step="10" min="30" max="600"></div>
         </div>
-        <div class="note"><b>Idle auto-stop</b> ends a trial that has gone quiet, so the
-        examiner does not have to press END on a task that is plainly over. It does not run
-        while a sustained window is open — a pause between one spiral and the next is part of
-        that task — so it applies after a window closes, and throughout a single self-paced
-        spiral. END always works regardless.</div>
+        <!-- Written as "how does a trial end", because that is the question an examiner is
+             actually asking when they read either of these two fields, and neither field
+             answers it on its own. The previous version described one setting in terms of
+             another and left the 60 s case ambiguous. -->
+        <div class="note" style="line-height:1.6">
+          <b>How a trial ends.</b> There are only three ways, and <b>END always works</b>.
+          <table style="margin-top:8px">
+            <tr><th>Way</th><th>When</th><th>Which tasks</th></tr>
+            <tr><td><b>You press END</b></td>
+                <td>Any time. Nothing overrides it.</td>
+                <td>Every task.</td></tr>
+            <tr><td><b>Its length runs out</b></td>
+                <td>The trial stops itself when the set length is reached.</td>
+                <td>Tasks with a fixed length in the Length column: TAP_FAST, TAP_BMIN,
+                    TAP_BANT, TAP_TONE, VOC_VODD.</td></tr>
+            <tr><td><b>Idle auto-stop</b></td>
+                <td>The trial stops itself once the screen has been untouched for the number
+                    of seconds set here.</td>
+                <td>Tasks with no fixed length, which is every drawing task.</td></tr>
+          </table>
+          <b>A drawing task set to "Draws for 60 s" does not stop at 60 seconds.</b> The 60
+          seconds is the window that decides which drawing counts as data. When it runs out
+          the participant sees END and is told to stop, and the trial keeps recording until
+          you press END or the screen goes idle. <b>Idle auto-stop is switched off for the
+          whole of those 60 seconds</b>, so a pause between finishing one spiral and starting
+          the next can never end the trial. This applies to PEN_SPRL, PEN_VODD and every other
+          spiral task with a window set.
+          <br><br>
+          <b>Remind me after does not stop anything.</b> It puts one line in front of the
+          examiner once a trial has been running for this long, in case a trial has been left
+          open by accident. A slow participant can legitimately take three minutes over a
+          spiral, so nothing is ever cut off because of it.
+        </div>
       </div>
     </fieldset>
 
@@ -1002,7 +1030,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.46 2026-09-14";
+const BUILD = "v12.47 2026-09-14";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -6498,8 +6526,9 @@ function runTrial(seq,c){
     // minutes over a spiral, and stopping them would destroy the trial.
     if(!RUN.longNoted && (now-perf0)/1000 >= (+$("longtrial").value||90)){
       RUN.longNoted=+((now-perf0)/1000).toFixed(1);
-      $("reminder").innerHTML=`<span style="color:var(--warm)">Trial running
-        <b>${Math.round(RUN.longNoted)} s</b>. The trial continues until END is pressed.</span>`;
+      $("reminder").innerHTML=`<span style="color:var(--warm)">This trial has been running
+        <b>${Math.round(RUN.longNoted)} s</b>. Nothing has stopped. Press END when the
+        participant has finished.</span>`;
     }
     // NO RUNNING CLOCK ON A TIMED TRIAL, of either kind -- not elapsed, not remaining.
     //
