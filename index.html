@@ -990,7 +990,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.43 2026-09-13";
+const BUILD = "v12.44 2026-09-14";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -4380,11 +4380,24 @@ function makeAngleAccumulator(direction, minR){
 // The pair's bounding box, as multiples of the side length, for the geometry below. Used to
 // solve for the largest side that fits the space actually available rather than picking a
 // size and hoping it looks right on the device in front of you.
-const PENT_W_PER_SIDE = 2.673;        // overall width  / side
-const PENT_H_PER_SIDE = 1.701;        // overall height / side
+const PENT_W_PER_SIDE = 2.630;        // overall width  / side
+const PENT_H_PER_SIDE = 1.715;        // overall height / side
 const PENT_MIN_SIDE_MM = 14;          // below this the angles stop being judgeable
 const PENT_MARGIN_MM = 8;             // breathing room inside each half
-const PENT_OVERLAP = 0.62;            // centre separation as a fraction of the circumradius
+// CENTRE SEPARATION, and the number that decides whether the figure is right.
+//
+// The scoring criterion for the intersecting-pentagon item is that all ten angles are
+// present and that the two figures intersect to form a FOUR-SIDED region. At 0.62 they
+// overlapped so deeply that TWO vertices of each pentagon fell inside the other, and the
+// intersection came out as a six-sided sliver -- which does not satisfy the criterion and
+// gives a copier a different shape to reproduce. Measured before the change: 6 vertices,
+// 19.3% of a pentagon's area, shortest side 6.2 mm.
+//
+// At 0.69 exactly one vertex of each falls inside the other, which is the configuration the
+// criterion describes: the intersection is a quadrilateral of 11.0% of a pentagon's area
+// with a shortest side of 16 mm, its angles 108/78/108/66. The two 108s are pentagon
+// interior angles, as they must be where the penetrating vertices sit.
+const PENT_OVERLAP = 0.69;            // centre separation as a fraction of the circumradius
 // The side length that fills the space available. Solved from BOTH dimensions and the
 // smaller taken, so the figure fits whichever way the iPad is held.
 function pentSideFor(halfWidthMM, heightMM){
@@ -4393,6 +4406,40 @@ function pentSideFor(halfWidthMM, heightMM){
   return Math.max(PENT_MIN_SIDE_MM, Math.min(w,h));
 }
 // Vertices of one regular pentagon, point-up, centred on the origin.
+// Sutherland-Hodgman, for two convex polygons. Fifteen lines, and it is the difference
+// between a figure that satisfies the scoring criterion and one that is asserted to.
+function polyArea(p){
+  if(!p||p.length<3) return 0;
+  let a=0; for(let i=0;i<p.length;i++){ const q=p[(i+1)%p.length];
+    a += p[i].x*q.y - q.x*p[i].y; }
+  return Math.abs(a)/2;
+}
+function convexClip(subject, clipper){
+  const ccw = P => polySigned(P)>0 ? P : P.slice().reverse();
+  const S=ccw(subject), C=ccw(clipper);
+  const side=(p,a,b)=>(b.x-a.x)*(p.y-a.y)-(b.y-a.y)*(p.x-a.x);
+  const meet=(p,q,a,b)=>{ const d=(p.x-q.x)*(a.y-b.y)-(p.y-q.y)*(a.x-b.x);
+    const t=((p.x-a.x)*(a.y-b.y)-(p.y-a.y)*(a.x-b.x))/d;
+    return { x:p.x+t*(q.x-p.x), y:p.y+t*(q.y-p.y) }; };
+  let out=S.slice();
+  for(let i=0;i<C.length && out.length;i++){
+    const a=C[i], b=C[(i+1)%C.length], inp=out; out=[];
+    for(let j=0;j<inp.length;j++){
+      const cur=inp[j], prv=inp[(j-1+inp.length)%inp.length];
+      const ci=side(cur,a,b)>=-1e-9, pi=side(prv,a,b)>=-1e-9;
+      if(ci){ if(!pi) out.push(meet(prv,cur,a,b)); out.push(cur); }
+      else if(pi) out.push(meet(prv,cur,a,b));
+    }
+  }
+  // Clipping leaves duplicate and collinear points at the seams; neither is a corner.
+  const keep=[];
+  for(const q of out) if(!keep.length || Math.hypot(q.x-keep[keep.length-1].x,q.y-keep[keep.length-1].y)>1e-6) keep.push(q);
+  if(keep.length>1 && Math.hypot(keep[0].x-keep[keep.length-1].x,keep[0].y-keep[keep.length-1].y)<1e-6) keep.pop();
+  return keep.filter((q,i)=>{ const a=keep[(i-1+keep.length)%keep.length], c=keep[(i+1)%keep.length];
+    return Math.abs((q.x-a.x)*(c.y-q.y)-(q.y-a.y)*(c.x-q.x))>1e-7; });
+}
+function polySigned(p){ let a=0; for(let i=0;i<p.length;i++){ const q=p[(i+1)%p.length];
+  a += p[i].x*q.y - q.x*p[i].y; } return a/2; }
 function pentagonPts(sideMM, rotDeg){
   const R = sideMM/(2*Math.sin(Math.PI/5));       // circumradius from side length
   const rot = (rotDeg||0)*Math.PI/180 - Math.PI/2; // point-up before rotation
@@ -4408,15 +4455,25 @@ function pentagonModel(sideMM){
   const R = side/(2*Math.sin(Math.PI/5));
   const dx = R*PENT_OVERLAP;
   // Each pentagon is tilted, and by DIFFERENT amounts. Two upright pentagons meeting
-  // vertex-to-vertex give an overlap with axes the copier can read off the page, and a
-  // figure that is easier than the instrument this is modelled on. Tilting them means every
-  // one of the ten angles has to be judged rather than inferred from symmetry, and the
-  // overlap is a quadrilateral whose shape carries information.
-  const left  = pentagonPts(side, -14).map(q=>({x:q.x-dx, y:q.y}));
-  const right = pentagonPts(side, 166).map(q=>({x:q.x+dx, y:q.y+side*0.10}));
+  // vertex-to-vertex give an overlap with axes the copier can read off the page. Tilting
+  // them means every one of the ten angles has to be judged rather than inferred from
+  // symmetry. The tilts are small -- 10 and 16 degrees -- because the figure still has to
+  // read as the familiar one; they were 14 and 14 apart from upright before, which combined
+  // with the old separation to produce the six-sided overlap.
+  const left  = pentagonPts(side, 10).map(q=>({x:q.x-dx, y:q.y}));
+  const right = pentagonPts(side, 196).map(q=>({x:q.x+dx, y:q.y+side*0.06}));
   const all=[...left,...right];
+  // MEASURED, NOT ASSERTED. The whole defect was a claim in a comment that the overlap was
+  // a quadrilateral while the geometry produced six sides, and nothing computed either way.
+  // The intersection is now clipped for real and its vertex count exported, so a change to
+  // any of these constants reports what it actually did to the figure instead of leaving it
+  // to be noticed on an iPad.
+  const ov = convexClip(left, right);
   return { left, right, side_mm:+side.toFixed(2), overlap:PENT_OVERLAP,
-           rotation_deg:{ left:-14, right:166 }, vertical_offset_frac:0.10,
+           overlap_vertices: ov.length,
+           overlap_is_quadrilateral: ov.length===4,
+           overlap_area_frac: +(polyArea(ov)/polyArea(left)).toFixed(4),
+           rotation_deg:{ left:10, right:196 }, vertical_offset_frac:0.06,
            circumradius_mm:+R.toFixed(2), centre_separation_mm:+(2*dx).toFixed(2),
            width_mm:+(Math.max(...all.map(q=>q.x))-Math.min(...all.map(q=>q.x))).toFixed(2),
            height_mm:+(Math.max(...all.map(q=>q.y))-Math.min(...all.map(q=>q.y))).toFixed(2) };
