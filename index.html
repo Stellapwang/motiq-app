@@ -830,10 +830,12 @@
           the next can never end the trial. This applies to PEN_SPRL, PEN_VODD and every other
           spiral task with a window set.
           <br><br>
-          <b>Remind me after does not stop anything.</b> It puts one line in front of the
-          examiner once a trial has been running for this long, in case a trial has been left
-          open by accident. A slow participant can legitimately take three minutes over a
-          spiral, so nothing is ever cut off because of it.
+          <b>The "Remind me after" box, above.</b> Once a trial has been running for that
+          many seconds, one line appears on the examiner's side of the screen saying how long
+          it has been going. That is all it does. It is there in case a trial has been left
+          open by accident, and it <b>never stops a trial</b>: a slow participant can
+          legitimately take three minutes over a spiral, so nothing is ever cut off because
+          of it. Set it to whatever length would make you look up.
         </div>
       </div>
     </fieldset>
@@ -1031,7 +1033,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.48 2026-09-14";
+const BUILD = "v12.49 2026-09-14";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -4147,11 +4149,13 @@ function renderAudioTable(){
               the tasks in that row run for different lengths.</td>
           <td>Follows from length and mean.</td></tr>
       <tr><td><b>Usable window</b></td>
-          <td>Read-only. The longest response that can still be attributed to the right tone.
-              A response slower than this cannot be told apart from an early response to the
-              NEXT tone, so it is counted as a miss rather than as a slow answer. Equal to
-              the floor where every tone is answered, twice the floor on an oddball, since no
-              two targets are adjacent.</td>
+          <td>Read-only. How long a participant has to answer a tone before their answer stops
+              being attributable to it. Answer within the window and it is scored as a
+              response with a reaction time. Answer later and there is no way to tell it apart
+              from an early answer to the <i>next</i> tone, so it is scored as a miss. The
+              window is the floor where every tone is answered, and twice the floor on an
+              oddball, because no two high tones are ever adjacent. <b>Longer floor, longer
+              window, more of the slow answers kept.</b></td>
           <td>Follows from the floor.</td></tr>
     </table>
     <b>Length and lead-in are not set here.</b> Length belongs to the trial and is in the plan
@@ -4195,14 +4199,21 @@ function renderAudioTable(){
       Put the saved values back</button></div></div>`;
   }
 
-  const slow=streamGroups().filter(g=>bindingLimitMs(g.first,g.a)<950)
-    .map(g=>(STREAM_ROW_LABEL[g.key]||[g.key])[0]);
-  if(slow.length) notes+=`<div class="warn"><b>Usable window under 900 ms on
-    ${slow.join(", ")}.</b> Any response slower than the window cannot be attributed to the
-    tone that prompted it, so it is recorded as a miss rather than as a slow answer. On these
-    settings the participants who respond slowest — which on a dual task is most of them —
-    have their slowest responses removed from the measure rather than measured. Raise the
-    floor to widen the window.</div>`;
+  // A WARNING THAT FIRES ON EVERY SHIPPED DEFAULT IS NOT A WARNING. The threshold was 950
+  // ms, and all three rows ship below it -- tap 600, spoken 800, oddball 600 -- so the box
+  // was permanently on screen and read as wallpaper. It also stated the consequence in a way
+  // that took three readings to parse.
+  //
+  // The consequence belongs with the column definition, where it now is. What is left here
+  // is an alarm for a window short enough to be a genuine fault, which can only happen if
+  // somebody has lowered a floor a long way: below 400 ms no plausible response fits.
+  const slow=streamGroups().filter(g=>bindingLimitMs(g.first,g.a)<400)
+    .map(g=>`${(STREAM_ROW_LABEL[g.key]||[g.key])[0]} (${Math.round(bindingLimitMs(g.first,g.a))} ms)`);
+  if(slow.length) notes+=`<div class="bad"><b>The usable window is too short to hold a
+    response on ${slow.join(", ")}.</b> Almost nobody answers a tone in under 400 ms, so on
+    these settings most answers would arrive after the window and be recorded as misses.
+    Raise the floor on that row until the usable window is at least as long as a slow answer.
+    </div>`;
 
   Object.entries(AUDIO_DEFAULTS).forEach(([k,a])=>{
     const pair=a.pairWith && AUDIO_DEFAULTS[a.pairWith];
