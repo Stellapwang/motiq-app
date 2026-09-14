@@ -644,13 +644,9 @@
         <button class="ghost" onclick="practiceReset()">Start again</button>
         <span id="prcount" class="note" style="margin:0"></span>
       </div>
+      <!-- Empty unless the pad has something wrong to report; the diagnostics button
+           appears inside that report rather than beside a pad that is working. -->
       <div id="prlog"></div>
-      <div class="btnrow" style="margin-top:6px">
-        <button class="ghost sm" onclick="prSendReport()">Send input diagnostics</button>
-        <span class="note" style="margin:0">Sends what this pad has seen to the reviewing
-          machine. No participant data is included.</span>
-      </div>
-      <div id="prsendnote"></div>
       <div id="prresult" class="note"></div>
     </fieldset>
     <div class="navrow">
@@ -994,7 +990,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.42 2026-09-13";
+const BUILD = "v12.43 2026-09-13";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -2164,15 +2160,30 @@ function renderPrLog(){
     verdict=`<div class="note" style="margin:6px 0 0">${PRLOG.rejected} contact${PRLOG.rejected===1?"":"s"}
       ignored: Implement is set to <b>${PRLOG.lastRejected==="touch"?"Stylus":"Index finger"}</b>
       and ${PRLOG.lastRejected==="touch"?"that was a finger":"that was a stylus"}.</div>`;
+  // NOTHING ON SCREEN UNLESS SOMETHING IS WRONG.
+  //
+  // The counters and the raw event list were always visible, which was right while the
+  // pencil fault was being chased and wrong as a permanent fixture: this is a page an
+  // examiner uses with a participant in the chair, and a page that always looks like it is
+  // reporting a problem teaches people to ignore it on the day there is one. A mouse
+  // hovering across the pad filled it with sixty pointerover lines before anybody had drawn
+  // anything, which is exactly the noise-to-signal it had reached.
+  //
+  // Collection continues either way -- it is a few counters and costs nothing, and the
+  // implement verdicts are built from it. What changes is that it only speaks when it has
+  // something to say, and the diagnostics offer arrives WITH the fault rather than sitting
+  // beside a pad that is working.
+  if(!verdict){ el.innerHTML=""; return; }
   const rawTail=PRLOG.raw.slice(-10).map(r=>
     r.type+" ["+r.kind+"]"+(r.n>1?" x"+r.n:"")).join(" → ");
-  el.innerHTML=`<div class="note" style="margin:6px 0 0;font-size:12px">
+  el.innerHTML=verdict+`<div class="note" style="margin:4px 0 0;font-size:12px">
     <b>${esc(BUILD)}</b> — input seen: <b>pad:</b> ${fmt(PRLOG.canvas)} &nbsp;·&nbsp; <b>page:</b> ${fmt(PRLOG.page)}
     ${PRLOG.captured===null?"":` &nbsp;·&nbsp; capture ${PRLOG.captured?"taken":"<b>refused</b>"}`}
     ${penTypes.length?`<br><b>stylus events:</b> ${penTypes.map(k=>`${k} ${PRLOG.penEvents[k]}`).join(" · ")}`:""}
     ${Object.keys(PRLOG.touchTypes).length?`<br><b>touch.touchType:</b> ${Object.keys(PRLOG.touchTypes).map(k=>`${k} ${PRLOG.touchTypes[k]}`).join(" · ")}`:""}
     ${rawTail?`<br><span style="font-family:ui-monospace,monospace;font-size:11px">${esc(rawTail)}</span>`:""}
-    </div>${verdict}`;
+    <div style="margin-top:6px"><button class="ghost sm" onclick="prSendReport()">Send input
+      diagnostics</button></div></div><div id="prsendnote"></div>`;
 }
 function practiceSetup(){
   const cv=$("prpad"); if(!cv) return null;
