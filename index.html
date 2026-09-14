@@ -1033,7 +1033,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.49 2026-09-14";
+const BUILD = "v12.50 2026-09-14";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1380,7 +1380,24 @@ const STREAMS = {
   // 1340 ms, because a spoken number cannot be asked for every second.
   every:   { meanOverFloor:1.67, ptg:0, tone:100, floorFrom:"response",
              label:"Respond to every tone" },
-  oddball: { meanMs:500,  ptg:0.25, tone:100, floorFrom:"separation", floorMs:300,
+  // 650 / 0.20, from 500 / 0.25 in v12.50. TWO SEPARATE COMPLAINTS, two separate levers,
+  // and only changing both answers them.
+  //
+  // The MEAN sets how fast the stream sounds. At 500 it delivered two tones a second with a
+  // 438 ms median gap, which was reported as too fast; dropping the target probability
+  // alone would not have touched that, since the standards set the rate and there are more
+  // of them, not fewer. At 650 it is 1.5 a second, median gap 539 ms.
+  //
+  // The PROBABILITY sets how much counting there is, and 0.25 was high for an oddball where
+  // 0.10 to 0.20 is conventional -- rarity is the whole paradigm. 0.20 takes a 60 s trial
+  // from 31 numbers to say aloud WHILE DRAWING down to 18, and widens the median gap between
+  // targets from 1.9 s to 3.3 s.
+  //
+  // Not lower than 0.20: PEN_TODD taps to each target rather than counting them, so for that
+  // task the targets ARE the response events and 18 per trial is already thin for a reaction
+  // time distribution. It is exploratory and data-held for palm rejection, so the counting
+  // tasks decide the number, but it is the floor under it.
+  oddball: { meanMs:650,  ptg:0.20, tone:100, floorFrom:"separation", floorMs:300,
              label:"Respond only to the high tone" }
 };
 // The floor a response channel needs. Voice reads from the language registry, because how
