@@ -990,7 +990,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.44 2026-09-14";
+const BUILD = "v12.45 2026-09-14";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -5325,6 +5325,9 @@ const PEN_CEILING_MS=30000;
 // How long the end-of-window STOP stays up. Long enough that nobody mid-tap can miss it,
 // short enough that it has cleared before the examiner needs the canvas underneath.
 const STOP_SIGN_MS=1800;
+// How long END is on screen alone before a counting task asks for the number. Only used
+// where the sign was not already up; a sustained task has had it up since its window closed.
+const COUNT_PROMPT_DELAY_MS=1400;
 // Half a second of dimming between the window closing and STOP. Long enough to read as a
 // deliberate transition rather than a glitch, short enough not to be mistaken for more
 // drawing time. The template and the ink stay visible underneath throughout.
@@ -5335,7 +5338,7 @@ function dimStage(then){
   el.classList.add("dimming");
   setTimeout(()=>{ el.classList.remove("dimming"); if(then) then(); }, STAGE_DIM_MS);
 }
-let STOP_TIMER=null;
+let STOP_TIMER=null, STOP_SIGN_AT=0;
 // The participant is deliberately given no clock during a timed trial, so the end of the
 // window has to announce itself. Timed trials only: a self-paced spiral has no window to
 // end, and covering the drawing the moment the pen lifts would hide the thing just drawn.
@@ -5358,6 +5361,12 @@ function showStopSign(sticky){
   const el=$("stopsign"); if(!el) return;
   const sub=$("stopsub");
   if(sub) sub.textContent=stopCaptionFor(RUN && RUN.c ? RUN.c : (TRIAL?byId(TRIAL.task):null));
+  // WHEN it went up, not just that it is up. A counting task waits for the sign to have
+  // been on screen a moment before it asks for the number, and "is it showing?" cannot
+  // answer that: on a fixed-length trial the sign is raised by stopTrial one line before
+  // finish() runs, so the test passed instantly and the prompt covered a sign nobody had
+  // seen. A sustained trial raised it when its window closed, which may be minutes back.
+  if(!el.classList.contains("on")) STOP_SIGN_AT=performance.now();
   el.classList.add("on");
   if($("zones")) $("zones").classList.add("off");
   clearTimeout(STOP_TIMER); STOP_TIMER=null;
@@ -5367,6 +5376,7 @@ function showStopSign(sticky){
 }
 function hideStopSign(){
   const el=$("stopsign"); if(!el) return;
+  STOP_SIGN_AT=0;
   clearTimeout(STOP_TIMER); STOP_TIMER=null; el.classList.remove("on");
   if($("zones")) $("zones").classList.remove("off");
 }
@@ -6382,7 +6392,10 @@ function runTrial(seq,c){
   // Deliberately not a prompt or a text box: it has to be one press, because the examiner
   // presses it while attending to the participant.
   const ev=document.createElement("button"); ev.id="evbtn"; ev.className="ghost";
-  ev.textContent="Log event"; ev.title="Timestamp a prompt to the participant, or an interruption in the room";
+  // "Event" named nothing and "Log event" named a filing action rather than a thing. What it
+  // marks is anything that happened which was not the task -- a reminder to a participant who
+  // has gone quiet, a phone going off, somebody walking in.
+  ev.textContent="Interruption"; ev.title="Timestamp something that was not the task: a prompt to the participant, or an interruption in the room";
   ev.onclick=()=>markExaminerEvent(); $("ctrl").appendChild(ev);
   // EXCEPTION PATH, for one case: a participant who stops short and never reaches the end
   // zone. Deliberately not the normal way to advance -- an examiner pressing at every
@@ -6518,7 +6531,15 @@ function runTrial(seq,c){
       hud.classList.remove("stop");
     }
 
-    if(untimed && RUN.firstContactMs!==null && (!RUN.seq||RUN.toneClockDone)
+    // THE IDLE STOP IS A BACKSTOP FOR AN UNATTENDED TRIAL, NOT A TIMER. On a sustained
+    // spiral the window is the timer, and this was ending the trial five seconds into any
+    // pause -- including the pause between one spiral and the next, which since v12.41 is a
+    // deliberate part of the task: the participant lifts at the end of a spiral, goes back to
+    // the middle, and starts again. Five quiet seconds in the middle of a 60 s window ended
+    // the trial outright, which is the "suddenly stops" with no END screen. It may not run
+    // until the window has closed.
+    const windowOpenStill = RUN.sustained && RUN.windowStart!=null && RUN.windowEndedAt==null;
+    if(untimed && !windowOpenStill && RUN.firstContactMs!==null && (!RUN.seq||RUN.toneClockDone)
        && RUN.lastContact && performance.now()-RUN.lastContact>idleMs){
       RUN.idleEnded=true; stopTrial(true); return; }
     RAF=requestAnimationFrame(loop); };
@@ -6602,7 +6623,7 @@ function markExaminerEvent(){
   if(!RUN || RUN.ready || RUN.ended || !RUN.perf0) return;
   RUN.examinerEvents.push(+(performance.now()-RUN.perf0).toFixed(1));
   const b=$("evbtn");
-  if(b){ b.textContent="Logged ("+RUN.examinerEvents.length+")";
+  if(b){ b.textContent="Interruption ("+RUN.examinerEvents.length+")";
          b.classList.add("lit"); setTimeout(()=>b.classList.remove("lit"), FLASH_MS); }
 }
 
@@ -6659,7 +6680,12 @@ function stopTrial(auto){
   // sitting there looking tappable while the examiner reads the summary and decides whether
   // to save. The trial is over; the screen should say so for as long as that is true.
   setTaskCue(null);
-  if(!RUN.untimed && !RUN.noResponseCeiling) showStopSign(true);
+  // A SUSTAINED TRIAL IS NOT "UNTIMED" FOR THIS PURPOSE. untimed is true of every spiral,
+  // because a spiral trial stops at END rather than on a clock -- but a sustained spiral has
+  // a window that has already closed, and the participant has already been told to stop.
+  // Skipping the sign there left the screen simply going quiet, and the Show drawing button
+  // in the end controls with no sign to reveal, which is how it came to look unclickable.
+  if((!RUN.untimed || RUN.sustained) && !RUN.noResponseCeiling) showStopSign(true);
   finish();
 }
 // The single way off the stage, on the admin bar and in the footer of every overlay that
@@ -6765,7 +6791,27 @@ function finish(){
   // Counting tasks have no timestamped response for the counted class, so the number
   // is collected here. PEN_MATH and PEN_WORD have none: the app cannot know the answer for
   // serial subtraction or for a fluency category, so it does not pretend to.
-  if(c.count && RUN.reportedCount===undefined){ askCount(seq); return; }
+  // END FIRST, THEN THE NUMBER -- on every counting task, which until now depended on
+  // whether the task happened to be sustained.
+  //
+  // VOC_VODD is not sustained, so the trial ends on its own clock and finish() ran straight
+  // into askCount; the count overlay (z-index 3) covered the END sign before anybody saw it,
+  // and the participant was asked for a number while still believing the task was running.
+  // PEN_VODD is sustained, so its window closed and put END up minutes earlier, and the
+  // number was asked afterwards. Two tasks that differ only in having a drawing hand were
+  // asking the same question in opposite orders.
+  //
+  // The sign goes up first in both, and stays up behind the prompt: the participant sees the
+  // task end, and is then asked. Long enough to read a word, short enough not to be a wait.
+  if(c.count && RUN.reportedCount===undefined){
+    if(!($("stopsign") && $("stopsign").classList.contains("on"))) showStopSign(true);
+    // Measured from when the sign went up, so a sustained task whose window closed long ago
+    // asks straight away and a fixed-length one that just raised it waits the full beat.
+    const shown = STOP_SIGN_AT ? performance.now()-STOP_SIGN_AT : 0;
+    const wait = Math.max(0, COUNT_PROMPT_DELAY_MS - shown);
+    setTimeout(()=>{ if(RUN && !RUN.saved) askCount(seq); }, wait);
+    return;
+  }
   showEndControls(seq,c,pts,rate,att,tp);
 }
 
@@ -6808,10 +6854,14 @@ function showEndControls(seq,c,pts,rate,att,tp){
   // THE ONE THING A STICKY END SIGN TAKES AWAY: on a drawing task the examiner can no longer
   // see what was drawn, and the summary reports numbers rather than the trace. One button
   // puts it back, and only where there is something behind the sign to look at.
-  if(c.spiral || c.pent){
-    const sh=document.createElement("button"); sh.textContent="Show drawing";
+  // Only while the END sign is actually covering the drawing. It used to be added to every
+  // drawing task whether or not there was a sign up, so on the trials where the sign had
+  // been skipped it sat there doing nothing when pressed.
+  if((c.spiral || c.pent) && $("stopsign") && $("stopsign").classList.contains("on")){
+    const sh=document.createElement("button"); sh.textContent="Show the drawing";
     sh.className="ghost"; sh.style.minWidth="0";
-    sh.onclick=()=>hideStopSign(); $("ctrl").appendChild(sh);
+    sh.title="Lift the END sign so the trace can be checked before saving";
+    sh.onclick=()=>{ hideStopSign(); sh.remove(); }; $("ctrl").appendChild(sh);
   }
   const ex=document.createElement("button"); ex.textContent="Exit"; ex.className="ghost";
   ex.style.minWidth="0";
