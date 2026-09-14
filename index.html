@@ -790,10 +790,22 @@
               <option value="black">Black, solid</option>
               <option value="dotted">Gray, dotted</option>
             </select></div>
-          <div><label for="idle">Idle auto-stop (s)</label><input id="idle" type="number" value="5" step="1" min="2" max="30"></div>
+          <!-- 8 s, raised from 5 in v12.46. Nothing depends on this number: the examiner has
+               END, and the idle stop only saves them a press. So the cost is asymmetric --
+               too long wastes a few seconds of the examiner's time, too short ends a trial
+               that was still running. Since v12.45 it cannot fire while a sustained window
+               is open at all, so what it now governs is the quiet AFTER a task is over, and
+               a single self-paced spiral throughout. 5 s is inside the range a participant
+               with a tremor pauses to steady their hand. -->
+          <div><label for="idle">Idle auto-stop (s)</label><input id="idle" type="number" value="8" step="1" min="3" max="30"></div>
           <div><label for="longtrial">Long-trial notice (s)</label>
             <input id="longtrial" type="number" value="90" step="10" min="30" max="600"></div>
         </div>
+        <div class="note"><b>Idle auto-stop</b> ends a trial that has gone quiet, so the
+        examiner does not have to press END on a task that is plainly over. It does not run
+        while a sustained window is open — a pause between one spiral and the next is part of
+        that task — so it applies after a window closes, and throughout a single self-paced
+        spiral. END always works regardless.</div>
       </div>
     </fieldset>
 
@@ -990,7 +1002,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.45 2026-09-14";
+const BUILD = "v12.46 2026-09-14";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
