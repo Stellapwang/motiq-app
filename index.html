@@ -662,7 +662,8 @@
         <div><label for="visitno">Visit number</label>
           <input id="visitno" type="number" min="1" max="99" value="1" onchange="onVisitChange()"></div>
         <div><label for="sessnum">Session within visit</label>
-          <input id="sessnum" type="number" min="1" max="99" value="1" onchange="renderStatus()"></div>
+          <input id="sessnum" type="number" min="1" max="99" value="1"
+                 onchange="renderStatus(); newSessionReset('session')"></div>
         <div><label for="sessno">Session ID</label>
           <input id="sessno" type="text" readonly style="background:#f2f5f8"></div>
         <div><label for="sessnote">Session note</label>
@@ -1030,7 +1031,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.47 2026-09-14";
+const BUILD = "v12.48 2026-09-14";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -3022,12 +3023,36 @@ function deriveNumbers(){
   onVisitChange();
 }
 function onVisitChange(){
-  const pid=pid_(); if(!pid){ renderStatus(); return; }
+  const pid=pid_(); if(!pid){ renderStatus(); newSessionReset("visit"); return; }
   const v=visitNo();
   const ses=new Set(storedFor(pid).filter(r=>r.visit_number===v)
               .map(r=>r.session_number).filter(Boolean));
   $("sessnum").value = ses.size ? Math.max(...ses)+1 : 1;
   renderStatus();
+  newSessionReset("visit");
+}
+// A NEW VISIT IS A NEW SESSION, and a new session runs the protocol this build ships.
+//
+// Reset was wired to Start a new participant only, so the same person's second visit
+// inherited whatever had been edited during their first, and so did everybody after them on
+// that iPad. The protocol belongs to the build; a change made in the app is for the session
+// in front of you and should not outlive it.
+//
+// Nothing is reset once the session has trials in it. Changing parameters part way through
+// would split one session's data across two settings, which is worse than either setting.
+function newSessionReset(what){
+  if(SERIES>0 || QUEUE.length){
+    renderStatus();
+    return;                          // mid-session: see restoreState for what happens instead
+  }
+  const drift=protocolDrift();
+  if(!drift.length) return;
+  if(!confirm(`New ${what}: return the trial plan and the parameters to this build's `
+    +`defaults?\n\n${drift.length} setting${drift.length===1?"":"s"} differ${drift.length===1?"s":""}:\n\n`
+    +drift.slice(0,12).join("\n")+(drift.length>12?`\n…and ${drift.length-12} more`:"")
+    +`\n\nCancel keeps them as they are.`)) return;
+  resetProtocolToShipped();
+  applyCal(); updateGeo(); renderAudioTable(); renderNextUpParams(); renderPlan(); saveState();
 }
 function renderInstrPage(){
   const sel=$("insTask");
@@ -8232,6 +8257,31 @@ function restoreState(){
           });
         });
       }
+    }
+
+    // A RELOAD OF A SESSION THAT HAS NOT STARTED RETURNS TO THE BUILD'S DEFAULTS.
+    //
+    // A reload must not throw away a session in progress: recovering one is the reason the
+    // save exists, and an examiner who refreshes by accident half way through a battery
+    // cannot be made to re-enter the participant and rebuild the queue. But a session with
+    // no trials run and no queue built has nothing to protect, and carrying its edited
+    // parameters forward is how one afternoon's experiment becomes every later
+    // participant's protocol.
+    //
+    // So: nothing run yet, reset silently. Something run, keep everything -- changing
+    // parameters part way through splits one session's data across two settings -- and say
+    // so where it cannot be missed, rather than only on the Parameters page.
+    const started = (st.series>0) || (Array.isArray(st.queue) && st.queue.length>0);
+    if(!started){
+      resetProtocolToShipped();
+    } else {
+      const drift=protocolDrift();
+      if(drift.length && $("statusbar")) setTimeout(()=>{
+        $("statusbar").innerHTML=`<span style="color:#8c2020"><b>${drift.length} setting${drift.length===1?"":"s"}
+          in this session ${drift.length===1?"is":"are"} not this build's default.</b> The session was
+          restored as it was saved, which is why they are still in force. Open Parameters to see
+          which, or start a new participant to clear them.</span>`;
+      },0);
     }
 
     // The language is restored from STATE_FIELDS like any other field. Its side effects
