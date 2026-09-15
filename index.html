@@ -778,18 +778,22 @@
           <div><label for="instr">Instruction</label>
             <select id="instr"><option value="between">Draw between the lines</option>
               <option value="trace" selected>Trace on the line</option></select></div>
-          <!-- 14 mm, raised from 8 in v12.37. 8 mm gives a participant 4 mm of placement
-               tolerance, which is smaller than the aiming error of an unsteady hand and is
-               why a trial could fail to begin at all. 14 mm gives 7 mm, and triples the
-               landing area. Chosen over 16 or 20 because the zone is also the region where
-               angle is not counted: at 20 mm the disc swallows the whole of the first turn
-               of a 10 mm-pitch spiral, at 14 it stops at about 70% of it. Costs 11.7% of the
-               sweep against 6.7%, which angleNeededRad already allows for. -->
+          <!-- Back to 8 mm in v12.51, to match the printed templates. It was raised to 14 in
+               v12.37 because 4 mm of placement tolerance is smaller than the aiming error of
+               an unsteady hand, which is how a trial could fail to begin at all; the pulse and
+               the refused-contact counter added then are what now make that visible instead of
+               silent. The zone is also the region where angle is NOT counted, so a smaller one
+               leaves more of the sweep bankable: 8 mm on a 60 mm spiral gates 6.7% of it. -->
           <div><label for="startdia">Start zone (mm)</label><input id="startdia" type="number" value="8" step="1" min="4" max="20"></div>
           <!-- Was derived from the pitch and not settable. It is the thing the participant
                aims at and the thing the advance rule tests, so its size is a decision about
                the task rather than a consequence of the geometry. -->
           <div><label for="enddia">End zone (mm)</label><input id="enddia" type="number" value="10" step="1" min="6" max="24"></div>
+          <div><label for="advturns">Turns to draw before the end zone counts</label>
+            <input id="advturns" type="number" value="4" step="0.5" min="1" max="8"></div>
+        </div>
+        <div id="advnote" class="note"></div>
+        <div class="r4">
           <div><label for="endang">End angle (deg)</label><input id="endang" type="number" value="90" step="15"></div>
           <div><label for="split">Split (drawing share)</label><input id="split" type="number" value="0.70" step="0.05" min="0.4" max="1"></div>
         </div>
@@ -1042,7 +1046,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.52 2026-09-15";
+const BUILD = "v12.53 2026-09-15";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1854,7 +1858,7 @@ function goPage(n){
   if(n===7) requestAnimationFrame(()=>{ tapPracticeReset(); practiceRender(); });
   if(n===3){ renderPlan(); renderQueue(); }
   renderStatus();
-  if(n===4){ renderAudioTable(); updateGeo(); }
+  if(n===4){ renderAudioTable(); updateGeo(); renderAdvanceNote(); }
   if(n===5) renderInstrPage();
   if(n===6){ renderSaved(); renderScreens(); renderAudioStore();
     if(!LAST){ $("saveState").innerHTML="";
@@ -2407,13 +2411,23 @@ function practiceReset(){
   // rehearses a task the participant is not about to do.
   const check=()=>{
     if(!PR.view) return;
-    const need=angleNeededRad(PRACTICE_TURNS, PR.view.R, PR.angle ? PR.angle.minR : 0);
+    // Scaled to the practice template: the trial's gate as a FRACTION of its turns, applied
+    // to the three turns here.
+    const frac=Math.min(1, advanceTurns()/Math.max(1,geomTurns("pen")));
+    const need=Math.min(frac*PRACTICE_TURNS*2*Math.PI,
+                        bankableRad(PRACTICE_TURNS, PR.view.R, PR.angle ? PR.angle.minR : 0));
     const wasArmed=PR.armed;
     PR.armed = PR.angle.total>=need;
     if(PR.armed!==wasArmed) practiceRender();
     if(PR.passStartedAt && performance.now()-PR.passStartedAt < MIN_PASS_MS) return;
     if(!PR.armed) return;
-    if(PR.penUpAt!=null && performance.now()-PR.penUpAt >= LIFT_ADVANCE_MS) advance();
+    // The trial advances on reaching the end zone, never on a lift, so the practice does the
+    // same -- a practice that ends a spiral on a lift rehearses a rule the trial no longer
+    // has. PRACTICE_TURNS is 3 against the trial's 5, so the gate is scaled rather than
+    // copied: the same fraction of the template, not the same absolute number of turns.
+    if(!PR.lastPt) return;
+    const dx=PR.lastPt.x-PR.view.endPx.x, dy=PR.lastPt.y-PR.view.endPx.y;
+    if(Math.hypot(dx,dy) <= PR.view.zonePx) advance();
   };
   // THE PAD TOOK A FINGER AND IGNORED THE PENCIL, and nothing in this file was rejecting it:
   // neither handler looks at pointerType. The events were never arriving intact.
@@ -2467,7 +2481,7 @@ function practiceReset(){
     // A lift can now be the thing that advances, so the check has to run on it as well as on
     // movement -- nothing moves after the pen is up, and the frame loop the trial has does
     // not exist here.
-    setTimeout(()=>{ if(!PR.drawing) check(); }, LIFT_ADVANCE_MS+60); };
+  };
   // A CANCEL IS NOT A LIFT, and it was being treated as one. Kept apart so that if a device
   // still cancels a pencil despite the capture, the pad says so in words instead of looking
   // like a pad that does not take a pencil.
@@ -4006,7 +4020,7 @@ function newParticipant(){
 // measure this iPad's glass and are true for every participant on it, so a new participant
 // must not silently discard a calibration.
 const PROTOCOL_FIELDS=["instr","tmpl","implement","pitch_pen","turns_pen","pitch_finger",
-  "turns_finger","startdia","enddia","endang","split","tapdia","zonegap","longtrial",
+  "turns_finger","startdia","enddia","advturns","endang","split","tapdia","zonegap","longtrial",
   "fstd","ftgt","lvl","seedmode","idle"];
 let FIELD_SHIPPED={};
 function snapshotShippedFields(){
@@ -4419,20 +4433,47 @@ const END_ZONE_DWELL_MS=200;
 // endpoint's angle on an earlier turn, which on a five-turn spiral is four false alarms.
 const FLASH_MIN_TURNS=4;
 const FLASH_LEAD_RAD=2*Math.PI/12;
-// Fraction of the template's total sweep that counts as complete. Not 100%: the last few
-// degrees are inside the end zone anyway, and demanding all of them would strand a
-// participant who stopped a hair short of the marker.
-const ADVANCE_ANGLE_FRACTION=0.95;
-// THE THRESHOLD HAS TO ALLOW FOR THE ANGLE THAT IS NEVER COUNTED. Angle is not accumulated
-// inside the start zone, and on an Archimedean spiral the radius grows in proportion to the
-// angle -- so a start zone at 4 mm of a 60 mm spiral silently swallows 4/60 of the turns.
-// At six turns that is 0.4 of them, which leaves 5.6 available against a 5.7 threshold: the
-// spiral could be traced perfectly and never advance. Requiring a fraction of the angle
-// ACTUALLY AVAILABLE outside the gate keeps the threshold meaning what it says.
+// STATED IN TURNS, BECAUSE THAT IS THE ONE UNIT BOTH READERS SHARE.
+//
+// It was "0.95 of the sweep reachable outside the start zone", which is precise and unusable:
+// an examiner cannot check it against anything, and it moved on its own whenever the start
+// zone changed -- 4.20 turns at a 14 mm zone, 4.43 at 8 mm, with nothing on screen saying so.
+// Degrees are exact and mean nothing at arm's length; a percentage has to be a percentage OF
+// something, and the two candidates differ by the gated sweep, which is the very thing that
+// made the old number slippery.
+//
+// Turns are countable on the printed template. The examiner sets "4 of 5". The exact
+// quantities it implies are derived from it and exported with every trial, so nobody
+// analysing the data has to reconstruct them:
+//
+//   template sweep      turns x 360 deg                       5 turns -> 1800 deg
+//   gated sweep         not counted, radius below the start   4/60    ->  120 deg
+//   bankable sweep      the most a perfect tracing can accrue          -> 1680 deg = 4.67 turns
+//   required            what the examiner set                 4 turns -> 1440 deg
+//
+// WHAT THE GATE IS AND IS NOT FOR. It does not make the drawing analyzable -- the end zone
+// does that, geometrically: a correct tracing only comes within 5 mm of the endpoint in the
+// last 0.01 of a turn, so anyone who reaches the red circle has drawn essentially all of it.
+// The gate exists to refuse a SHORTCUT: a pen taken straight from the centre to the red
+// circle banks about zero turns. What the number really sets is how much reversal to tolerate
+// before refusing to advance, because net angle is signed and a tremor that doubles back
+// SUBTRACTS. Too high and a participant who genuinely traced the whole spiral does not
+// advance, the examiner presses, and their pass boundary carries the examiner's reaction time
+// -- unevenly, since it happens most to the most impaired. The drawing is identical either
+// way; only who ended the pass changes.
+const ADVANCE_TURNS_DEFAULT=4;
+const advanceTurns = () => +(($("advturns")||{}).value) || ADVANCE_TURNS_DEFAULT;
+// The most a perfect tracing can bank, given that nothing below the start zone is counted.
+function bankableRad(turns, outerR, gateR){
+  return turns*2*Math.PI*(1-Math.min(0.9,(gateR||0)/(outerR||1)));
+}
 function angleNeededRad(turns, outerR, gateR){
-  const total=turns*2*Math.PI;
-  const reachable=total*(1-Math.min(0.9,(gateR||0)/(outerR||1)));
-  return ADVANCE_ANGLE_FRACTION*reachable;
+  const bankable=bankableRad(turns,outerR,gateR);
+  // Clamped to the bankable sweep. A gate set at or above the full turn count would
+  // otherwise be unreachable by construction, and the symptom would be a spiral that never
+  // advances however well it was drawn -- which is the failure this clamp has already
+  // prevented once, in v11.
+  return Math.min(advanceTurns()*2*Math.PI, bankable);
 }
 
 // Signed angle accumulated about the spiral centre, unwrapped. Called per pen sample with
@@ -4659,12 +4700,41 @@ function renderGeoSet(which){
      <div class="note" style="margin-top:2px">Estimated drawing time: ${times}. Estimates only,
        spanning slow careful tracing to brisk.</div>`;
 }
+// DELIBERATELY DOES NOT CALL renderAdvanceNote. applyCal() calls this during start-up, from
+// the saved-calibration branch, at which point geomTurns and advanceTurns are still in their
+// temporal dead zone -- reading one there throws and takes the rest of the script with it,
+// which is the hazard the comment in applyCal() already warns about and which this walked
+// straight into. The note is rendered from the places a person can reach: opening the
+// Parameters page, and editing one of the fields it depends on.
 function updateGeo(){
   if(!$("pitch_pen")) return;
   renderGeoSet("pen"); renderGeoSet("finger");
 }
-["pitch_pen","turns_pen","pitch_finger","turns_finger","endang","split","ppmm"]
-  .forEach(id=>{ const el=$(id); if(el) el.addEventListener("input",updateGeo); });
+// The examiner sets turns; an analyst needs degrees. Both, on the page, so neither has to
+// convert -- and so a value the spiral cannot reach is caught here rather than on an iPad.
+function renderAdvanceNote(){
+  const el=$("advnote"); if(!el) return;
+  const t=geomTurns("pen"), oR=geomPitch("pen")*t, gR=(+$("startdia").value||8)/2;
+  const bank=bankableRad(t,oR,gR), need=angleNeededRad(t,oR,gR);
+  const deg=x=>Math.round(x*180/Math.PI);
+  const asked=advanceTurns(), capped=asked*2*Math.PI>bank+1e-9;
+  el.innerHTML=`<b>How much has to be drawn before the end zone counts.</b> The participant
+    must sweep <b>${(need/(2*Math.PI)).toFixed(2)} of the ${t} turns</b> before reaching the
+    red circle will bring up the next spiral. Reaching it earlier does nothing.
+    <br>Exactly: <b>${deg(need)}°</b> of net angle about the centre, out of
+    ${deg(t*2*Math.PI)}° in the template. Angle is not counted while the pen is inside the
+    ${(+$("startdia").value)} mm start zone, which accounts for ${deg(t*2*Math.PI-bank)}° of
+    it, so the most a perfect tracing can accumulate is <b>${deg(bank)}°</b>
+    (${(bank/(2*Math.PI)).toFixed(2)} turns) — this setting is
+    <b>${(100*need/bank).toFixed(0)}%</b> of that.
+    ${capped?`<br><span style="color:#8c2020"><b>Set higher than the spiral allows.</b> ${asked}
+      turns cannot be accumulated on a ${t}-turn template with this start zone, so it is
+      capped at ${(bank/(2*Math.PI)).toFixed(2)}. Lower it, or widen the spiral.</span>`:""}`;
+}
+["pitch_pen","turns_pen","pitch_finger","turns_finger","endang","split","ppmm",
+ "startdia","enddia","advturns"]
+  .forEach(id=>{ const el=$(id); if(el) el.addEventListener("input",
+    ()=>{ updateGeo(); renderAdvanceNote(); }); });
 ["pen","finger"].forEach(which=>{
   const sel=$("preset_"+which); if(!sel) return;
   sel.addEventListener("change",e=>{ if(!e.target.value) return;
@@ -5377,7 +5447,7 @@ function drawScene(){
         // of the sweep, so anchoring the flash to it would put eleven o'clock more than half
         // a turn before the red circle -- the flash would start, and the participant would
         // still have most of a lap to go. The endpoint is where the template stops.
-        const full = need/ADVANCE_ANGLE_FRACTION;
+        const full = bankableRad(turns, radius, RUN && RUN.angle ? RUN.angle.minR : 0);
         const turnsDone = RUN.netAngleTotal/(2*Math.PI);
         leading = turnsDone >= FLASH_MIN_TURNS
                && (full - RUN.netAngleTotal) <= FLASH_LEAD_RAD;
@@ -6126,7 +6196,7 @@ function runTrial(seq,c){
         offZoneStarts:[], firstOffZoneMs:null, startPulseUntil:0,
         // Whether the CURRENT pass has begun. False between the end of one spiral and the
         // pen's return to the middle; see beginPass.
-        passStarted:false, passStartedMs:null,
+        passStarted:false, passStartedMs:null, liftsThisPass:0, liftMsThisPass:0,
         // Strokes recorded but not drawn: the pen's journey back from one spiral's rim to
         // the next one's centre. Created up front so nothing has to guard for its absence.
         carryStrokes:new Set(),
@@ -6369,6 +6439,9 @@ function runTrial(seq,c){
       startToneStream();
       if(RUN.sustained) RUN.timer=setTimeout(()=>endWindow(), RUN.sustainedMs);
     }
+    // Closing a lift: how long the pen was off, added to this pass's total.
+    if(RUN.penUpAt!=null && RUN.passStarted)
+      RUN.liftMsThisPass=(RUN.liftMsThisPass||0)+(performance.now()-RUN.penUpAt);
     RUN.penUpAt=null;                       // the lift clock only runs while the pen is up
     const st=[]; STROKES.push(st); strokeFor.set(e.pointerId,st);
     // ANYTHING DRAWN BEFORE THE PASS STARTS IS HELD BACK, whichever way the pen got there.
@@ -6444,6 +6517,9 @@ function runTrial(seq,c){
     if(RUN.angle) RUN.angle.lift();
     if(strokeFor.size===0){
       RUN.penUpAt=performance.now();
+      // Counted per pass, not only per trial: "did they lift during THIS spiral" is the
+      // question, and a trial total cannot answer it.
+      if(RUN.passStarted){ RUN.liftsThisPass=(RUN.liftsThisPass||0)+1; }
       // A lift only counts once drawing has begun. Before the first stroke there is nothing
       // to lift from, and counting it would conflate initiation with interruption.
       if(RUN.firstContactMs!==null) RUN.lastLiftAt=performance.now();
@@ -6475,6 +6551,10 @@ function runTrial(seq,c){
     const t=performance.now()-perf0;
     RUN.passes.push({ pass:RUN.pass, started_ms:RUN.passStartedMs, ended_ms:+t.toFixed(1),
                       advanced_by:how,
+                      // A lift is no longer a way to end a pass, so it is only a measure --
+                      // and a measure nobody can read off the stroke list without work.
+                      lifts_in_pass: RUN.liftsThisPass||0,
+                      lift_ms_in_pass: +(RUN.liftMsThisPass||0).toFixed(1),
                       net_angle_rad:+RUN.netAngleTotal.toFixed(4),
                       net_angle_turns:+(RUN.netAngleTotal/(2*Math.PI)).toFixed(3) });
     RUN.pass++;
@@ -6482,6 +6562,7 @@ function runTrial(seq,c){
     // NOT STARTED. The next pass begins when the pen is back in the middle, not here -- see
     // beginPass. Nothing accumulates and nothing can advance until then.
     RUN.passStarted=false; RUN.passStartedMs=null; RUN.passStartedAt=null;
+    RUN.liftsThisPass=0; RUN.liftMsThisPass=0;
     if(RUN.angle) RUN.angle.reset();
     RUN.netAngleTotal=0;
     // Ink clears because a fresh template is up; the strokes stay in STROKES tagged with the
@@ -6539,11 +6620,17 @@ function runTrial(seq,c){
         else if(now-RUN.endZoneSince >= END_ZONE_DWELL_MS){ advancePass("end_zone"); return; }
       } else RUN.endZoneSince=null;
     }
-    // 2. THE PEN COMES OFF. Kept as the second path, for the participant who finishes wide
-    //    of the dot and stops: a spiral drawn much larger than the template never enters the
-    //    zone at all, and leaving them stuck in front of a finished drawing is the failure
-    //    the lift rule was introduced to end.
-    if(RUN.penUpAt!=null && now-RUN.penUpAt >= LIFT_ADVANCE_MS) advancePass("lift");
+    // A LIFT NO LONGER ADVANCES ANYTHING, and that is the point rather than an omission.
+    //
+    // Lifting is against the instruction and is also a MEASURE: some participants lift, and
+    // how often and for how long is data. Advancing on it made the app reward the thing the
+    // instruction forbids, and worse, a participant who had drawn the required turns and
+    // lifted to rest their hand got a new spiral for it -- the template vanishing
+    // unexpectedly, which is the failure mode this task has been reported for more than any
+    // other. Every participant now finishes the same way: keep drawing, lift or not, until
+    // the pen reaches the red circle. The examiner's Next spiral covers anyone who cannot.
+    //
+    // Lifts are still counted and timed; see lifts_in_pass in the record.
   };
   // ---- WINDOW END -------------------------------------------------------------------
   // Freezes rather than blanks. Nothing disappears: blanking mid-stroke is disorienting and
@@ -7459,11 +7546,25 @@ function buildRecord(){
         // Offered alongside as description only, for the same reason.
         passes_completed: R.passes.filter(p=>p.advanced_by!=="window_end").length,
         passes: R.passes,
-        advance_rule:{ angle_fraction:ADVANCE_ANGLE_FRACTION,
-          lift_ms:LIFT_ADVANCE_MS, min_pass_ms:MIN_PASS_MS,
-          start_test:"the pass begins when the pen is inside the start zone, on every pass and not only the first",
-          end_test:"the pass ends when the pen has been off the glass for lift_ms, and only after the net angle swept has reached angle_fraction of the sweep reachable outside the start zone. There is no position test: any threshold on radius can be crossed while the pen is still drawing, which is not the same thing as having finished." },
-        note:"a pass advances only on a lift, after a complete sweep. Before v12.41 a radius band advanced it, which fired early on a spiral drawn larger than the template and never on one drawn smaller. advanced_by 'examiner' means the pass was advanced by hand for a participant who did not lift, and carries the examiner's reaction time; 'window_end' is the final partial pass."
+        // STATED TWICE ON PURPOSE: once in the unit the examiner set it in, once in the
+        // exact quantities an analyst needs. Neither audience should have to derive the other's.
+        advance_rule:(()=>{ const t=geomTurns(TRIAL.implement), oR=geomPitch(TRIAL.implement)*t,
+            gR=(+$("startdia").value||8)/2, deg=x=>+(x*180/Math.PI).toFixed(1);
+          const bankable=bankableRad(t,oR,gR), need=angleNeededRad(t,oR,gR);
+          return {
+            turns_required:advanceTurns(), template_turns:t,
+            required_net_angle_deg:deg(need),
+            template_sweep_deg:deg(t*2*Math.PI),
+            gated_sweep_deg:deg(t*2*Math.PI-bankable),
+            bankable_net_angle_deg:deg(bankable),
+            bankable_turns:+(bankable/(2*Math.PI)).toFixed(3),
+            pct_of_template_sweep:+(100*need/(t*2*Math.PI)).toFixed(1),
+            pct_of_bankable_sweep:+(100*need/bankable).toFixed(1),
+            end_zone_mm:+$("enddia").value, min_pass_ms:MIN_PASS_MS,
+            dwell_ms:END_ZONE_DWELL_MS,
+            start_test:"the pass begins when the pen is inside the start zone, on every pass and not only the first",
+            end_test:"the pass ends when the pen is inside the end zone for dwell_ms, and only after the accumulated net angle has reached required_net_angle_deg. Net angle is signed about the template centre and is NOT accumulated while the radius is inside the start zone, so a perfect tracing can bank at most bankable_net_angle_deg rather than the full template sweep. A lift does NOT end a pass." }; })(),
+        note:"a pass advances on reaching the end zone with the required sweep already drawn, or by the examiner pressing Next spiral. A lift does not advance it: lifting is against the instruction and is itself a measure, so every participant finishes the same way. lifts_in_pass and lift_ms_in_pass record it per pass. advanced_by 'examiner' carries the examiner's reaction time; 'window_end' is the final partial pass."
       } : null,
     // ANCHORED START. Applies to every spiral condition, sustained or not.
     anchoring: R.penAnchored ? {
@@ -8259,7 +8360,7 @@ const STATE_FIELDS=["pid","grp","sex","byear","bmonth","domhand","ambihand","not
                     "ethnicity","education",
                     "visitno","sessnum","sessnote","instr","tmpl","implement",
                     "pitch_pen","turns_pen","pitch_finger","turns_finger",
-                    "startdia","enddia","endang","split","tapdia","zonegap","longtrial",
+                    "startdia","enddia","advturns","endang","split","tapdia","zonegap","longtrial",
                     "fstd","ftgt","lvl","seedmode","idle","ppmm"];
 // Start-up runs the same change handlers the UI does, and those handlers persist. Until
 // restoreState() has had its chance to read what is on the device, persisting would write
