@@ -736,10 +736,15 @@
       <p class="note" style="margin-top:0"><b>Set separately for the stylus and the finger.</b>
       Each task uses the set matching its implement.</p>
       <div class="r4">
+        <!-- 12 x 5 from v12.51, which makes the stylus geometry identical to the finger set.
+             The two were deliberately different so their measures were never pooled; they are
+             now the same template drawn with different implements, which is a cleaner
+             comparison but means the old pen and finger records are not comparable with the
+             new ones. -->
         <div><label for="pitch_pen">Stylus — pitch (mm)</label>
-          <input id="pitch_pen" type="number" value="10" step="0.5" min="6" max="25"></div>
+          <input id="pitch_pen" type="number" value="12" step="0.5" min="6" max="25"></div>
         <div><label for="turns_pen">Stylus — turns</label>
-          <input id="turns_pen" type="number" value="6" step="1" min="2" max="8"></div>
+          <input id="turns_pen" type="number" value="5" step="1" min="2" max="8"></div>
         <div style="grid-column:span 2"><label for="preset_pen">Stylus — match printed template</label>
           <select id="preset_pen"><option value="">— choose —</option>
             <option value="10,6">SP-R60-T6 · pitch 10, 6 turns</option>
@@ -780,7 +785,11 @@
                angle is not counted: at 20 mm the disc swallows the whole of the first turn
                of a 10 mm-pitch spiral, at 14 it stops at about 70% of it. Costs 11.7% of the
                sweep against 6.7%, which angleNeededRad already allows for. -->
-          <div><label for="startdia">Start zone (mm)</label><input id="startdia" type="number" value="14" step="1" min="4" max="20"></div>
+          <div><label for="startdia">Start zone (mm)</label><input id="startdia" type="number" value="8" step="1" min="4" max="20"></div>
+          <!-- Was derived from the pitch and not settable. It is the thing the participant
+               aims at and the thing the advance rule tests, so its size is a decision about
+               the task rather than a consequence of the geometry. -->
+          <div><label for="enddia">End zone (mm)</label><input id="enddia" type="number" value="10" step="1" min="6" max="24"></div>
           <div><label for="endang">End angle (deg)</label><input id="endang" type="number" value="90" step="15"></div>
           <div><label for="split">Split (drawing share)</label><input id="split" type="number" value="0.70" step="0.05" min="0.4" max="1"></div>
         </div>
@@ -1011,7 +1020,7 @@
     <div class="spacer"></div>
 
     <div id="reminder"></div>
-    <button id="quit" onclick="backToSession()">Back to session</button>
+    <button id="quit" onclick="backToSession()">Exit</button>
   </div>
   <!-- THE RULE, KEPT ON THE TASK SCREEN. The zone labels say which finger, and on the
        bimanual tasks that is only half of it: what distinguishes TAP_BMIN from TAP_BANT is
@@ -1033,7 +1042,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.50 2026-09-14";
+const BUILD = "v12.51 2026-09-15";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1554,14 +1563,21 @@ const overheadFor = taskId => blockOf(taskId) ? BLOCK_GAP_S : OVERHEAD_S;
 // things to hold, and the one that matters gets no more weight than "sit comfortably". Each
 // task now leads with a single emphasised line saying what to DO, and everything else is
 // support beneath it. Lines wrapped in ** ** are rendered emphasised; see instructionHTML.
+// Wording set by the study lead, v12.51. Three changes worth noting because they are not
+// cosmetic: the destination is now named as the RED CIRCLE rather than "all the way out",
+// which gives the participant the same target the flash leads them to; the speed line says
+// "at your own speed and no need to rush", which removes the last trace of a speed demand
+// from a task that is not measuring speed; and it opens by telling them to sit comfortably,
+// before anything is asked of them.
 function drawingRules(tool, mode){
   return [
+    `Sit comfortably.`,
     mode==="between"
-      ? `**Start inside the green circle and follow the white path all the way out.**`
-      : `**Start inside the green circle and TRACE the spiral line all the way out.**`,
-    `**One continuous line. Do not lift the ${tool}.**`,
-    `Trace as accurately as you can, at a comfortable speed.`,
-    `Keep your hand and arm off the table.`
+      ? `**Start inside the green circle and follow the white path all the way out into the red circle.**`
+      : `**Start inside the green circle and TRACE the spiral line all the way out into the red circle.**`,
+    `**Draw continuously without lifting the ${tool}.**`,
+    `Trace as accurately as you can, at your own speed and no need to rush.`,
+    `Keep your drawing hand and arm off the table.`
   ];
 }
 // The sustained conditions do not end when the spiral does, and that is the single thing
@@ -1569,8 +1585,8 @@ function drawingRules(tool, mode){
 // trial as far as they are concerned. It goes in its own emphasised line, not appended to
 // another one.
 const KEEP_GOING_LINE =
-  "**When you reach the end, lift the pen and a new spiral appears. Start again from the "+
-  "middle, and keep going until you see END.**";
+  "**When you reach the red circle, a new spiral will appear. Start again from the middle, "+
+  "and keep going until you see END.**";
 function instructionFor(taskId, opts){
   const c=byId(taskId); if(!c) return null;
   const mode = (opts&&opts.mode) || ($("instr")?$("instr").value:"trace");
@@ -3990,7 +4006,7 @@ function newParticipant(){
 // measure this iPad's glass and are true for every participant on it, so a new participant
 // must not silently discard a calibration.
 const PROTOCOL_FIELDS=["instr","tmpl","implement","pitch_pen","turns_pen","pitch_finger",
-  "turns_finger","startdia","endang","split","tapdia","zonegap","longtrial",
+  "turns_finger","startdia","enddia","endang","split","tapdia","zonegap","longtrial",
   "fstd","ftgt","lvl","seedmode","idle"];
 let FIELD_SHIPPED={};
 function snapshotShippedFields(){
@@ -4353,6 +4369,10 @@ const ADVANCE_RADIUS_FRACTION=0.92;
 // How far off centre a single tap zone sits, as a fraction of the usable width. Far enough
 // to read as "this side", not so far that it is a reach.
 const TAP_SIDE_OFFSET=0.18;
+// The same idea for the spiral, smaller: a tap zone is a target to reach for, a spiral is a
+// thing to draw beside your own hand. Enough to clear the forearm, not so much that the
+// template stops being centred on the working area.
+const SPIRAL_SIDE_OFFSET=0.07;
 // A second guard against a pass ending before one was drawn. Nobody traces six turns in four
 // seconds, so an advance sooner than this is evidence of a detector fault rather than of a
 // fast participant -- and the cost of being wrong is the participant's drawing.
@@ -4386,11 +4406,19 @@ const MIN_PASS_MS=4000;
 // the sweep has to be complete first. Two backstops remain for the pen that never lifts: a
 // runaway well clear of the template, and the examiner's button.
 const LIFT_ADVANCE_MS=800;           // pen up this long, with the sweep complete, is "done"
-const endZoneDiaMM = pitch => END_ZONE_PITCH_FRACTION*pitch;
+// SET, NOT DERIVED, since v12.51. The pitch fraction survives only as the fallback for a
+// missing field.
+const endZoneDiaMM = pitch => +(($("enddia")||{}).value) || END_ZONE_PITCH_FRACTION*pitch;
 // How long the pen must stay in the zone. Short enough not to feel like a wait, long enough
 // that a pen sweeping through the zone on its way elsewhere does not trigger it.
 // Retired with the band; see ADVANCE_RADIUS_FRACTION.
 const END_ZONE_DWELL_MS=200;
+// When the end zone starts flashing. Both conditions, not either: four turns drawn AND the
+// pen within a twelfth of a turn of the endpoint. Turns alone would flash on a participant
+// still on their fourth lap; proximity alone would flash every time the pen passed the
+// endpoint's angle on an earlier turn, which on a five-turn spiral is four false alarms.
+const FLASH_MIN_TURNS=4;
+const FLASH_LEAD_RAD=2*Math.PI/12;
 // Fraction of the template's total sweep that counts as complete. Not 100%: the last few
 // degrees are inside the end zone anyway, and demanding all of them would strand a
 // participant who stopped a hair short of the marker.
@@ -5126,7 +5154,7 @@ function layout(){
   const topPad=62, cy=uy0+topPad+(uh-topPad)/2;
 
   const c=byId(TRIAL.task);
-  let dx0=ux0,dw=uw,tapCx=null,zones=null,splitX=null,pentCx=null,pentSide=null;
+  let dx0=ux0,dw=uw,tapCx=null,zones=null,splitX=null,pentCx=null,pentSide=null,spiralShift=0;
   let pentVertical=false,pentCy=null,copyCy=null,splitY=null,pentBox=null;
   const drawSide = TRIAL.drawHand==="left" ? "left" : "right";
 
@@ -5134,7 +5162,21 @@ function layout(){
     const split=clamp(+$("split").value,.4,1); dw=uw*split;
     if(drawSide==="left"){ dx0=ux0; tapCx=ux0+dw+(uw-dw)/2; splitX=ux0+dw; }
     else { dx0=ux0+(uw-dw); tapCx=ux0+(uw-dw)/2; splitX=ux0+(uw-dw); }
-  } else if(c.spiral){ dx0=ux0; dw=uw; }
+  } else if(c.spiral){
+    // SHIFTED TOWARD THE DRAWING HAND. A spiral centred on the screen puts a right hand
+    // across the middle of it and the forearm over the left half of the template, so the
+    // participant works around their own arm. A small shift the other way costs nothing and
+    // is the difference between drawing beside the hand and drawing under it.
+    //
+    // Clamped so the outermost turn cannot leave the usable area: at the shipped geometry the
+    // spiral is 120 mm across, and on a narrow screen the offset gives way rather than the
+    // template being cropped. Recorded per trial, because it moves where the drawing happened.
+    dx0=ux0; dw=uw;
+    const outerPx=geomPitch(TRIAL.implement)*geomTurns(TRIAL.implement)*p;
+    const want=(drawSide==="left"?-1:1)*uw*SPIRAL_SIDE_OFFSET;
+    const room=Math.max(0, uw/2-outerPx-4);
+    spiralShift=clamp(want, -room, room);
+  }
   // The copy task needs TWO areas: the model to look at and a blank area to draw in. The
   // model goes on the non-drawing side so the participant's own hand does not cover it.
   else if(c.pent){
@@ -5182,7 +5224,8 @@ function layout(){
 
   L={p,W,H,g,ux0,uy0,uw,uh,dw,dx0,tapCx,zones,splitX,spiralOn:!!c.spiral,
      pentOn:!!c.pent,pentCx,pentSide,pentVertical,pentCy,copyCy,splitY,pentBox,
-     cx:dx0+dw/2,cy,safeAreaMM:sa,topPad};
+     spiralShift,
+     cx:dx0+dw/2+spiralShift,cy,safeAreaMM:sa,topPad};
   buildZones(c);
   $("hud").style.display = (c.tap||c.audio||c.verbal) ? "block" : "none";
   return L;
@@ -5320,6 +5363,25 @@ function drawScene(){
       // quiet marker; after it, it is the thing to head for.
       const need = angleNeededRad(turns, radius, RUN && RUN.angle ? RUN.angle.minR : 0);
       const armed = RUN && RUN.angle && RUN.netAngleTotal >= need;
+      // FLASHES TO LEAD THE PEN IN, on two conditions together.
+      //
+      // Four turns of drawing is enough to know the participant is genuinely on the last
+      // approach rather than wandering near the rim early. And the pen has to be CLOSE to
+      // the end in angle, not merely far out in radius: on a spiral the two are the same
+      // thing only on the final turn, and a radius test alone is the mistake that made the
+      // old band fire mid-drawing. About a twelfth of a turn short of the endpoint is the
+      // eleven o'clock position when the end sits at twelve.
+      let leading=false;
+      if(RUN && RUN.angle && RUN.penMM){
+        // Measured against the FULL sweep, not against the advance threshold. `need` is 95%
+        // of the sweep, so anchoring the flash to it would put eleven o'clock more than half
+        // a turn before the red circle -- the flash would start, and the participant would
+        // still have most of a lap to go. The endpoint is where the template stops.
+        const full = need/ADVANCE_ANGLE_FRACTION;
+        const turnsDone = RUN.netAngleTotal/(2*Math.PI);
+        leading = turnsDone >= FLASH_MIN_TURNS
+               && (full - RUN.netAngleTotal) <= FLASH_LEAD_RAD;
+      }
       // THE PROGRESS ARC IS GONE. It filled round the outside as angle accumulated, which
       // told the participant how close the next spiral was -- and that is a live performance
       // gauge on a task whose measure is how someone draws when they are not being scored at.
@@ -5327,21 +5389,32 @@ function drawScene(){
       // competes with the one the participant is supposed to be watching, which is their own.
       // The end zone lighting up when the angle is complete says the same thing at the moment
       // it becomes actionable, without narrating the way there.
+      // A SOLID RED DOT. It was a pale filled circle with a smaller white circle inside it,
+      // which read as a ring or a target rather than as a place to stop -- and the white
+      // centre was the brightest thing on the template, pulling the eye to a hole. One
+      // colour, filled, no centre.
       const ez=endZoneDiaMM(pitch);
-      g.fillStyle = armed ? "#F6C79E" : "#FBE6D8";
-      g.strokeStyle="#b4531f"; g.lineWidth = armed ? 2.4 : 1.2;
-      g.beginPath(); g.arc(ec.x,ec.y,mm2px(ez/2),0,7); g.fill(); g.stroke();
-      // The dotted ring that used to appear here was that radius band, drawn so it could be
-      // aimed at. There is no band now, so there is nothing to aim at -- and a dotted curve
-      // materialising across the drawing moments before it vanished was, reasonably, read as
-      // part of the fault rather than as a target.
+      const r=mm2px(ez/2);
+      if(leading){
+        // The pulse, outside the dot so it never covers the thing being aimed at. Sized off
+        // the dot, so changing the End zone parameter cannot leave the halo detached from it.
+        const ph=(performance.now()%700)/700;
+        g.save();
+        g.fillStyle=`rgba(200,32,32,${0.30*(1-ph)})`;
+        g.beginPath(); g.arc(ec.x,ec.y,r+(1-ph)*r*1.4,0,7); g.fill();
+        g.restore();
+      }
+      g.fillStyle = leading ? "#E01B1B" : (armed ? "#C82020" : "#D14A4A");
+      g.beginPath(); g.arc(ec.x,ec.y,r,0,7); g.fill();
+    } else {
+      // Not a sustained trial: still a stop marker, still solid, just not a target.
+      g.fillStyle="#C82020";
+      g.beginPath(); g.arc(ec.x,ec.y,mm2px(3),0,7); g.fill();
     }
-    g.strokeStyle="#b4531f"; g.lineWidth=2; g.fillStyle="#fff";
-    g.beginPath(); g.arc(ec.x,ec.y,mm2px(3),0,7); g.fill(); g.stroke();
-    const ux=Math.cos(last.a),uy=Math.sin(last.a);
-    const et=toCanvas(last.x+ux*11,last.y+uy*11);
-    g.fillStyle="#b4531f"; g.font="600 14px system-ui"; g.fillText("End",et.x,et.y+4);
-    g.fillStyle="#2F6B2D"; g.font="13px system-ui"; g.fillText("start",c0.x,c0.y+mm2px(sd/2)+15);
+    // Clearance measured from the circle's edge, not from its centre plus a guess: at a
+    // 14 mm start zone the old offset cleared it, and at 8 mm the label landed on top of it.
+    g.fillStyle="#2F6B2D"; g.font="13px system-ui";
+    g.fillText("start", c0.x, c0.y + mm2px(sd/2) + 17);
   } else SPIRAL=null;
 
   if(L.pentOn){
@@ -5418,6 +5491,10 @@ const PEN_CEILING_MS=30000;
 // How long the end-of-window STOP stays up. Long enough that nobody mid-tap can miss it,
 // short enough that it has cleared before the examiner needs the canvas underneath.
 const STOP_SIGN_MS=1800;
+// How long END stays over a finished drawing before clearing itself. Long enough for the
+// participant to read it, short enough that the examiner is not left looking at a word
+// instead of the trace they are about to save.
+const END_SIGN_LINGER_MS=2500;
 // How long END is on screen alone before a counting task asks for the number. Only used
 // where the sign was not already up; a sustained task has had it up since its window closed.
 const COUNT_PROMPT_DELAY_MS=1400;
@@ -5594,7 +5671,7 @@ function sessionComplete(){
     <p>${done} trial${done===1?"":"s"} saved${skipped?`, ${skipped} skipped`:""}.</p>
     <p style="font-size:17px;color:#5d6570">Export before clearing this device.</p>`,
     [{label:"Export data", onClick:()=>{ stageOn(false); RUN=null; goPage(6); }},
-     {label:"Back to session", ghost:true, onClick:()=>{ stageOn(false); RUN=null; goPage(3); }}]);
+     {label:"Exit", ghost:true, onClick:()=>{ stageOn(false); RUN=null; goPage(3); }}]);
 }
 
 // The stream a trial will actually use. durS follows the plan: a fixed-length trial
@@ -5756,7 +5833,7 @@ function showVerbalSetup(c, done){
         TRIAL.verbal=v; TRIAL.verbalType=type;
         hideOverlay(); done();
       }},
-     { label:"Back to session", ghost:true, onClick:()=>backToSession() }]);
+     { label:"Exit", ghost:true, onClick:()=>backToSession() }]);
   verbalTypeChanged();
 }
 function verbalTypeChanged(){
@@ -5835,7 +5912,7 @@ function showInstructionScreen(seq,c,returnToReady){
     `<p style="font-size:16px;color:#5d6570;margin-top:10px">${ins.length}</p>`,
     [{label:"Ready", onClick:()=>{ hideOverlay(); LAST_TASK=TRIAL.task;
         readyTrial(returnToReady?returnToReady.seq:seq, c, true); }},
-     {label:"Back to session", ghost:true, onClick:()=>backToSession()}]);
+     {label:"Exit", ghost:true, onClick:()=>backToSession()}]);
 }
 
 // One short line, in the participant's words, for the whole trial. Only where the screen
@@ -5915,7 +5992,7 @@ function readyTrial(seq,c,justInstructed){
     showOverlay(`<h3 style="font-size:34px;line-height:1.3">${what}</h3>
       <p style="font-size:19px;color:#5d6570">${TRIAL.task}${TRIAL.adhoc?" · run now":` · trial ${TRIAL.index+1} of ${QUEUE.length}`}</p>`,
       [{label:"Ready", onClick:hideOverlay},
-       {label:"Back to session", ghost:true, onClick:()=>backToSession()}]);
+       {label:"Exit", ghost:true, onClick:()=>backToSession()}]);
   } else hideOverlay();
 
   const start=document.createElement("button"); start.textContent="START";
@@ -6432,16 +6509,28 @@ function runTrial(seq,c){
       geomPitch(TRIAL.implement)*geomTurns(TRIAL.implement),
       RUN.angle ? RUN.angle.minR : 0);
     if(RUN.netAngleTotal < needed){ RUN.endZoneSince=null; return; }
-    // THE SWEEP IS COMPLETE, so the pass may now end -- and it ends when the pen comes off.
-    // Nothing else. There is no geometric backstop, and that is deliberate: every version of
-    // one, at every threshold, could still fire while the pen was on the glass, which is the
-    // single behaviour this task keeps being reported for. A participant who draws 30% larger
-    // than the template crosses any rim-based threshold DURING their last turn.
+    // THE SWEEP IS COMPLETE, so the pass may now end. Two ways, recorded separately.
     //
-    // The backstop for a pen that never lifts is the examiner, who is in the room and has
-    // Next spiral, and whose press is recorded as "examiner" so those passes are separable.
-    // A human watching is a better backstop than a number that cannot tell finishing from
-    // passing through.
+    // 1. THE PEN REACHES THE RED CIRCLE. v12.41 removed every position test, because a
+    //    radius BAND fires wherever the pen happens to cross it and a spiral drawn larger
+    //    than its template crosses one during its last turn. An end ZONE is a different
+    //    object: a 10 mm circle at the spiral's own endpoint, which the pen can only be
+    //    inside if it has arrived where the template stops. The sweep gate still stands in
+    //    front of it, so it cannot fire on an early pass through the same angle, and the
+    //    flash leads the pen to it rather than leaving it to be found. The instruction now
+    //    promises this -- "when you reach the red circle, a new spiral will appear" -- and a
+    //    rule that does not match what the participant was told is worse than either rule.
+    if(RUN.penMM && RUN.endMM){
+      const d=Math.hypot(RUN.penMM.x-RUN.endMM.x, RUN.penMM.y-RUN.endMM.y);
+      if(d <= endZoneDiaMM(geomPitch(TRIAL.implement))/2){
+        if(RUN.endZoneSince===null) RUN.endZoneSince=now;
+        else if(now-RUN.endZoneSince >= END_ZONE_DWELL_MS){ advancePass("end_zone"); return; }
+      } else RUN.endZoneSince=null;
+    }
+    // 2. THE PEN COMES OFF. Kept as the second path, for the participant who finishes wide
+    //    of the dot and stops: a spiral drawn much larger than the template never enters the
+    //    zone at all, and leaving them stuck in front of a finished drawing is the failure
+    //    the lift rule was introduced to end.
     if(RUN.penUpAt!=null && now-RUN.penUpAt >= LIFT_ADVANCE_MS) advancePass("lift");
   };
   // ---- WINDOW END -------------------------------------------------------------------
@@ -6788,9 +6877,14 @@ function stopTrial(auto){
 //
 // Participant details, the plan and every saved trial are untouched; only a trial that has
 // been run and not saved is lost, and that is what the confirmation is for.
+// "Back to session" described where the button went; "Exit" describes what it does, and it
+// is the same word the removed end-of-trial button used, so there is now one Exit rather than
+// two buttons doing one job under two names.
 function backToSession(){
   const running = RUN && !RUN.ready && !RUN.saved;
-  if(running && !confirm("Leave this trial and go back to the session page?\n\nIt has NOT been saved and will be lost. The participant, the plan and all saved trials are kept.")) return;
+  if(running && !confirm("Exit the trial without saving?\n\nThis trial has NOT been saved and "
+    +"will be lost. The participant, the plan and every trial already saved are kept.\n\n"
+    +"Press Cancel to go back, then SAVE to keep it.")) return;
   if(RUN){ clearTimeout(RUN.timer); clearTimeout(RUN.ceilTimer);
            if(RUN.teardown) RUN.teardown(); endRecording(); }
   else RECORDER.release();
@@ -6929,7 +7023,7 @@ function askCount(seq){
         hideOverlay();
         finish();                   // re-enter now that the count exists
       }},
-     { label:"Back to session", ghost:true, onClick:()=>{
+     { label:"Exit", ghost:true, onClick:()=>{
         if(!confirm("Leave without recording the count?\n\nThe trial is lost, including the number the participant gave.")) return;
         backToSession(); }}]);
 }
@@ -6938,42 +7032,46 @@ function showEndControls(seq,c,pts,rate,att,tp){
   const sb=document.createElement("button"); sb.textContent="SAVE";
   sb.onclick=()=>{ hideStopSign(); saveTrial(sb); }; $("ctrl").appendChild(sb);
   const rp=document.createElement("button"); rp.textContent="REPEAT"; rp.className="ghost";
-  rp.onclick=()=>{ if(!okUnsaved()) return; hideStopSign(); RUN=null; openTrial(false); };
+  rp.onclick=()=>{ if(!okUnsaved("run it again")) return; hideStopSign(); RUN=null; openTrial(false); };
   $("ctrl").appendChild(rp);
   const nx=document.createElement("button"); nx.textContent="NEXT"; nx.className="ghost";
-  nx.onclick=()=>{ if(!okUnsaved()) return; hideStopSign();
+  nx.onclick=()=>{ if(!okUnsaved("move to the next task")) return; hideStopSign();
     if(RUN&&RUN.saved && !TRIAL.adhoc && QPOS===TRIAL.index) QPOS++;  // past the saved trial
     RUN=null; runCurrent(); };
   $("ctrl").appendChild(nx);
-  // THE ONE THING A STICKY END SIGN TAKES AWAY: on a drawing task the examiner can no longer
-  // see what was drawn, and the summary reports numbers rather than the trace. One button
-  // puts it back, and only where there is something behind the sign to look at.
-  // Only while the END sign is actually covering the drawing. It used to be added to every
-  // drawing task whether or not there was a sign up, so on the trials where the sign had
-  // been skipped it sat there doing nothing when pressed.
-  if((c.spiral || c.pent) && $("stopsign") && $("stopsign").classList.contains("on")){
-    const sh=document.createElement("button"); sh.textContent="Show the drawing";
-    sh.className="ghost"; sh.style.minWidth="0";
-    sh.title="Lift the END sign so the trace can be checked before saving";
-    sh.onclick=()=>{ hideStopSign(); sh.remove(); }; $("ctrl").appendChild(sh);
-  }
-  const ex=document.createElement("button"); ex.textContent="Exit"; ex.className="ghost";
-  ex.style.minWidth="0";
-  ex.onclick=()=>{ if(!okUnsaved()) return; hideStopSign(); stageOn(false); RUN=null; goPage(3); };
-  $("ctrl").appendChild(ex);
+  // LIST, not Exit. The trial list is where an examiner goes to pick a different task or to
+  // see what is left, and it was reachable DURING a trial but not after one -- so the only
+  // route to it from here was to leave the stage altogether.
+  const ls=document.createElement("button"); ls.textContent="List"; ls.className="ghost";
+  ls.style.minWidth="0"; ls.onclick=()=>showQueueOverlay(seq,c); $("ctrl").appendChild(ls);
+  // "Show the drawing" and "Exit" are gone.
+  //
+  // Exit duplicated the grey button that is on every screen anyway, which is now called Exit
+  // itself -- two buttons with one job, under two names.
+  //
+  // Show the drawing existed only because the sticky END sign covered the trace the examiner
+  // was about to save. A button to undo the app's own screen is the wrong shape of fix: the
+  // sign is for the PARTICIPANT, and a few seconds after the end controls appear the examiner
+  // is the only person still looking. So it clears itself, and nothing has to be pressed.
+  clearTimeout(STOP_TIMER);
+  STOP_TIMER=setTimeout(()=>hideStopSign(), END_SIGN_LINGER_MS);
 
   $("saveState").innerHTML=`<div class="warn">The last trial has not been saved.</div>`;
   renderResult(seq,c,pts,rate,att,tp);
 }
-function okUnsaved(){ if(!RUN||RUN.saved) return true;
+// Names what is about to happen and where SAVE is. "Continue and discard it?" left the
+// examiner to work out what continuing cost and gave no hint that saving was still possible.
+function okUnsaved(what){ if(!RUN||RUN.saved) return true;
   // A failed write leaves the record in MEM: it still exports, but only until reload.
   // Saying "discard it" there would be wrong, and is how a recoverable trial gets binned.
   const inMem = LAST && LAST.rec && MEM[STORE_PREFIX+LAST.rec.trial_uid];
   const rec = RUN.voice && RUN.voice.blob ? "\n\nThe recording made for this trial is discarded with it." : "";
+  const act=what||"continue";
   return confirm(inMem
     ? "This trial could not be written to storage and is held in memory only.\n\n" +
       "It is still included in an export, but leaving now and reloading loses it.\n\nContinue?"
-    : "This trial has not been saved.\n\nContinue and discard it?"+rec); }
+    : `This trial has not been saved.\n\nDISCARD it and ${act}?`+rec
+      +"\n\nPress Cancel to go back, then SAVE to keep it."); }
 
 function renderResult(seq,c,pts,rate,att,tp){
   const heardScheduled = seq ? (c.countOf==="all" ? seq.n : seq.t) : null;
@@ -7155,7 +7253,10 @@ function paramSet(){
     // The examiner's word on the four things the app cannot check for itself. Recorded
     // because a trial run on a dim, sliding, unlocked iPad is not the same trial.
     device_setup: SETUP_ITEMS.reduce((o,[id,w])=>{ o[w.replace(/[^a-z]+/g,"_")]=!!($(id)&&$(id).checked); return o; },{}),
-    start_zone_mm:+$("startdia").value, split:+$("split").value,
+    start_zone_mm:+$("startdia").value, end_zone_mm:+$("enddia").value,
+    spiral_shift_px: L && L.spiralShift ? +L.spiralShift.toFixed(1) : 0,
+    spiral_shift_note:"the template is offset toward the drawing hand, so the spiral centre is not the centre of the screen. Millimetre coordinates are relative to the template centre and are unaffected.",
+    split:+$("split").value,
     template_style:$("tmpl").value, idle_stop_s:+$("idle").value };
   if(c.tap) p.tap={ zone_mm:+$("tapdia").value, zones:c.zones, spacing_mm:+$("zonegap").value };
   if(cfg) p.audio={ ...cfg, f_standard:+$("fstd").value, f_target:+$("ftgt").value,
@@ -8146,7 +8247,7 @@ const STATE_FIELDS=["pid","grp","sex","byear","bmonth","domhand","ambihand","not
                     "ethnicity","education",
                     "visitno","sessnum","sessnote","instr","tmpl","implement",
                     "pitch_pen","turns_pen","pitch_finger","turns_finger",
-                    "startdia","endang","split","tapdia","zonegap","longtrial",
+                    "startdia","enddia","endang","split","tapdia","zonegap","longtrial",
                     "fstd","ftgt","lvl","seedmode","idle","ppmm"];
 // Start-up runs the same change handlers the UI does, and those handlers persist. Until
 // restoreState() has had its chance to read what is on the device, persisting would write
