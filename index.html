@@ -1046,7 +1046,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.55 2026-09-15";
+const BUILD = "v12.56 2026-09-15";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -6560,11 +6560,21 @@ function runTrial(seq,c){
     RUN.hoverExits=(RUN.hoverExits||0)+1;
   };
   const up=e=>{
-    // A lift also ends the carry-over: whatever is drawn after it is a stroke made on this
-    // template rather than the tail of the last one. (beginPass clears the rest, for the
-    // participant who never lifts.)
-    const carried=strokeFor.get(e.pointerId);
-    if(carried && RUN.carryStrokes) RUN.carryStrokes.delete(carried);
+    // A LIFT DOES NOT RELEASE A HELD-BACK STROKE, and it used to. That line dated from
+    // v12.35, when a lift was how a pass ENDED and releasing on it was right: whatever came
+    // after the lift belonged to the new template. Two changes since made it wrong and one
+    // made it visible. v12.41 moved the split to beginPass, so the fresh visible stroke is
+    // handed out when the pen returns to the middle and the lift has no part in it. v12.55
+    // then let the pass advance as the pen passes the end of the template -- so the pen is
+    // now routinely still down and OVERSHOOTING when the next template appears, and the
+    // overshoot lands in the held-back stroke. Releasing that on the next lift painted it
+    // onto the fresh template: a short trace sitting in the new spiral's end zone,
+    // appearing the instant the pen came off. Reported from the iPad, reproduced at 761 ink
+    // pixels from a 25-sample overshoot.
+    //
+    // Anything drawn before a pass starts stays hidden for good. beginPass is the only thing
+    // that makes ink visible again, which is also the only moment at which the participant
+    // is actually drawing the new spiral.
     strokeFor.delete(e.pointerId); RUN.lastContact=performance.now();
     if(RUN.angle) RUN.angle.lift();
     if(strokeFor.size===0){
