@@ -1042,7 +1042,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.51 2026-09-15";
+const BUILD = "v12.52 2026-09-15";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -5389,27 +5389,39 @@ function drawScene(){
       // competes with the one the participant is supposed to be watching, which is their own.
       // The end zone lighting up when the angle is complete says the same thing at the moment
       // it becomes actionable, without narrating the way there.
-      // A SOLID RED DOT. It was a pale filled circle with a smaller white circle inside it,
-      // which read as a ring or a target rather than as a place to stop -- and the white
-      // centre was the brightest thing on the template, pulling the eye to a hole. One
-      // colour, filled, no centre.
+      // THE SAME OBJECT AS THE START ZONE, IN THE OTHER COLOUR. v12.51 made this a solid
+      // saturated dot, which fixed the white hole in the middle and overcorrected: on the
+      // screen it read as a warning rather than as the twin of the green circle at the
+      // centre. The printed templates set the pattern -- pale fill, coloured outline, a
+      // label in the same colour -- and the two zones are the same kind of thing, so they
+      // should look it. Values sampled from MotiQ_spiral_templates_12p5t_2026-09-15.pdf.
       const ez=endZoneDiaMM(pitch);
       const r=mm2px(ez/2);
       if(leading){
-        // The pulse, outside the dot so it never covers the thing being aimed at. Sized off
-        // the dot, so changing the End zone parameter cannot leave the halo detached from it.
+        // The pulse, outside the circle so it never covers the thing being aimed at, and
+        // sized off it so changing the End zone parameter cannot leave the halo detached.
         const ph=(performance.now()%700)/700;
         g.save();
-        g.fillStyle=`rgba(200,32,32,${0.30*(1-ph)})`;
+        g.fillStyle=`rgba(196,56,56,${0.26*(1-ph)})`;
         g.beginPath(); g.arc(ec.x,ec.y,r+(1-ph)*r*1.4,0,7); g.fill();
         g.restore();
       }
-      g.fillStyle = leading ? "#E01B1B" : (armed ? "#C82020" : "#D14A4A");
-      g.beginPath(); g.arc(ec.x,ec.y,r,0,7); g.fill();
+      g.fillStyle = leading ? "#F7B4B4" : "#FACCCC";
+      g.strokeStyle="#C43838"; g.lineWidth = leading ? 2.4 : 1;
+      g.beginPath(); g.arc(ec.x,ec.y,r,0,7); g.fill(); g.stroke();
+      // "end" above it, as "start" is below the green one. The label was dropped in v12.51
+      // along with the old marker; on the print it is what names the destination the
+      // instruction now sends them to.
+      g.fillStyle="#C43838"; g.font="13px system-ui"; g.textAlign="center";
+      g.fillText("end", ec.x, ec.y - r - 9);
     } else {
-      // Not a sustained trial: still a stop marker, still solid, just not a target.
-      g.fillStyle="#C82020";
-      g.beginPath(); g.arc(ec.x,ec.y,mm2px(3),0,7); g.fill();
+      // Not a sustained trial, so there is no zone to reach -- but it is still the place the
+      // line stops, and it is still the green circle's counterpart.
+      const r=mm2px(3.5);
+      g.fillStyle="#FACCCC"; g.strokeStyle="#C43838"; g.lineWidth=1;
+      g.beginPath(); g.arc(ec.x,ec.y,r,0,7); g.fill(); g.stroke();
+      g.fillStyle="#C43838"; g.font="13px system-ui"; g.textAlign="center";
+      g.fillText("end", ec.x, ec.y - r - 9);
     }
     // Clearance measured from the circle's edge, not from its centre plus a guess: at a
     // 14 mm start zone the old offset cleared it, and at 8 mm the label landed on top of it.
