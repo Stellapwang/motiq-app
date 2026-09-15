@@ -1046,7 +1046,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.56 2026-09-15";
+const BUILD = "v12.57 2026-09-15";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -2419,7 +2419,7 @@ function practiceReset(){
     const needBands=Math.max(1, Math.round(PRACTICE_TURNS*
       Math.min(1, advanceTurns()/Math.max(1,geomTurns("pen")))));
     const wasArmed=PR.armed;
-    PR.armed = PR.angle.bandsDrawn >= needBands;
+    PR.armed = PR.angle.bandsDrawn >= needBands && PR.angle.lastBandDrawn;
     if(PR.armed!==wasArmed) practiceRender();
     if(PR.passStartedAt && performance.now()-PR.passStartedAt < MIN_PASS_MS) return;
     if(!PR.armed) return;
@@ -4547,6 +4547,17 @@ function makeAngleAccumulator(direction, minR, bandMM, nBands){
     // they drew, and ordering them would fail that honest attempt while still passing the
     // participant who circles in one spot.
     get bandsDrawn(){ return bands.filter(v=>Math.abs(v)>=BAND_MIN_RAD).length; },
+    // THE OUTERMOST RING, ASKED ABOUT SEPARATELY, because "4 of 5 rings" does not say WHICH
+    // four and the fifth is the one that matters. A participant on their fourth lap has four
+    // rings and is one drift away from the red circle: the dot sits in ring five, so touching
+    // it while ring five is undrawn satisfied the count with a whole turn still to draw, and
+    // the template changed under them. Reported from the iPad.
+    //
+    // Requiring every ring instead would have punished the wrong people: the start zone eats
+    // the inner part of ring one, so a spiral drawn twice too large banks only 119 degrees
+    // there and would fail on its innermost ring having drawn everything else twice over.
+    // The outermost ring is the honest requirement -- it is the one the end zone lives in.
+    get lastBandDrawn(){ return Math.abs(bands[nb-1])>=BAND_MIN_RAD; },
     get bandAngles(){ return bands.map(v=>+(v*180/Math.PI).toFixed(1)); },
     // THE PEN LEAVING THE GLASS IS NOT MOTION. last used to survive a lift, so if the
     // participant lifted at one angle and touched down at another, the jump between them
@@ -4760,9 +4771,13 @@ function renderAdvanceNote(){
   const asked=advanceTurns(), capped=asked*2*Math.PI>bank+1e-9;
   const need2=Math.min(asked, t);
   el.innerHTML=`<b>How much has to be drawn before the end zone counts.</b> The participant
-    must draw <b>${need2} of the ${t} rings</b> before reaching the red circle will bring up
-    the next spiral. Reaching it earlier does nothing, and the red circle does not flash
-    either.
+    must draw <b>${need2} of the ${t} rings</b>, <b>and the outermost ring must be one of
+    them</b>, before reaching the red circle will bring up the next spiral. Reaching it
+    earlier does nothing, and the red circle does not flash either.
+    <br><b>Why the outermost ring is named.</b> "${need2} of ${t}" does not say which ${need2},
+    and the red circle sits in the last ring. Without naming it, a participant on their
+    ${need2}th lap has the count already and is one drift outward from ending the spiral with
+    a whole turn still to draw.
     <br>Exactly: the template is divided into ${t} rings, each one pitch
     (${geomPitch("pen")} mm) wide, and the angle the pen sweeps is counted against the ring it
     was swept in. A ring counts as drawn once <b>${deg(BAND_MIN_RAD)}°</b> has been swept
@@ -5497,7 +5512,11 @@ function drawScene(){
         const r=Math.hypot(RUN.penMM.x, RUN.penMM.y);
         const dA=Math.abs(((Math.atan2(RUN.penMM.y,RUN.penMM.x)
                           - Math.atan2(RUN.endMM.y,RUN.endMM.x) + Math.PI*3)%(2*Math.PI))-Math.PI);
+        // The same gate as the advance, for the same reason: on the fourth lap the pen is
+        // already at radius - pitch, so the old test lit the circle up a full turn early and
+        // invited exactly the touch that then ended the pass.
         leading = RUN.angle.bandsDrawn >= advanceTurns()
+               && RUN.angle.lastBandDrawn
                && r >= radius - pitch
                && dA <= FLASH_LEAD_RAD;
       }
@@ -6665,10 +6684,11 @@ function runTrial(seq,c){
     if(!RUN.passStarted){ RUN.endZoneSince=null; return; }
     const now=performance.now();
     if(RUN.passStartedAt && now-RUN.passStartedAt < MIN_PASS_MS){ RUN.endZoneSince=null; return; }
-    // RINGS DRAWN, not angle banked. See makeAngleAccumulator: angle alone cannot tell a
-    // spiral from a circle in one spot, and the whole point of the gate is to require the
-    // expanding spiral rather than the same loop repeated.
-    if(!RUN.angle || RUN.angle.bandsDrawn < advanceTurns()){ RUN.endZoneSince=null; return; }
+    // RINGS DRAWN, not angle banked -- see makeAngleAccumulator -- AND the outermost ring
+    // among them, since that is the ring the end zone sits in and the one a participant on
+    // their fourth lap has not drawn yet.
+    if(!RUN.angle || RUN.angle.bandsDrawn < advanceTurns() || !RUN.angle.lastBandDrawn){
+      RUN.endZoneSince=null; return; }
     // THE SWEEP IS COMPLETE, so the pass may now end. Two ways, recorded separately.
     //
     // 1. THE PEN REACHES THE RED CIRCLE. v12.41 removed every position test, because a
@@ -7649,7 +7669,8 @@ function buildRecord(){
             dwell_ms:0,
             ring_min_angle_deg:+(BAND_MIN_RAD*180/Math.PI).toFixed(0),
             ring_width_mm:geomPitch(TRIAL.implement),
-            gate_test:"RINGS DRAWN, not net angle. The template is divided into one ring per turn, each one pitch wide, and the angle swept is accumulated against the ring it was swept in. A ring counts as drawn once ring_min_angle_deg has been swept inside it. turns_required rings must be drawn before the end zone will advance the pass. Net angle alone cannot distinguish an expanding spiral from the same circle repeated in one place, which banks angle identically; binning by radius can, because circling in one spot fills a single ring however long it continues and a radial dash to the end zone deposits almost no angle in the rings it crosses.",
+            outermost_ring_required:true,
+            gate_test:"RINGS DRAWN, not net angle, and the outermost ring must be one of them. The template is divided into one ring per turn, each one pitch wide, and the angle swept is accumulated against the ring it was swept in. A ring counts as drawn once ring_min_angle_deg has been swept inside it. turns_required rings must be drawn before the end zone will advance the pass, AND the outermost ring must be among them: the end zone sits in that ring, so without this a participant on their fourth of five laps has the required count and is one drift away from ending the pass with a whole turn still to draw. Requiring every ring instead would fail a spiral drawn much larger than the template on its innermost ring, which the start zone truncates. Net angle alone cannot distinguish an expanding spiral from the same circle repeated in one place, which banks angle identically; binning by radius can, because circling in one spot fills a single ring however long it continues and a radial dash to the end zone deposits almost no angle in the rings it crosses.",
             start_test:"the pass begins when the pen is inside the start zone, on every pass and not only the first",
             end_test:"the pass ends the first sample the pen is inside the end zone OR at or beyond outer_radius_mm, and only after turns_required rings have been drawn. There is no dwell: requiring the pen to still be inside the circle a moment later meant an overshoot advanced nothing, and overshooting the end of a line is ordinary. The outer-radius test exists because a pen can pass the END of the template without passing within half an end zone of the dot. advanced_by distinguishes them as 'end_zone' and 'outer_radius'. Net angle is signed about the template centre and is NOT accumulated while the radius is inside the start zone, so a perfect tracing can bank at most bankable_net_angle_deg rather than the full template sweep. A lift does NOT end a pass." }; })(),
         note:"a pass advances on reaching the end of the template with the required rings already drawn, or by the examiner pressing Next spiral. A lift does not advance it: lifting is against the instruction and is itself a measure, so every participant finishes the same way. lifts_in_pass and lift_ms_in_pass record it per pass. advanced_by 'examiner' carries the examiner's reaction time; 'window_end' is the final partial pass."
