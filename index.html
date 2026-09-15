@@ -154,7 +154,7 @@
   #overlay { position:absolute; inset:0; display:flex; flex-direction:column;
              background:rgba(255,255,255,.98); z-index:3; }
   /* justify-content:center centres the column -- right while it fits, WRONG the moment it
-     does not: an overflowing centred column has its top pushed outside the scroll area, and
+     does not: an overflowing centered column has its top pushed outside the scroll area, and
      scrolling cannot bring it back. The instruction screen lost its first line that way,
      which is the line saying what to do. "safe center" centres only while there is room. */
   /* #stage sets touch-action:none for the drawing surface. The overlay is not a drawing
@@ -182,7 +182,7 @@
   #overlay h3, .instrkey, #stopsign small { text-wrap:balance; }
   #overlay p, .instrbullets li { text-wrap:pretty; }
   /* #overlay p caps every paragraph at 680px and outranks a class selector, so it was
-     silently overriding the instruction block's own width and costing the emphasised lines
+     silently overriding the instruction block's own width and costing the emphasized lines
      a second row. Measured: the tapping instructions need 733-780px on one line and were
      being given 680. The measure is set by .instrbody now, once, for everything in it. */
   .instrbody { text-align:left; margin:4px auto 0; }
@@ -191,7 +191,7 @@
      the gap below it, so each one reads as heading its own group instead of floating
      equidistant between two. */
   /* Listed under #overlay as well, for the same reason as the width above: #overlay p sets
-     colour with an id in the selector and outranks a bare class, so the emphasised lines
+     color with an id in the selector and outranks a bare class, so the emphasized lines
      rendered in body black on the one screen they exist to stand out on. */
   .instrkey, #overlay .instrkey { font-weight:700; color:#1d5fa8; line-height:1.3;
               margin:22px 0 10px; max-width:none; }
@@ -379,7 +379,7 @@
         pen cannot tell apart from the participant's own.</span></label>
       <label class="checkrow" for="setup_lock"><input id="setup_lock" type="checkbox" onchange="renderSetupNote()">
         <span><b>Rotation locked and Auto-Lock set to Never.</b> A rotation mid-trial rebuilds
-        the drawing area under the pen and invalidates the millimetre measures; the screen
+        the drawing area under the pen and invalidates the millimeter measures; the screen
         dimming or sleeping during a long spiral ends the trial for the participant.</span></label>
       <label class="checkrow" for="setup_guided"><input id="setup_guided" type="checkbox" onchange="renderSetupNote()">
         <span><b>Guided Access on</b> (Settings → Accessibility → Guided Access; triple-click
@@ -615,7 +615,7 @@
       <div id="tpresult" class="note"></div>
     </fieldset>
 
-    <!-- The behaviour the sustained conditions depend on, rehearsed before it costs a trial.
+    <!-- The behavior the sustained conditions depend on, rehearsed before it costs a trial.
          A participant meeting "finish one spiral and another appears" for the first time
          DURING PEN_SPRL spends the first pass working out what happened, and that pass is
          data. Here it costs nothing and can be repeated. -->
@@ -1129,7 +1129,7 @@ const CATALOGUE = [
   // Intersecting pentagon COPY, not a spiral. The model is shown beside a blank area and the
   // participant reproduces it; there is no template to trace and nothing to sustain, so it is
   // self-paced and ends at END. The app does NOT score it -- the criterion is ten angles and a
-  // quadrilateral overlap, which is a judgement about a shape rather than something these
+  // quadrilateral overlap, which is a judgment about a shape rather than something these
   // strokes can be thresholded into. It records the drawing and the model that was shown.
   { id:"PEN_PENT", label:"Intersecting pentagon copy", order:75, tier:"core", spiral:0, pent:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:1, lengthS:null, implement:"pen" },
 
@@ -1565,8 +1565,8 @@ const overheadFor = taskId => blockOf(taskId) ? BLOCK_GAP_S : OVERHEAD_S;
 // FEWER LINES, AND ONE OF THEM CARRIES THE TASK. An instruction screen read aloud to an
 // older adult is not a checklist to be worked through -- five equal bullets means five
 // things to hold, and the one that matters gets no more weight than "sit comfortably". Each
-// task now leads with a single emphasised line saying what to DO, and everything else is
-// support beneath it. Lines wrapped in ** ** are rendered emphasised; see instructionHTML.
+// task now leads with a single emphasized line saying what to DO, and everything else is
+// support beneath it. Lines wrapped in ** ** are rendered emphasized; see instructionHTML.
 // Wording set by the study lead, v12.51. Three changes worth noting because they are not
 // cosmetic: the destination is now named as the RED CIRCLE rather than "all the way out",
 // which gives the participant the same target the flash leads them to; the speed line says
@@ -1586,7 +1586,7 @@ function drawingRules(tool, mode){
 }
 // The sustained conditions do not end when the spiral does, and that is the single thing
 // most likely to be missed -- a participant who finishes one spiral and stops has ended the
-// trial as far as they are concerned. It goes in its own emphasised line, not appended to
+// trial as far as they are concerned. It goes in its own emphasized line, not appended to
 // another one.
 const KEEP_GOING_LINE =
   "**When you reach the red circle, a new spiral will appear. Start again from the middle, "+
@@ -1741,7 +1741,7 @@ function instructionFor(taskId, opts){
            // thing to a participant who is about to be asked to use their fingertip.
            figure: !!c.spiral && !dualTask && impl!=="finger", mode, implement:impl,
            // A sustained trial is not "until the administrator stops it" -- it runs its
-           // window and shows STOP, which is what the emphasised line above already tells
+           // window and shows STOP, which is what the emphasized line above already tells
            // the participant. Saying both contradicted the instruction being read out.
            length: sustained
              // The sign has said END since v12.16. This caption was the last place still
@@ -1778,7 +1778,7 @@ function instructionHTML(ins, opts){
   if(!ins) return "";
   const big=(opts&&opts.big)!==false;
   const fs=big?"22px":"17px";
-  // THE EMPHASISED LINES ARE NOT LIST ITEMS and were only in the list because everything
+  // THE EMPHASIZED LINES ARE NOT LIST ITEMS and were only in the list because everything
   // was. They were then dragged back out of the indent with a negative margin, which is the
   // shape of a layout fighting its own markup. Each is a statement; the plain lines under it
   // are its bullets. Consecutive plain lines are gathered into one list so the grouping is
@@ -2403,7 +2403,7 @@ function practiceReset(){
     PR.passStartedAt=performance.now(); PR.penUpAt=null;
     // THE PEN IS STILL DOWN, exactly as in the trial: the advance happens under the
     // participant's hand and they have not lifted. Ending the stroke here would make them
-    // lift and touch again to continue -- which is the opposite of the behaviour this
+    // lift and touch again to continue -- which is the opposite of the behavior this
     // practice exists to rehearse, and is the same mistake the trial engine had.
     if(PR.drawing) PR.strokes.push({pass:PR.pass,pts:[]});
     practiceRender();
@@ -3224,7 +3224,7 @@ function handsAllowed(c){
   //
   // "DRAWING" MEANT "SPIRAL" HERE, AND PEN_PENT IS DRAWN WITH A HAND TOO. The copy task has
   // spiral 0, tap 0 and zones 0, so it fell through to "none" and was planned as a
-  // hand-less, voice-only condition -- labelled "No hand (voice only)" in its own row. The
+  // hand-less, voice-only condition -- labeled "No hand (voice only)" in its own row. The
   // queue then carried hand:"none", and physHand("none") takes the not-dominant branch, so
   // the trial ran with drawHand set to the WRONG side. That is the whole of "PEN_PENT is
   // not working properly": it was never being set up as a manual task at all.
@@ -4401,7 +4401,7 @@ const ADVANCE_RADIUS_FRACTION=0.92;
 const TAP_SIDE_OFFSET=0.18;
 // The same idea for the spiral, smaller: a tap zone is a target to reach for, a spiral is a
 // thing to draw beside your own hand. Enough to clear the forearm, not so much that the
-// template stops being centred on the working area.
+// template stops being centered on the working area.
 const SPIRAL_SIDE_OFFSET=0.07;
 // A second guard against a pass ending before one was drawn. Nobody traces six turns in four
 // seconds, so an advance sooner than this is evidence of a detector fault rather than of a
@@ -4518,10 +4518,10 @@ function angleNeededRad(turns, outerR, gateR){
 }
 
 // Signed angle accumulated about the spiral centre, unwrapped. Called per pen sample with
-// millimetre coordinates in the spiral's own frame, where the centre is the origin.
+// millimeter coordinates in the spiral's own frame, where the centre is the origin.
 // Returns the running total in radians, signed in the direction the template is drawn.
 // minR is the radius below which angle is NOT counted, and it has to be generous. Near the
-// centre a small movement sweeps a huge angle: at 1 mm out, half a millimetre sideways is
+// centre a small movement sweeps a huge angle: at 1 mm out, half a millimeter sideways is
 // about 30 degrees. The guard used to be 0.5 mm, while the START ZONE ITSELF is 4 mm across
 // -- so a participant settling their hand inside the start circle before drawing racked up
 // angle without drawing anything. Measured: three seconds of fidgeting produced 35 turns,
@@ -4652,7 +4652,7 @@ function makeAngleAccumulator(direction, minR, bandMM, nBands, endAngle){
 // constant, not eyeballed and not randomised -- a copy task whose model varies between
 // administrations is not the same task twice.
 //
-// Size is in millimetres, from the same calibration the spiral uses, so the model is the
+// Size is in millimeters, from the same calibration the spiral uses, so the model is the
 // same physical size on every device rather than the same fraction of a screen.
 //
 // THE VERTICES ARE CONSTRUCTED, NOT TRACED FROM A PUBLISHED INSTRUMENT. Two regular
@@ -4691,7 +4691,7 @@ function pentSideFor(halfWidthMM, heightMM){
   const h=(heightMM-2*PENT_MARGIN_MM)/PENT_H_PER_SIDE;
   return Math.max(PENT_MIN_SIDE_MM, Math.min(w,h));
 }
-// Vertices of one regular pentagon, point-up, centred on the origin.
+// Vertices of one regular pentagon, point-up, centered on the origin.
 // Sutherland-Hodgman, for two convex polygons. Fifteen lines, and it is the difference
 // between a figure that satisfies the scoring criterion and one that is asserted to.
 function polyArea(p){
@@ -4859,7 +4859,7 @@ function renderAdvanceNote(){
     radius 0.44 of a turn early, and one drawn 20% larger passes through the red circle's
     position on its <b>fourth</b> lap. A lap count does not care how large the drawing is.
     <br><b>The shortcut guard.</b> Circling in one spot crosses that line as often as
-    spiralling does, so the template is also divided into ${t} rings, each one pitch
+    spiraling does, so the template is also divided into ${t} rings, each one pitch
     (${geomPitch("pen")} mm) wide, and <b>${rings}</b> of them must have at least
     ${deg(BAND_MIN_RAD)}° swept inside them. A spiral drawn anywhere from 70% to 150% of the
     template satisfies that; circling in one place never does.
@@ -5371,7 +5371,7 @@ function layout(){
     if(drawSide==="left"){ dx0=ux0; tapCx=ux0+dw+(uw-dw)/2; splitX=ux0+dw; }
     else { dx0=ux0+(uw-dw); tapCx=ux0+(uw-dw)/2; splitX=ux0+(uw-dw); }
   } else if(c.spiral){
-    // SHIFTED TOWARD THE DRAWING HAND. A spiral centred on the screen puts a right hand
+    // SHIFTED TOWARD THE DRAWING HAND. A spiral centered on the screen puts a right hand
     // across the middle of it and the forearm over the left half of the template, so the
     // participant works around their own arm. A small shift the other way costs nothing and
     // is the difference between drawing beside the hand and drawing under it.
@@ -5416,7 +5416,7 @@ function layout(){
     zones=[{id:"left",cx:mid-gap/2},{id:"right",cx:mid+gap/2}]; }
   // ON THE SIDE OF THE HAND THAT TAPS, and the same rule for every one-zone task.
   //
-  // Centred, the circle says nothing about which hand to use, and on TAP_FAST the hand
+  // Centered, the circle says nothing about which hand to use, and on TAP_FAST the hand
   // alternates between repeats -- so the one thing the participant most needs to know was
   // the one thing the screen would not tell them. Offsetting it says it without a word.
   //
@@ -5556,7 +5556,7 @@ function drawScene(){
     // Stop marker: an open ring on the path itself. The old radial tick was a straight
     // line running off the spiral, and participants traced it.
     const last=sp.pts[sp.pts.length-1];
-    // The zone the pass-advance detector tests against, in the same millimetre frame as the
+    // The zone the pass-advance detector tests against, in the same millimeter frame as the
     // pen samples. Taken from the template actually drawn rather than recomputed, so the two
     // cannot drift apart.
     if(RUN) RUN.endMM={x:last.x,y:last.y};
@@ -5610,11 +5610,11 @@ function drawScene(){
       // competes with the one the participant is supposed to be watching, which is their own.
       // The end zone lighting up when the angle is complete says the same thing at the moment
       // it becomes actionable, without narrating the way there.
-      // THE SAME OBJECT AS THE START ZONE, IN THE OTHER COLOUR. v12.51 made this a solid
+      // THE SAME OBJECT AS THE START ZONE, IN THE OTHER COLOR. v12.51 made this a solid
       // saturated dot, which fixed the white hole in the middle and overcorrected: on the
       // screen it read as a warning rather than as the twin of the green circle at the
-      // centre. The printed templates set the pattern -- pale fill, coloured outline, a
-      // label in the same colour -- and the two zones are the same kind of thing, so they
+      // centre. The printed templates set the pattern -- pale fill, colored outline, a
+      // label in the same color -- and the two zones are the same kind of thing, so they
       // should look it. Values sampled from MotiQ_spiral_templates_12p5t_2026-09-15.pdf.
       const ez=endZoneDiaMM(pitch);
       const r=mm2px(ez/2);
@@ -6136,9 +6136,9 @@ function showInstructionScreen(seq,c,returnToReady){
       ? `<p style="font-size:17px;color:#8c2020"><b>Not being recorded</b> — ${esc(TRIAL.voiceFailure.detail)}</p>`
       : `<p style="font-size:17px;color:var(--ok)">Voice recording is on for this trial.</p>`) : ``;
   // THE PARTICIPANT READS THIS SCREEN. The heading used to be the task code and the
-  // catalogue label at 27 px, directly above the emphasised line -- which said the same
+  // catalogue label at 27 px, directly above the emphasized line -- which said the same
   // thing twice, once in a code nobody outside the study can read. The code is an examiner
-  // reminder, so it is sized and coloured as one, and the instruction is the only thing on
+  // reminder, so it is sized and colored as one, and the instruction is the only thing on
   // the screen written for the person holding the pen.
   showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em;
       margin:0 0 14px">${TRIAL.task} · ${esc(c.label)}</div>` + instructionHTML(ins) + rulesNote + soundBtns + palmNote + voiceNote +
@@ -6149,7 +6149,7 @@ function showInstructionScreen(seq,c,returnToReady){
 }
 
 // One short line, in the participant's words, for the whole trial. Only where the screen
-// cannot already say it: a single labelled circle says everything TAP_FAST asks for, so it
+// cannot already say it: a single labeled circle says everything TAP_FAST asks for, so it
 // gets the speed and nothing else, while the bimanual pair need the rule that tells them
 // apart. Tasks with tones are not given one -- the tone IS the cue, and a standing sentence
 // competing with it would be one more thing to attend to in a task about attention.
@@ -6499,7 +6499,7 @@ function runTrial(seq,c){
   };
   // Window state, asked often enough to deserve a name.
   const inWindow = () => RUN.windowStart!=null && RUN.windowEndedAt==null;
-  // The start zone, in millimetres from the spiral centre. A pen-down anywhere else does not
+  // The start zone, in millimeters from the spiral centre. A pen-down anywhere else does not
   // open the window -- that is what stops an accidental brush from starting the trial.
   const inStartZone = e => { const m=toMM(e.clientX,e.clientY);
     return Math.hypot(m.x,m.y) <= (+$("startdia").value)/2; };
@@ -6787,7 +6787,7 @@ function runTrial(seq,c){
     // over", which is a question about shape. LAPS answer "has the end been reached", which
     // is a question about progress. Rings cannot answer the second -- a spiral drawn small
     // never enters the outer ring at all -- and laps cannot answer the first, because
-    // circling in one spot crosses the end ray just as often as spiralling does.
+    // circling in one spot crosses the end ray just as often as spiraling does.
     //
     // So rings are the shortcut guard and nothing more. One fewer than the laps required,
     // which a spiral drawn anywhere from 80% to 150% of the template satisfies, and which
@@ -6819,7 +6819,7 @@ function runTrial(seq,c){
     //    happen, and a rule that does not match the instruction is worse than either rule.
     //    Tested on the segment between samples rather than on a sample, because a fast
     //    overshoot straight through the zone lands its samples either side of it. No dwell:
-    //    overshooting the end of a line is ordinary motor behaviour and commoner in exactly
+    //    overshooting the end of a line is ordinary motor behavior and commoner in exactly
     //    the population this measures, so asking somebody to stop dead on a 10 mm dot would
     //    be a second task. With the gate in front, the only pen that can get here has
     //    already drawn the spiral.
@@ -6943,7 +6943,7 @@ function runTrial(seq,c){
 
     // THE WINDOW IS ANCHORED ON THE START ZONE, so a participant who begins drawing just
     // outside it gets no window, no tones, and a trial that dies at the ceiling with nothing
-    // on screen saying why. The zone is only a few millimetres across and "start in the
+    // on screen saying why. The zone is only a few millimeters across and "start in the
     // middle" is easy to miss by that much. Tell the examiner while it is still fixable --
     // a later pen-down inside the zone opens the window normally.
     if(RUN.penAnchored && wStart==null && RUN.firstContactMs!==null && !RUN.startZoneWarned){
@@ -7576,7 +7576,7 @@ function paramSet(){
     device_setup: SETUP_ITEMS.reduce((o,[id,w])=>{ o[w.replace(/[^a-z]+/g,"_")]=!!($(id)&&$(id).checked); return o; },{}),
     start_zone_mm:+$("startdia").value, end_zone_mm:+$("enddia").value,
     spiral_shift_px: L && L.spiralShift ? +L.spiralShift.toFixed(1) : 0,
-    spiral_shift_note:"the template is offset toward the drawing hand, so the spiral centre is not the centre of the screen. Millimetre coordinates are relative to the template centre and are unaffected.",
+    spiral_shift_note:"the template is offset toward the drawing hand, so the spiral centre is not the centre of the screen. Millimeter coordinates are relative to the template centre and are unaffected.",
     split:+$("split").value,
     template_style:$("tmpl").value, idle_stop_s:+$("idle").value };
   if(c.tap) p.tap={ zone_mm:+$("tapdia").value, zones:c.zones, spacing_mm:+$("zonegap").value };
@@ -7798,7 +7798,7 @@ function buildRecord(){
             laps_required_to_open_gate:+(advanceTurns()-LAP_GATE_SLACK_TURNS).toFixed(3),
             ends_pass:"end_zone (segment between samples intersects the end zone) OR laps_required full laps",
             gate_opens:"rings_required rings AND laps_required_to_open_gate laps",
-            gate_test:"A GATE AND A TRIGGER, which are different jobs. The TRIGGER is arrival: the pass ends when the segment between two consecutive pen samples intersects the end zone, a circle of end_zone_dia_mm at the template's own endpoint. Tested on the segment and not on a sample because a pen moving at speed covers 10 mm or more between samples, so a fast overshoot straight through the zone lands its samples either side of it. No dwell is required: overshooting the end of a line is ordinary motor behaviour and commoner in the impaired, so requiring the pen to stop on the dot would be a second task. The GATE decides whether arrival is allowed to end the pass, and is two tests. LAPS answer whether most of the spiral was drawn: a lap is a signed crossing of the template's end ray, and a five-turn spiral crosses it five times whether it is drawn at 60 mm or 90 mm, so the test is scale-invariant where every position-based version was not -- those ended the pass 0.44 of a turn early at 110% of the template and a full turn early at 120%. The gate opens at laps_required minus lap_gate_slack_turns, the slack being what a bad hand loses from angle it really drew: 0.29 of a turn for 10 mm of radial wobble, and the same for five pen lifts rejoining 20 deg along. Because the trigger is arrival and not the lap count, that slack does not shorten the drawing. RINGS answer whether the shape was an expanding spiral rather than the same circle repeated, since circling in one spot crosses the end ray just as often as spiralling does. The template is divided into one ring per turn, each one pitch wide, and the angle swept is accumulated against the ring it was swept in; a ring counts as drawn once ring_min_angle_deg has been swept inside it. rings_required is one fewer than laps_required, which a spiral drawn anywhere from 70% to 150% of the template satisfies and which circling in one place never does. Net angle alone cannot distinguish an expanding spiral from the same circle repeated in one place, which banks angle identically; binning by radius can, because circling in one spot fills a single ring however long it continues and a radial dash to the end zone deposits almost no angle in the rings it crosses. Angle is not measured inside the start zone, where a few mm of tremor swings it wildly, but the pen's last angle is carried across such a dip rather than discarded, so the sweep made while dipped is credited on re-entry.",
+            gate_test:"A GATE AND A TRIGGER, which are different jobs. The TRIGGER is arrival: the pass ends when the segment between two consecutive pen samples intersects the end zone, a circle of end_zone_dia_mm at the template's own endpoint. Tested on the segment and not on a sample because a pen moving at speed covers 10 mm or more between samples, so a fast overshoot straight through the zone lands its samples either side of it. No dwell is required: overshooting the end of a line is ordinary motor behavior and commoner in the impaired, so requiring the pen to stop on the dot would be a second task. The GATE decides whether arrival is allowed to end the pass, and is two tests. LAPS answer whether most of the spiral was drawn: a lap is a signed crossing of the template's end ray, and a five-turn spiral crosses it five times whether it is drawn at 60 mm or 90 mm, so the test is scale-invariant where every position-based version was not -- those ended the pass 0.44 of a turn early at 110% of the template and a full turn early at 120%. The gate opens at laps_required minus lap_gate_slack_turns, the slack being what a bad hand loses from angle it really drew: 0.29 of a turn for 10 mm of radial wobble, and the same for five pen lifts rejoining 20 deg along. Because the trigger is arrival and not the lap count, that slack does not shorten the drawing. RINGS answer whether the shape was an expanding spiral rather than the same circle repeated, since circling in one spot crosses the end ray just as often as spiraling does. The template is divided into one ring per turn, each one pitch wide, and the angle swept is accumulated against the ring it was swept in; a ring counts as drawn once ring_min_angle_deg has been swept inside it. rings_required is one fewer than laps_required, which a spiral drawn anywhere from 70% to 150% of the template satisfies and which circling in one place never does. Net angle alone cannot distinguish an expanding spiral from the same circle repeated in one place, which banks angle identically; binning by radius can, because circling in one spot fills a single ring however long it continues and a radial dash to the end zone deposits almost no angle in the rings it crosses. Angle is not measured inside the start zone, where a few mm of tremor swings it wildly, but the pen's last angle is carried across such a dip rather than discarded, so the sweep made while dipped is credited on re-entry.",
             start_test:"the pass begins when the pen is inside the start zone, on every pass and not only the first",
             end_test:"the pass ends the first sample the pen is inside the end zone OR at or beyond outer_radius_mm, and only after turns_required rings have been drawn. There is no dwell: requiring the pen to still be inside the circle a moment later meant an overshoot advanced nothing, and overshooting the end of a line is ordinary. The outer-radius test exists because a pen can pass the END of the template without passing within half an end zone of the dot. advanced_by distinguishes them as 'end_zone' and 'outer_radius'. Net angle is signed about the template centre and is NOT accumulated while the radius is inside the start zone, so a perfect tracing can bank at most bankable_net_angle_deg rather than the full template sweep. A lift does NOT end a pass." }; })(),
         note:"a pass advances on reaching the end of the template with the required rings already drawn, or by the examiner pressing Next spiral. A lift does not advance it: lifting is against the instruction and is itself a measure, so every participant finishes the same way. lifts_in_pass and lift_ms_in_pass record it per pass. advanced_by 'examiner' carries the examiner's reaction time; 'window_end' is the final partial pass."
@@ -7840,7 +7840,7 @@ function buildRecord(){
         truncated: !!R.hoverTruncated,
         truncated_at_rows: R.hoverTruncated ? HOVER_MAX_ROWS : null,
         note: R.hoverSeen>0
-          ? "hover samples are pen positions with the nib off the glass, on the same clock and the same millimetre frame as the pen samples. HEIGHT above the glass is not available from a web build on any device; only position is. hover_to_contact_ms is the interval between the pen first appearing and the first stroke."
+          ? "hover samples are pen positions with the nib off the glass, on the same clock and the same millimeter frame as the pen samples. HEIGHT above the glass is not available from a web build on any device; only position is. hover_to_contact_ms is the interval between the pen first appearing and the first stroke."
           : "no hover events were delivered on this device. Apple Pencil hover requires an M2-or-later iPad; on earlier hardware this is expected and is not a recording failure."
       } : null,
     // Lifts during drawing. Reconstructable from stroke boundaries, but the instruction is
@@ -7864,17 +7864,17 @@ function buildRecord(){
     // measure it was meant to produce is not in it. Without this the trials look ordinary.
     data_held: R.c && R.c.dataHeld ? { held:true, reason:R.c.dataHeld,
         detail:dataHeldReason(R.c),
-        note:"this condition runs and records, but the platform prevents it from being the dual task it is designed as. Do not analyse its dual-task contrast; the single-task channel is unaffected." }
+        note:"this condition runs and records, but the platform prevents it from being the dual task it is designed as. Do not analyze its dual-task contrast; the single-task channel is unaffected." }
       : { held:false },
     // The model the participant was actually looking at. Scoring a copy against a remembered
     // description of the figure is not the same as scoring it against the figure; the vertices
-    // are in the same millimetre frame as the strokes, so the two can be overlaid directly.
+    // are in the same millimeter frame as the strokes, so the two can be overlaid directly.
     // side_mm is the size ACTUALLY RENDERED on this device, not a constant: the figure is
     // scaled to the screen, so two iPads of different sizes present different-sized models
     // and a copy can only be compared with the model it was made from.
     pentagon: LAST.PENTAGON ? { ...LAST.PENTAGON,
         scored:false,
-        note:"the app does not score this. The criterion is ten angles present and the overlap forming a four-sided figure, which is a judgement about a shape rather than a threshold on these strokes. left and right are the model's vertices in millimetres, in the same frame as the pen samples, so a copy can be overlaid on the model it was made from."
+        note:"the app does not score this. The criterion is ten angles present and the overlap forming a four-sided figure, which is a judgment about a shape rather than a threshold on these strokes. left and right are the model's vertices in millimeters, in the same frame as the pen samples, so a copy can be overlaid on the model it was made from."
       } : null,
     omissions: R.omissions || null,
     tapping:LAST.tp||null,
@@ -8479,7 +8479,7 @@ function showCSVText(){ const r=listTrials().map(t=>getTrial(t.key)).filter(Bool
 // EXCEPT INSIDE THE OVERLAY, WHICH IS SUPPOSED TO SCROLL. This guard exists to stop the page
 // moving under a pen that is drawing; it was also eating every scroll gesture on the
 // instruction screen, because that screen lives inside #stage. On a short instruction nobody
-// noticed. PEN_VODD has three emphasised statements, their bullets, two tone buttons and a
+// noticed. PEN_VODD has three emphasized statements, their bullets, two tone buttons and a
 // recording note, which overflows an iPad in landscape -- and the screen then showed the
 // first half with no way to reach the rest and no sign that there was a rest. The overlay
 // already has its own scroll container with its buttons pinned outside it; it just needed to
