@@ -1046,7 +1046,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.53 2026-09-15";
+const BUILD = "v12.55 2026-09-15";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -2326,8 +2326,12 @@ function practiceReset(){
   // pass and every Start again for the life of the page. It is why the template vanished
   // part-way through a spiral that was nowhere near finished.
   practiceRender();
+  // The practice pad works in pixels, so its band width is its own outer radius over its
+  // own turns -- the same rings, at the pad's scale.
   PR.angle=makeAngleAccumulator(($("pchand")&&$("pchand").value==="left")?"ccw":"cw",
-                                PR.view ? PR.view.startPx : 12);
+                                PR.view ? PR.view.startPx : 12,
+                                PR.view ? PR.view.R/PRACTICE_TURNS : 40,
+                                PRACTICE_TURNS);
 }
 (function initPracticePad(){
   const cv=$("prpad"); if(!cv) return;
@@ -2411,13 +2415,11 @@ function practiceReset(){
   // rehearses a task the participant is not about to do.
   const check=()=>{
     if(!PR.view) return;
-    // Scaled to the practice template: the trial's gate as a FRACTION of its turns, applied
-    // to the three turns here.
-    const frac=Math.min(1, advanceTurns()/Math.max(1,geomTurns("pen")));
-    const need=Math.min(frac*PRACTICE_TURNS*2*Math.PI,
-                        bankableRad(PRACTICE_TURNS, PR.view.R, PR.angle ? PR.angle.minR : 0));
+    // Rings, as in the trial, scaled to this pad's three turns.
+    const needBands=Math.max(1, Math.round(PRACTICE_TURNS*
+      Math.min(1, advanceTurns()/Math.max(1,geomTurns("pen")))));
     const wasArmed=PR.armed;
-    PR.armed = PR.angle.total>=need;
+    PR.armed = PR.angle.bandsDrawn >= needBands;
     if(PR.armed!==wasArmed) practiceRender();
     if(PR.passStartedAt && performance.now()-PR.passStartedAt < MIN_PASS_MS) return;
     if(!PR.armed) return;
@@ -4426,12 +4428,16 @@ const endZoneDiaMM = pitch => +(($("enddia")||{}).value) || END_ZONE_PITCH_FRACT
 // How long the pen must stay in the zone. Short enough not to feel like a wait, long enough
 // that a pen sweeping through the zone on its way elsewhere does not trigger it.
 // Retired with the band; see ADVANCE_RADIUS_FRACTION.
+// END_ZONE_DWELL_MS is retired too, in v12.55: requiring the pen to still be inside the
+// circle 200 ms after entering it meant an overshoot advanced nothing. Left named for the
+// same reason as the other two -- older records report it in advance_rule.
 const END_ZONE_DWELL_MS=200;
 // When the end zone starts flashing. Both conditions, not either: four turns drawn AND the
 // pen within a twelfth of a turn of the endpoint. Turns alone would flash on a participant
 // still on their fourth lap; proximity alone would flash every time the pen passed the
 // endpoint's angle on an earlier turn, which on a five-turn spiral is four false alarms.
-const FLASH_MIN_TURNS=4;
+// The flash no longer has a turn count of its own: it arms on the same rings the advance
+// requires, so the two can never disagree about whether the spiral has been drawn.
 const FLASH_LEAD_RAD=2*Math.PI/12;
 // STATED IN TURNS, BECAUSE THAT IS THE ONE UNIT BOTH READERS SHARE.
 //
@@ -4488,13 +4494,40 @@ function angleNeededRad(turns, outerR, gateR){
 // and the drawing was discarded, which is exactly what was reported.
 //
 // Below minR the pen is in the start zone, where there is no spiral to be tracing yet.
-function makeAngleAccumulator(direction, minR){
+// ANGLE ALONE CANNOT TELL A SPIRAL FROM A CIRCLE, and that is not a bug in the detector, it
+// is what net angle about a point means. Four laps in the same place bank four turns exactly
+// as four laps of an expanding spiral do, so a participant could circle in one spot, walk the
+// pen out to the red circle, and be handed the next template. Reported from the iPad.
+//
+// What distinguishes the two is WHERE the angle was swept. So the angle is binned by radius,
+// one band per turn of the template, and a band only counts as drawn once enough angle has
+// been swept INSIDE it. Circling in one place fills a single band however long it goes on;
+// the bands further out stay empty, and crossing them on the way to the end zone deposits
+// almost nothing, because a radial dash sweeps no angle.
+//
+// Tolerant of size, which a template-matching test would not be, and more tolerant than the
+// arithmetic first suggested. A spiral drawn half again too large spreads the same 1800
+// degrees over 90 mm instead of 60, which leaves about 240 degrees per ring -- so two thirds
+// of a turn looked like the right threshold and MEASURED at exactly 239, 240, 241: it failed
+// by rounding. Twice the size leaves about 180. The threshold is 150 degrees, five twelfths
+// of a turn, which passes a spiral up to about twice the template and still blocks what it
+// is for: circling in one place deposits everything in a single ring however long it goes on,
+// and a radial dash to the end zone deposits almost nothing in the rings it crosses.
+//
+// Policing SIZE is not this gate's job -- the drawing records its own size, and a spiral
+// drawn large is a finding rather than a protocol violation.
+const BAND_MIN_RAD = 2*Math.PI*(5/12);
+function makeAngleAccumulator(direction, minR, bandMM, nBands){
   const s = direction==="cw" ? -1 : 1;
   const gate = Math.max(minR||0, 0.5);
+  const bw = bandMM||12, nb = Math.max(1, nBands||5);
   let last=null, total=0;
+  const bands=new Array(nb).fill(0);
+  const bandOf = r => Math.min(nb-1, Math.max(0, Math.floor(r/bw)));
   return {
     push(x,y){
-      if(Math.hypot(x,y)<gate){ last=null; return total; }
+      const r=Math.hypot(x,y);
+      if(r<gate){ last=null; return total; }
       const a=Math.atan2(y,x);
       if(last!==null){
         let d=a-last;
@@ -4502,12 +4535,19 @@ function makeAngleAccumulator(direction, minR){
         while(d> Math.PI) d-=2*Math.PI;
         while(d<-Math.PI) d+=2*Math.PI;
         total+=s*d;                       // signed so drawing the template counts UP
+        bands[bandOf(r)] += s*d;          // and again, against the ring it happened in
       }
       last=a;
       return total;
     },
     get total(){ return total; },
     get minR(){ return gate; },
+    // How many rings have actually been drawn round. Not "how many are complete in order":
+    // a participant who loses the line and rejoins it further out has still drawn the rings
+    // they drew, and ordering them would fail that honest attempt while still passing the
+    // participant who circles in one spot.
+    get bandsDrawn(){ return bands.filter(v=>Math.abs(v)>=BAND_MIN_RAD).length; },
+    get bandAngles(){ return bands.map(v=>+(v*180/Math.PI).toFixed(1)); },
     // THE PEN LEAVING THE GLASS IS NOT MOTION. last used to survive a lift, so if the
     // participant lifted at one angle and touched down at another, the jump between them
     // was read as travel and added -- and if they touched down "behind" where they lifted,
@@ -4515,7 +4555,7 @@ function makeAngleAccumulator(direction, minR){
     // refused to advance although it looked complete on screen. Clearing the reference on
     // every lift keeps the total and forgets only where the pen was.
     lift(){ last=null; },
-    reset(){ last=null; total=0; }
+    reset(){ last=null; total=0; bands.fill(0); }
   };
 }
 
@@ -4718,18 +4758,23 @@ function renderAdvanceNote(){
   const bank=bankableRad(t,oR,gR), need=angleNeededRad(t,oR,gR);
   const deg=x=>Math.round(x*180/Math.PI);
   const asked=advanceTurns(), capped=asked*2*Math.PI>bank+1e-9;
+  const need2=Math.min(asked, t);
   el.innerHTML=`<b>How much has to be drawn before the end zone counts.</b> The participant
-    must sweep <b>${(need/(2*Math.PI)).toFixed(2)} of the ${t} turns</b> before reaching the
-    red circle will bring up the next spiral. Reaching it earlier does nothing.
-    <br>Exactly: <b>${deg(need)}°</b> of net angle about the centre, out of
-    ${deg(t*2*Math.PI)}° in the template. Angle is not counted while the pen is inside the
-    ${(+$("startdia").value)} mm start zone, which accounts for ${deg(t*2*Math.PI-bank)}° of
-    it, so the most a perfect tracing can accumulate is <b>${deg(bank)}°</b>
-    (${(bank/(2*Math.PI)).toFixed(2)} turns) — this setting is
-    <b>${(100*need/bank).toFixed(0)}%</b> of that.
-    ${capped?`<br><span style="color:#8c2020"><b>Set higher than the spiral allows.</b> ${asked}
-      turns cannot be accumulated on a ${t}-turn template with this start zone, so it is
-      capped at ${(bank/(2*Math.PI)).toFixed(2)}. Lower it, or widen the spiral.</span>`:""}`;
+    must draw <b>${need2} of the ${t} rings</b> before reaching the red circle will bring up
+    the next spiral. Reaching it earlier does nothing, and the red circle does not flash
+    either.
+    <br>Exactly: the template is divided into ${t} rings, each one pitch
+    (${geomPitch("pen")} mm) wide, and the angle the pen sweeps is counted against the ring it
+    was swept in. A ring counts as drawn once <b>${deg(BAND_MIN_RAD)}°</b> has been swept
+    inside it — two thirds of a turn, not a whole one, so a spiral drawn up to half again too
+    large still satisfies it. Angle is not counted at all while the pen is inside the
+    ${(+$("startdia").value)} mm start zone.
+    <br><b>Why rings and not degrees.</b> Net angle about the centre cannot tell an expanding
+    spiral from the same circle drawn four times in one place; both bank four turns. Counting
+    angle per ring can: circling in one spot fills one ring however long it goes on, and a
+    dash out to the red circle sweeps almost no angle in the rings it crosses.
+    ${asked>t?`<br><span style="color:#8c2020"><b>More rings than the spiral has.</b> A
+      ${t}-turn template has ${t} rings, so this is capped at ${t}.</span>`:""}`;
 }
 ["pitch_pen","turns_pen","pitch_finger","turns_finger","endang","split","ppmm",
  "startdia","enddia","advturns"]
@@ -5441,16 +5486,20 @@ function drawScene(){
       // thing only on the final turn, and a radius test alone is the mistake that made the
       // old band fire mid-drawing. About a twelfth of a turn short of the endpoint is the
       // eleven o'clock position when the end sits at twelve.
+      // THE FLASH OBEYS THE ADVANCE RULE, or it lies. It used to arm on banked angle, so
+      // circling four times in one spot lit the red circle up and invited the participant to
+      // go and touch it. It now takes the same two questions the advance asks -- have the
+      // rings been drawn, and is the pen at the end of the last one -- and the "last one" is
+      // radial and angular proximity to the endpoint rather than a count of degrees, because
+      // degrees are what could be earned in the wrong place.
       let leading=false;
-      if(RUN && RUN.angle && RUN.penMM){
-        // Measured against the FULL sweep, not against the advance threshold. `need` is 95%
-        // of the sweep, so anchoring the flash to it would put eleven o'clock more than half
-        // a turn before the red circle -- the flash would start, and the participant would
-        // still have most of a lap to go. The endpoint is where the template stops.
-        const full = bankableRad(turns, radius, RUN && RUN.angle ? RUN.angle.minR : 0);
-        const turnsDone = RUN.netAngleTotal/(2*Math.PI);
-        leading = turnsDone >= FLASH_MIN_TURNS
-               && (full - RUN.netAngleTotal) <= FLASH_LEAD_RAD;
+      if(RUN && RUN.angle && RUN.penMM && RUN.endMM){
+        const r=Math.hypot(RUN.penMM.x, RUN.penMM.y);
+        const dA=Math.abs(((Math.atan2(RUN.penMM.y,RUN.penMM.x)
+                          - Math.atan2(RUN.endMM.y,RUN.endMM.x) + Math.PI*3)%(2*Math.PI))-Math.PI);
+        leading = RUN.angle.bandsDrawn >= advanceTurns()
+               && r >= radius - pitch
+               && dA <= FLASH_LEAD_RAD;
       }
       // THE PROGRESS ARC IS GONE. It filled round the outside as angle accumulated, which
       // told the participant how close the next spiral was -- and that is a live performance
@@ -6238,8 +6287,11 @@ function runTrial(seq,c){
   // Signed the way the template is drawn, so tracing it counts up and backtracking counts
   // down. Direction comes from the drawing hand, the same way drawScene picks it.
   // Angle is only counted outside the start zone, where a spiral is actually being traced.
+  // One band per turn of the template, so "rings drawn" and "turns drawn" are the same count.
   if(c.spiral) RUN.angle=makeAngleAccumulator(TRIAL.drawHand==="left"?"ccw":"cw",
-                                              (+$("startdia").value||8)/2);
+                                              (+$("startdia").value||8)/2,
+                                              geomPitch(TRIAL.implement),
+                                              geomTurns(TRIAL.implement));
   // A trial whose window opens at START gets its tone stream NOW, exactly as before v12.01.
   // Only an anchored trial defers the stream, and only because its window is deferred with
   // it. Missing this call is how TAP_TONE briefly became a silent task.
@@ -6556,7 +6608,13 @@ function runTrial(seq,c){
                       lifts_in_pass: RUN.liftsThisPass||0,
                       lift_ms_in_pass: +(RUN.liftMsThisPass||0).toFixed(1),
                       net_angle_rad:+RUN.netAngleTotal.toFixed(4),
-                      net_angle_turns:+(RUN.netAngleTotal/(2*Math.PI)).toFixed(3) });
+                      net_angle_turns:+(RUN.netAngleTotal/(2*Math.PI)).toFixed(3),
+                      // Angle per ring, one entry per turn of the template, in degrees.
+                      // This is what the gate is computed from, and it is also where a
+                      // spiral visibly breaks down: a participant who loses the line on the
+                      // fourth turn leaves it in the fourth number.
+                      ring_angles_deg: RUN.angle ? RUN.angle.bandAngles : null,
+                      rings_drawn: RUN.angle ? RUN.angle.bandsDrawn : null });
     RUN.pass++;
     RUN.endZoneSince=null;
     // NOT STARTED. The next pass begins when the pen is back in the middle, not here -- see
@@ -6597,11 +6655,10 @@ function runTrial(seq,c){
     if(!RUN.passStarted){ RUN.endZoneSince=null; return; }
     const now=performance.now();
     if(RUN.passStartedAt && now-RUN.passStartedAt < MIN_PASS_MS){ RUN.endZoneSince=null; return; }
-    // Angle first: it is the cheap test and the one that makes the zone safe.
-    const needed=angleNeededRad(geomTurns(TRIAL.implement),
-      geomPitch(TRIAL.implement)*geomTurns(TRIAL.implement),
-      RUN.angle ? RUN.angle.minR : 0);
-    if(RUN.netAngleTotal < needed){ RUN.endZoneSince=null; return; }
+    // RINGS DRAWN, not angle banked. See makeAngleAccumulator: angle alone cannot tell a
+    // spiral from a circle in one spot, and the whole point of the gate is to require the
+    // expanding spiral rather than the same loop repeated.
+    if(!RUN.angle || RUN.angle.bandsDrawn < advanceTurns()){ RUN.endZoneSince=null; return; }
     // THE SWEEP IS COMPLETE, so the pass may now end. Two ways, recorded separately.
     //
     // 1. THE PEN REACHES THE RED CIRCLE. v12.41 removed every position test, because a
@@ -6613,12 +6670,29 @@ function runTrial(seq,c){
     //    flash leads the pen to it rather than leaving it to be found. The instruction now
     //    promises this -- "when you reach the red circle, a new spiral will appear" -- and a
     //    rule that does not match what the participant was told is worse than either rule.
-    if(RUN.penMM && RUN.endMM){
-      const d=Math.hypot(RUN.penMM.x-RUN.endMM.x, RUN.penMM.y-RUN.endMM.y);
-      if(d <= endZoneDiaMM(geomPitch(TRIAL.implement))/2){
-        if(RUN.endZoneSince===null) RUN.endZoneSince=now;
-        else if(now-RUN.endZoneSince >= END_ZONE_DWELL_MS){ advancePass("end_zone"); return; }
-      } else RUN.endZoneSince=null;
+    // ARRIVAL IS AN EVENT, NOT A STATE, AND OVERSHOOTING IS NORMAL. Two faults here, both
+    // reported from the iPad, both the same mistake in different clothing.
+    //
+    // The dwell required the pen to still be inside the circle 200 ms later, so a pen that
+    // passed through it and kept going was reset and nothing happened. Overshooting the end
+    // of a line is ordinary motor behaviour and more likely in exactly the population this
+    // measures; asking somebody to stop dead on a 10 mm dot is a new task. With the rings
+    // gate in front, there is nothing left for a dwell to protect against: the only pen that
+    // can reach here has already drawn the spiral. So the first sample inside counts.
+    //
+    // And the circle alone is too small a target for an overshoot, because a pen can pass
+    // the END of the template without passing within 5 mm of the dot -- tangentially, on
+    // round past it, or radially straight out through it. The endpoint sits at the outer
+    // radius, so reaching or exceeding that radius IS reaching the end of the spiral, and it
+    // cannot fire early: a correct tracing only gets there on its last turn, and anything
+    // that gets there sooner has to pass the rings first.
+    if(RUN.penMM){
+      const rNow=Math.hypot(RUN.penMM.x, RUN.penMM.y);
+      const outerR=geomPitch(TRIAL.implement)*geomTurns(TRIAL.implement);
+      const inDot = RUN.endMM &&
+        Math.hypot(RUN.penMM.x-RUN.endMM.x, RUN.penMM.y-RUN.endMM.y)
+          <= endZoneDiaMM(geomPitch(TRIAL.implement))/2;
+      if(inDot || rNow >= outerR){ advancePass(inDot ? "end_zone" : "outer_radius"); return; }
     }
     // A LIFT NO LONGER ADVANCES ANYTHING, and that is the point rather than an omission.
     //
@@ -7561,10 +7635,14 @@ function buildRecord(){
             pct_of_template_sweep:+(100*need/(t*2*Math.PI)).toFixed(1),
             pct_of_bankable_sweep:+(100*need/bankable).toFixed(1),
             end_zone_mm:+$("enddia").value, min_pass_ms:MIN_PASS_MS,
-            dwell_ms:END_ZONE_DWELL_MS,
+            outer_radius_mm:geomPitch(TRIAL.implement)*geomTurns(TRIAL.implement),
+            dwell_ms:0,
+            ring_min_angle_deg:+(BAND_MIN_RAD*180/Math.PI).toFixed(0),
+            ring_width_mm:geomPitch(TRIAL.implement),
+            gate_test:"RINGS DRAWN, not net angle. The template is divided into one ring per turn, each one pitch wide, and the angle swept is accumulated against the ring it was swept in. A ring counts as drawn once ring_min_angle_deg has been swept inside it. turns_required rings must be drawn before the end zone will advance the pass. Net angle alone cannot distinguish an expanding spiral from the same circle repeated in one place, which banks angle identically; binning by radius can, because circling in one spot fills a single ring however long it continues and a radial dash to the end zone deposits almost no angle in the rings it crosses.",
             start_test:"the pass begins when the pen is inside the start zone, on every pass and not only the first",
-            end_test:"the pass ends when the pen is inside the end zone for dwell_ms, and only after the accumulated net angle has reached required_net_angle_deg. Net angle is signed about the template centre and is NOT accumulated while the radius is inside the start zone, so a perfect tracing can bank at most bankable_net_angle_deg rather than the full template sweep. A lift does NOT end a pass." }; })(),
-        note:"a pass advances on reaching the end zone with the required sweep already drawn, or by the examiner pressing Next spiral. A lift does not advance it: lifting is against the instruction and is itself a measure, so every participant finishes the same way. lifts_in_pass and lift_ms_in_pass record it per pass. advanced_by 'examiner' carries the examiner's reaction time; 'window_end' is the final partial pass."
+            end_test:"the pass ends the first sample the pen is inside the end zone OR at or beyond outer_radius_mm, and only after turns_required rings have been drawn. There is no dwell: requiring the pen to still be inside the circle a moment later meant an overshoot advanced nothing, and overshooting the end of a line is ordinary. The outer-radius test exists because a pen can pass the END of the template without passing within half an end zone of the dot. advanced_by distinguishes them as 'end_zone' and 'outer_radius'. Net angle is signed about the template centre and is NOT accumulated while the radius is inside the start zone, so a perfect tracing can bank at most bankable_net_angle_deg rather than the full template sweep. A lift does NOT end a pass." }; })(),
+        note:"a pass advances on reaching the end of the template with the required rings already drawn, or by the examiner pressing Next spiral. A lift does not advance it: lifting is against the instruction and is itself a measure, so every participant finishes the same way. lifts_in_pass and lift_ms_in_pass record it per pass. advanced_by 'examiner' carries the examiner's reaction time; 'window_end' is the final partial pass."
       } : null,
     // ANCHORED START. Applies to every spiral condition, sustained or not.
     anchoring: R.penAnchored ? {
