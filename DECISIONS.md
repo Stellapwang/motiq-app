@@ -36,7 +36,9 @@ move up to core; PEN_VCNT, PEN_TONE and PEN_FAST move down to exploratory. Tappi
 conditions go to 3 trials, TAP_TONE to 2 x 50 s at a 1000 ms mean -- about 100
 responses, which is what ex-Gaussian fitting needs, with the floor left at 600 ms
 because it exists to stop a response being cut off by the next tone. Every spiral
-condition gets a 60 s sustained window.
+condition gets a 60 s sustained window. (Superseded at v13.01: the window is no
+longer something every spiral condition has. Left standing because it is what was
+decided here; see "One spiral and sixty seconds of spirals are two tasks".)
 
 DATA HELD is a new state, and it is not a low tier. Blocked means a task cannot
 run; exploratory means nobody has decided about it; HELD means it runs and records
@@ -1613,3 +1615,147 @@ BUILD v12.43.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 
+
+## One spiral and sixty seconds of spirals are two tasks
+
+They were one task with a dropdown, and the dropdown could not do the job asked of
+it. A plan holds ONE sustainedS per task, so choosing "one spiral only" for PEN_SPRL
+foreclosed the 60 s version for that whole session: the two could never be run on the
+same participant, which is precisely the comparison wanted. Two ids can be planned
+independently -- included separately, given different repeats, placed at different
+points in the order, counterbalanced -- and a mode buried inside one plan row can
+express none of that.
+
+They are also two tasks for the participant. One ends when they are told to stop; the
+other tells them a new spiral will appear and to keep going, which is a sustained
+demand the single spiral does not make. And in the export, a pooled PEN_SPRL
+distinguished only by a sustainedS column is an analysis error waiting to happen:
+anyone grouping by task id silently mixes a ten-second motor sample with a
+sixty-second sustained one.
+
+So PEN_SPRL becomes PEN_SPR60 and PEN_SPR1 joins it; FIN_SPRL becomes FIN_SPR60.
+TASK_ALIAS carries both renames, and both old ids resolve to the SUSTAINED task,
+because that is the window they shipped -- a session saved before this release
+restores as the task it actually ran, not as the new one-spiral condition.
+
+THE WINDOW IS NOW LOCKED ON ALL FOUR, and the lock runs both ways. PEN_SPR60 is named
+for its length, so an editable seconds box would let an examiner run 90 s under an id
+that says 60 -- the same defect as a filename that disagrees with its build, which
+this repo already has one of. PEN_SPR1 is named for being one spiral, so the mode
+dropdown would let it become a sustained task under an id that says otherwise. The
+way to get the other mode is to include the other task. The dual-task spirals keep
+both controls: their window is a real parameter and they have no one-only twin.
+
+## The finger block answers two questions, and neither is a size effect
+
+FIN_SPR1_T5 is the IMPLEMENT BRIDGE. It runs the stylus template exactly -- 12 x 5 --
+so the only thing differing from PEN_SPR1 is what is held. A finger is the only input
+a phone has, so whether a finger measures what a stylus measures is the question the
+whole phone direction rests on. Without this condition, every finger-versus-stylus
+difference in the dataset is confounded with template size and cannot be untangled
+afterwards by any amount of analysis: it is fixable only by collecting the condition.
+One dominant-hand trial is enough to show the two behave alike, or that they do not,
+and one trial is the cheapest insurance in the battery.
+
+FIN_SPR1_T3 is PHONE FEASIBILITY, at 10 x 3.
+
+The arithmetic decided the geometry. Template radius is pitch x turns, so 12 x 3 is
+36 mm -- 72 mm across -- and a 19.5:9 display is about 65 mm wide at 6.1 inches and
+71 mm at 6.7. 11 x 3 is 66 mm, which fits neither with margin while also giving up the
+constant pitch, paying for a comparison and not getting the phone. 10 x 3 is 60 mm,
+which leaves 2.5 mm a side at 6.1 inches and 5.5 mm at 6.7. That is not generous, and
+9 x 3 at 54 mm would be the honest choice if a 6.1-inch portrait screen turns out to
+be the target. The number is revisable at no cost: the id names the TURNS, which are
+what the gate and the ring test key off, and the pitch is a value in a geometry set.
+Changing 10 to 9 after testing on a real phone breaks nothing.
+
+WHAT THIS PAIR CANNOT ANSWER, stated here so that nobody discovers it in the data.
+T5 to T3 moves pitch AND turns, so it is not a controlled size contrast. Template path
+length is pitch x pi x turns squared: 942 mm against 283 mm, so the small template is
+30% of the large one and path_length_mm, duration_s, net_angle_turns and n_pen_samples
+differ by a factor of three for reasons that have nothing to do with the participant.
+Nor is a corridor-width measure rescuable by normalising, because pitch IS the
+precision demand and 10 mm lines are 17% tighter than 12 mm ones.
+
+What it CAN answer is whether the instrument still works at phone scale: completion,
+whether the gate fires, achieved sample rate, and the scale-free ratios -- path drawn
+over template_path_mm, duration over template path, laps over template_turns. Every
+denominator is already in the export, so nothing is lost; it simply has to be done
+deliberately. A true size contrast would need 12 x 3 as a third condition, holding
+pitch constant, and nobody has asked for one.
+
+FIN_SPR60 is kept unchanged at 12 x 5, each hand, one trial. It is inherited rather
+than chosen -- it shipped a window because v11 gave every spiral condition one -- and
+its job is the sustained implement bridge plus the one feasibility question the
+single-spiral conditions cannot reach: whether a person can sustain finger drawing on
+glass for a minute at all, which is not the same physical task as a minute with a
+stylus.
+
+## Geometry per implement could not express the finger block
+
+FIN_SPR1_T5 and FIN_SPR1_T3 are both drawn with a finger, run different templates,
+and appear in the same session. geomSet mapped implement to one of two sets, so
+whichever value the finger set held, BOTH conditions would have run it. The structure
+made the block impossible, not merely awkward.
+
+A third named set, finger_small, rather than pitch and turns scattered across
+catalogue rows: the settings page stays the one place geometry is edited, and
+geometry_set stays meaningful in the record, now naming three real sets instead of
+two. A condition names its set; one that names none falls back to its implement, so
+every task written before this release is untouched.
+
+THE HAZARD THE OLD RULE PREVENTED IS NOW A THING TO CHECK rather than something the
+structure guarantees. A dual task and its single-task baseline must resolve to the
+SAME set, or dual-task cost is confounded with a geometry difference. Every dual-task
+spiral is implement "pen" and names no set, so they all resolve to the pen set
+alongside PEN_SPR1 and PEN_SPR60. Anything given a set explicitly has to be checked
+against its baseline by hand.
+
+## A three-turn template was unfinishable, and the practice pad already knew
+
+advturns is one standing number, default 5, and the gate asked for advturns laps and
+advturns minus one rings. On a three-turn template that is five laps from something
+that crosses its end ray three times, and four rings from a template that HAS three:
+unreachable by construction. The spiral would never end on its own and only Next
+spiral would get the participant out. It is the same failure the "more laps than the
+template has turns" warning was added to catch, arriving by a different door -- not
+an examiner typing a large number, but a condition shipping a short template.
+
+The fix was already written. The practice pad has run a three-turn spiral against the
+same rule since it was built, and scales it: the same FRACTION of the template, not
+the same absolute number of turns. advanceGate applies that to the trial. At the
+reference geometry -- five turns, advturns at 5 -- it returns 5 laps, 4 rings and a
+gate opening at 4.5, which is exactly what the numbers were before any scaling
+existed, so nothing about the shipped stylus conditions moves. At three turns it
+returns 3, 2 and 2.7.
+
+The record carries both: advturns_setting is what the examiner typed, against the
+reference template, and laps_required is what THIS template was actually held to. On
+a 12 x 5 they are the same number, which is why both are written -- a record from a
+short template would otherwise read as a failed one.
+
+## Found while doing it: the dead-zone hazard, walked into again
+
+Moving the geometry accessors into the geometry section killed the app outright.
+applyCal() runs during start-up and calls updateGeo(), which reads GEOM_SETS -- a
+const declared eight hundred lines further down, so still in its temporal dead zone.
+A const read there THROWS rather than returning undefined, taking the rest of the
+script with it: a blank page and one console line. The file already carries a comment
+warning about exactly this, above applyCal, from the last time.
+
+The declarations are now up with byId, where PENCHECK and PC_TURNS already live for
+the same reason, and the geometry section keeps its documentation with a pointer to
+where the code went. A comment warning about a hazard did not prevent the hazard; the
+declarations being physically above the start-up path does.
+
+## Why v13 and not v12.62
+
+The precedent is the repo's own. v11.01 was feat/v11-task-restructure -- renamed
+codes, new conditions -- and v12.01 was feat/sustained-spiral. A task id is the join
+key every record carries, and a dataset saying PEN_SPRL and one saying
+PEN_SPR1/PEN_SPR60 should be distinguishable from the version alone. A minor bump
+inside v12 would not say that.
+
+BUILD v13.01.
+
+Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>

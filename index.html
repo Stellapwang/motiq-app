@@ -617,7 +617,7 @@
 
     <!-- The behavior the sustained conditions depend on, rehearsed before it costs a trial.
          A participant meeting "finish one spiral and another appears" for the first time
-         DURING PEN_SPRL spends the first pass working out what happened, and that pass is
+         DURING PEN_SPR60 spends the first pass working out what happened, and that pass is
          data. Here it costs nothing and can be repeated. -->
     <fieldset>
       <legend>Spiral practice <span style="font-weight:400;color:var(--muted)">— per participant</span></legend>
@@ -733,8 +733,8 @@
 
     <fieldset>
       <legend>Spiral geometry</legend>
-      <p class="note" style="margin-top:0"><b>Set separately for the stylus and the finger.</b>
-      Each task uses the set matching its implement.</p>
+      <p class="note" style="margin-top:0"><b>Three sets.</b> A task uses the set it names,
+      and a task that names none uses the set matching its implement.</p>
       <div class="r4">
         <!-- 12 x 5 from v12.51, which makes the stylus geometry identical to the finger set.
              The two were deliberately different so their measures were never pooled; they are
@@ -747,6 +747,7 @@
           <input id="turns_pen" type="number" value="5" step="1" min="2" max="8"></div>
         <div style="grid-column:span 2"><label for="preset_pen">Stylus — match printed template</label>
           <select id="preset_pen"><option value="">— choose —</option>
+            <option value="10,3">SP-R30-T3 · pitch 10, 3 turns</option>
             <option value="10,6">SP-R60-T6 · pitch 10, 6 turns</option>
             <option value="12,5">SP-R60-T5 · pitch 12, 5 turns</option>
             <option value="11,4">SP-R44-T4 · pitch 11, 4 turns</option>
@@ -763,6 +764,7 @@
           <input id="turns_finger" type="number" value="5" step="1" min="2" max="8"></div>
         <div style="grid-column:span 2"><label for="preset_finger">Finger — match printed template</label>
           <select id="preset_finger"><option value="">— choose —</option>
+            <option value="10,3">SP-R30-T3 · pitch 10, 3 turns</option>
             <option value="10,6">SP-R60-T6 · pitch 10, 6 turns</option>
             <option value="12,5">SP-R60-T5 · pitch 12, 5 turns</option>
             <option value="11,4">SP-R44-T4 · pitch 11, 4 turns</option>
@@ -772,6 +774,26 @@
             <option value="13,5">SP-R65-T5 · pitch 13, 5 turns</option></select></div>
       </div>
       <div id="geonote_finger"></div>
+      <!-- A THIRD SET, because two keyed by implement could not express what FIN_SPR1_T3
+           needs: a finger template that runs in the same session as the full-size finger
+           one. 10 x 3 is 60 mm across, which fits a phone screen; 12 x 3 would be 72 mm and
+           would not. The pitch drops with the turns for that reason and not for a
+           psychometric one, so T5 and T3 differ in two things at once and are a feasibility
+           pair rather than a size contrast. Only conditions that name this set use it. -->
+      <div class="r4" style="margin-top:10px">
+        <div><label for="pitch_finger_small">Finger, small — pitch (mm)</label>
+          <input id="pitch_finger_small" type="number" value="10" step="0.5" min="6" max="25"></div>
+        <div><label for="turns_finger_small">Finger, small — turns</label>
+          <input id="turns_finger_small" type="number" value="3" step="1" min="2" max="8"></div>
+        <div style="grid-column:span 2"><label for="preset_finger_small">Finger, small — match printed template</label>
+          <select id="preset_finger_small"><option value="">— choose —</option>
+            <option value="10,3">SP-R30-T3 · pitch 10, 3 turns</option>
+            <option value="9,3">SP-R27-T3 · pitch 9, 3 turns</option>
+            <option value="12,3">SP-R36-T3 · pitch 12, 3 turns</option>
+            <option value="10,6">SP-R60-T6 · pitch 10, 6 turns</option>
+            <option value="12,5">SP-R60-T5 · pitch 12, 5 turns</option></select></div>
+      </div>
+      <div id="geonote_finger_small"></div>
       <div style="border-top:1px solid var(--line);margin-top:14px;padding-top:10px">
         <div class="note" style="margin:0 0 4px"><b>Shared by both implements</b></div>
         <div class="r4">
@@ -840,7 +862,7 @@
           the participant sees END and is told to stop, and the trial keeps recording until
           you press END or the screen goes idle. <b>Idle auto-stop is switched off for the
           whole of those 60 seconds</b>, so a pause between finishing one spiral and starting
-          the next can never end the trial. This applies to PEN_SPRL, PEN_VODD and every other
+          the next can never end the trial. This applies to PEN_SPR60, PEN_VODD and every other
           spiral task with a window set.
           <br><br>
           <b>The "Remind me after" box, above.</b> Once a trial has been running for that
@@ -1046,7 +1068,7 @@
 
 <script>
 "use strict";
-const BUILD = "v12.61 2026-09-15";
+const BUILD = "v13.01 2026-09-16";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1123,7 +1145,19 @@ const CATALOGUE = [
                    count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1 },
 
   // --- Block D: drawing, then drawing under load -----------------------------------
-  { id:"PEN_SPRL", label:"Spiral",                        order:60,  tier:"core",   spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:2, lengthS:null, implement:"pen", sustainedS:60 },
+  // ONE SPIRAL AND SIXTY SECONDS OF SPIRALS ARE TWO TASKS, not one task with a setting.
+  // They were a dropdown on a single condition until v13.01, which meant choosing either
+  // foreclosed the other for that session -- a plan holds one sustainedS per task -- so the
+  // two could never be run on the same participant. They also differ in what they ask for:
+  // one ends when the participant is told to stop, the other tells them a new spiral will
+  // appear and to keep going, which is a sustained-attention demand the single spiral does
+  // not make. Separate ids also keep the two apart in the export, where a pooled PEN_SPRL
+  // distinguished only by a sustainedS column is a silent analysis error waiting to happen.
+  { id:"PEN_SPR1",  label:"Spiral, one only",               order:55,  tier:"core",   spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:2, lengthS:null, implement:"pen", sustainedS:null, windowLocked:1 },
+  // The window is LOCKED on this one: it is named for its length, so an editable seconds box
+  // would let the id disagree with the record. The dual-task spirals below keep the box,
+  // because their window is a genuine parameter and they have no one-spiral twin.
+  { id:"PEN_SPR60", label:"Spiral, keep drawing 60 s",      order:60,  tier:"core",   spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:2, lengthS:null, implement:"pen", sustainedS:60, windowLocked:1 },
   { id:"PEN_VODD", label:"Spiral + counting the high tones aloud", order:70, tier:"core", spiral:1, tap:0, audio:1, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
                    selfPaceable:1, fixedS:60, count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1 },
   // Intersecting pentagon COPY, not a spiral. The model is shown beside a blank area and the
@@ -1133,10 +1167,29 @@ const CATALOGUE = [
   // strokes can be thresholded into. It records the drawing and the model that was shown.
   { id:"PEN_PENT", label:"Intersecting pentagon copy", order:75, tier:"core", spiral:0, pent:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:1, lengthS:null, implement:"pen" },
 
+  // THE FINGER BLOCK ANSWERS TWO QUESTIONS, one condition each, and neither is a size effect.
+  //
+  // FIN_SPR1_T5 is the IMPLEMENT BRIDGE. It runs the stylus template exactly -- 12 x 5 -- so
+  // the only thing that differs from PEN_SPR1 is what is held. Finger drawing is the only
+  // input a phone has, so whether a finger measures what a stylus measures is the question
+  // the whole phone direction rests on; without this condition every finger-versus-stylus
+  // difference is confounded with template size and cannot be untangled afterwards. One
+  // dominant-hand trial is enough to show the two behave alike, or that they do not.
+  //
+  // FIN_SPR1_T3 is PHONE FEASIBILITY, at 10 x 3 -- 60 mm across, which fits a phone screen
+  // where the 120 mm stylus template does not. Pitch drops with turns because a 12 mm pitch
+  // at 3 turns is 72 mm and still too wide; the cost is that T5 -> T3 moves two factors at
+  // once and is therefore NOT a controlled size contrast. What it can answer is whether the
+  // instrument still works at phone scale: completion, sample rate, and the scale-free
+  // ratios (path drawn over template path, laps over template turns). What it cannot answer
+  // is whether small spirals are harder. A true size contrast would need 12 x 3 as well.
+  //
   // "Both, alternating" with one trial per hand. The battery table gives the hand as
   // alternating and the trial count as 1; read as 1 PER HAND, since a single trial cannot
   // alternate. Confirm if that is not what was meant.
-  { id:"FIN_SPRL", label:"Spiral, finger",                order:80,  tier:"second", spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:1, lengthS:null, implement:"finger", sustainedS:60 },
+  { id:"FIN_SPR1_T5", label:"Spiral, finger, one only — 12 × 5", order:78, tier:"second", spiral:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:1, lengthS:null, implement:"finger", sustainedS:null, windowLocked:1 },
+  { id:"FIN_SPR1_T3", label:"Spiral, finger, one only — 10 × 3, phone scale", order:79, tier:"second", spiral:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:1, lengthS:null, implement:"finger", geomSet:"finger_small", sustainedS:null, windowLocked:1 },
+  { id:"FIN_SPR60", label:"Spiral, finger, keep drawing 60 s", order:80, tier:"second", spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:1, lengthS:null, implement:"finger", sustainedS:60, windowLocked:1 },
 
   // --- Exploratory ------------------------------------------------------------------
   // The three spiral-plus-TAP conditions are held. Their UI is built and they run, but the
@@ -1557,8 +1610,9 @@ const overheadFor = taskId => blockOf(taskId) ? BLOCK_GAP_S : OVERHEAD_S;
 // this, so what you rehearse is what the participant hears.
 // Short lines, plain words, written to be read aloud.
 // ---------------------------------------------------------------------------
-// The drawing rules, in ONE place. PEN_SPRL shows them inline; every dual task built on
-// it shows a short line plus a button that reveals this identical block. The wording a
+// The drawing rules, in ONE place. The single-task spiral conditions show them inline;
+// every dual task built on them shows a short line plus a button that reveals this
+// identical block. The wording a
 // participant is held to is therefore the same in a task and its single-task baseline --
 // which is what stops the instruction itself contributing to dual-task cost -- without a
 // dual-task screen opening with four lines they already know.
@@ -1822,9 +1876,31 @@ const sdOf=v=>{ if(v.length<2) return NaN; const m=meanOf(v);
 // on devices -- in saved plans, in queued sessions, and in every trial record written before
 // the rename -- so they are translated rather than orphaned. A record keeps the code it was
 // written with; only lookups are aliased, so nothing already saved is rewritten.
-const TASK_ALIAS={ PEN_DRAW:"PEN_SPRL", FIN_DRAW:"FIN_SPRL", VOC_ODD:"VOC_VODD" };
+// RENAMES, SO A SAVED SESSION SURVIVES ONE. PEN_SPRL and FIN_SPRL both shipped a 60 s
+// window, so they resolve to the sustained task and not to the new one-spiral condition --
+// a session saved before v13.01 restores as the task it actually ran.
+const TASK_ALIAS={ PEN_DRAW:"PEN_SPR60", FIN_DRAW:"FIN_SPR60", VOC_ODD:"VOC_VODD",
+                   PEN_SPRL:"PEN_SPR60", FIN_SPRL:"FIN_SPR60" };
 const taskId = id => TASK_ALIAS[id] || id;
 const byId = id => CATALOGUE.find(c=>c.id===taskId(id));
+
+// DECLARED UP HERE, NOT IN THE GEOMETRY SECTION, for the same reason PENCHECK is: applyCal()
+// runs during start-up and calls updateGeo(), which reads these. A const read in its temporal
+// dead zone throws rather than returning undefined, and takes the rest of the script with it
+// -- the whole app dead, with only a blank page to say so. See the comment in applyCal().
+// A CONDITION NAMES ITS GEOMETRY SET; the implement no longer decides it on its own.
+// Two sets keyed by implement cannot express FIN_SPR1_T5 and FIN_SPR1_T3, which are both
+// drawn with a finger, run different templates, and appear in the same session. A condition
+// that names no set falls back to its implement, so every task written before the third set
+// existed is untouched. A bare string is still accepted, for the callers that want a set by
+// name rather than a condition.
+const GEOM_LABEL={ pen:"Stylus", finger:"Finger", finger_small:"Finger, small" };
+const GEOM_SETS=Object.keys(GEOM_LABEL);
+const geomSet   = x => typeof x==="string"
+  ? (GEOM_LABEL[x] ? x : (x==="finger" ? "finger" : "pen"))
+  : (x && x.geomSet) || (x && x.implement==="finger" ? "finger" : "pen");
+const geomPitch = x => +$("pitch_"+geomSet(x)).value;
+const geomTurns = x => +$("turns_"+geomSet(x)).value;
 const esc = s => String(s==null?"":s).replace(/[&<>"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
 $("buildstamp").textContent = "Build " + BUILD;
 
@@ -3316,7 +3392,7 @@ function dependencyNote(c){
   const inc = id => PLAN[id] && PLAN[id].include;
   if(!inc(c.id)) return null;
   if(c.id==="PEN_TONE"){
-    const missing=["PEN_SPRL","TAP_TONE"].filter(id=>!inc(id));
+    const missing=["PEN_SPR60","TAP_TONE"].filter(id=>!inc(id));
     if(!missing.length) return null;
     return `Dual-task cost is measured against a single-task baseline. Without
             ${missing.join(" and ")} there is no baseline for comparison, so this task
@@ -3506,6 +3582,21 @@ function adhocCell(c,s2,blocked){
 function sustainedCell(c,s,blocked){
   if(!c.spiral) return "";
   const dis=blocked?"disabled":"";
+  // THE WINDOW IS NOT A SETTING ON A TASK NAMED FOR IT, and the lock runs both ways.
+  // PEN_SPR60 is named for its length, so an editable seconds box would let an examiner run
+  // 90 s under an id that says 60 -- the same defect as a filename that disagrees with its
+  // build. PEN_SPR1 is named for being one spiral, so the mode dropdown would let it become
+  // a sustained task under an id that says otherwise. Since v13.01 the two modes are two
+  // TASKS, so on these the window is a property and the way to get the other one is to
+  // include the other task. The dual-task spirals keep both controls: their window is a real
+  // parameter and they have no one-only twin.
+  if(c.windowLocked) return c.sustainedS>0
+    ? `<div class="note" style="margin:0">
+        <b>${c.sustainedS} s</b>, fixed — a new spiral each time one is finished.
+        <div style="margin-top:4px">For a single spiral, include the one-only task.</div></div>`
+    : `<div class="note" style="margin:0 0 6px"><b>One spiral only.</b>
+        <div style="margin-top:4px">Ends when you press END. To keep drawing for a fixed
+        window, include the 60 s task.</div></div>`;
   const on=s.sustainedS>0;
   // Says what the participant does, not what the mechanism is called. "Fixed window" is a
   // term from the engine and means nothing to someone reading the plan table.
@@ -3568,6 +3659,9 @@ function baseLengthCell(c,s,blocked){
 // a blank that would have to be filled before the row meant anything.
 function planSetSustained(id,mode){
   const c=byId(id);
+  // Unreachable from the UI on a locked task, and refused here as well: the plan is what the
+  // record is written from, so nothing else may set a length the task does not offer.
+  if(c && c.windowLocked) return;
   PLAN[id].sustainedS = mode==="keep"
     ? (PLAN[id].sustainedS>0 ? PLAN[id].sustainedS : (c && c.sustainedS) || 60)
     : null;
@@ -3883,7 +3977,7 @@ function renderNextUpParams(){
   const groups=[];
   // Pitch and turns come from the set this task's implement resolves to, so editing them
   // here cannot accidentally change the other family's geometry.
-  const gs=geomSet(c.implement), gsLabel=gs==="finger"?"Finger":"Stylus";
+  const gs=geomSet(c), gsLabel=GEOM_LABEL[gs]||gs;
   if(c.spiral) groups.push(`<div><b>Spiral — ${gsLabel} geometry</b>
     <div class="r4">${pNum("pitch_"+gs,"Pitch (mm)",0.5,6,25)}${pNum("turns_"+gs,"Turns",1,2,8)}
       ${pSel("instr","Instruction")}${pNum("startdia","Start zone (mm)",1,4,20)}</div>
@@ -4036,7 +4130,7 @@ function newParticipant(){
 // measure this iPad's glass and are true for every participant on it, so a new participant
 // must not silently discard a calibration.
 const PROTOCOL_FIELDS=["instr","tmpl","implement","pitch_pen","turns_pen","pitch_finger",
-  "turns_finger","startdia","enddia","advturns","endang","split","tapdia","zonegap","longtrial",
+  "turns_finger","pitch_finger_small","turns_finger_small","startdia","enddia","advturns","endang","split","tapdia","zonegap","longtrial",
   "fstd","ftgt","lvl","seedmode","idle"];
 let FIELD_SHIPPED={};
 function snapshotShippedFields(){
@@ -4333,26 +4427,41 @@ function matchStreamPair(from,to){
 
 /* ------------------------------------------------------- geometry */
 /* ---------------------------------------------------------------------------
-   Spiral geometry is per IMPLEMENT, not global and not per task.
+   Spiral geometry is per GEOMETRY SET. A task names its set; a task that names
+   none falls back to the set for its implement, which is how every task written
+   before v13.01 keeps working unchanged.
 
-   A stylus tip is about 1 mm across; a fingertip contact patch is 8-10 mm. The
-   finger family therefore keeps a wider corridor. Both families are R60 -- the
-   same physical footprint -- so comparing implements is not also comparing
-   workspace size.
+   Three sets:
 
-   The PEN_ and FIN_ families now differ deliberately in pitch and turns and are
-   therefore NOT comparable as measures. FIN_SPRL exists to test whether a
-   stylus-free configuration is feasible at all, not to produce a number that can
-   sit beside PEN_SPRL.
+     pen           12 x 5, R60.  The reference template. advturns is set against it.
+     finger        12 x 5, R60.  Identical to the stylus set since v12.51 -- the same
+                                 template drawn with a different implement, which is
+                                 what makes FIN_SPR1_T5 a clean implement contrast
+                                 against PEN_SPR1. (They were deliberately different
+                                 before v12.51, so records from either side of that
+                                 release are not comparable with each other.)
+     finger_small  10 x 3, R30.  60 mm across, sized to fit a phone screen. Pitch
+                                 falls with the turns because 12 x 3 is 72 mm and
+                                 still too wide, so this set differs from the others
+                                 in BOTH pitch and turns. A finger_small trial is a
+                                 FEASIBILITY observation, not a size contrast: use
+                                 scale-free ratios to compare it with anything else.
 
-   Per-implement is exactly the granularity required: a task and its single-task
-   baseline always resolve to the same set, so dual-task cost is never confounded
-   with a geometry difference. There is deliberately no task-level override, which
-   is the only thing that could silently break that.
+   WHY PER-IMPLEMENT WAS NOT ENOUGH. FIN_SPR1_T5 and FIN_SPR1_T3 are both drawn with
+   a finger, run different templates, and appear in the same session. Two sets keyed
+   by implement cannot express that at all: whichever value the finger set held, both
+   conditions would have run it.
+
+   THE HAZARD THE OLD RULE EXISTED TO PREVENT is still live, and is now a thing to
+   check rather than a thing the structure guarantees: a dual task and its single-task
+   baseline must resolve to the SAME set, or the dual-task cost is confounded with a
+   geometry difference. Every dual-task spiral names no set and is implement "pen", so
+   they all resolve to the pen set alongside PEN_SPR1 and PEN_SPR60. Anything given a
+   set explicitly has to be checked against its baseline by hand.
+
+   geomSet, geomPitch and geomTurns are declared UP WITH byId, not here. Start-up reaches
+   them before this point in the file and a const read in its dead zone would throw.
    --------------------------------------------------------------------------- */
-const geomSet   = impl => (impl==="finger" ? "finger" : "pen");
-const geomPitch = impl => +$("pitch_"+geomSet(impl)).value;
-const geomTurns = impl => +$("turns_"+geomSet(impl)).value;
 
 // ---------------------------------------------------------------------------
 // SUSTAINED SPIRAL: the end zone, and the angle detector that makes it safe.
@@ -4504,6 +4613,27 @@ function segHitsCircle(p,q,c,r){
   return Math.hypot(p.x+t*dx-c.x, p.y+t*dy-c.y) <= r;
 }
 const advanceTurns = () => +(($("advturns")||{}).value) || ADVANCE_TURNS_DEFAULT;
+// THE SAME FRACTION OF THE TEMPLATE, NOT THE SAME ABSOLUTE NUMBER OF TURNS. advturns is
+// set against the reference (stylus) template, so a shorter template has to ask for
+// proportionally fewer laps. Without this a 3-turn template is unfinishable by construction:
+// five laps cannot be swept on a template that crosses its end ray three times, and the ring
+// test asks for four rings from a template that HAS three. The spiral would then never end
+// on its own and only Next spiral would get the participant out -- the same class of failure
+// the "more laps than the template has turns" warning was added to catch, arriving instead
+// through a condition that ships a short template. The practice pad has scaled exactly this
+// way since its three-turn spiral; this is that rule, applied to the trial now that a trial
+// can run a short template too.
+const advanceFraction = () => Math.min(1, advanceTurns()/Math.max(1, geomTurns("pen")));
+const advanceLapsFor  = t => Math.max(1, Math.round((+t||0)*advanceFraction()));
+// The three numbers the gate is made of, for a template of t turns. At the reference
+// geometry -- 5 turns with advturns at 5 -- these come out 5, 4 and 5 minus the slack, which
+// is exactly what they were before any scaling existed. Nothing about the shipped stylus
+// conditions moves; the scaling only has an effect where the template is short.
+function advanceGate(t){
+  const laps=advanceLapsFor(t);
+  return { laps, rings:Math.max(2, laps-1),
+           openAt:laps - LAP_GATE_SLACK_TURNS*(laps/Math.max(1, advanceTurns())) };
+}
 // The most a perfect tracing can bank, given that nothing below the start zone is counted.
 function bankableRad(turns, outerR, gateR){
   return turns*2*Math.PI*(1-Math.min(0.9,(gateR||0)/(outerR||1)));
@@ -4514,7 +4644,7 @@ function angleNeededRad(turns, outerR, gateR){
   // otherwise be unreachable by construction, and the symptom would be a spiral that never
   // advances however well it was drawn -- which is the failure this clamp has already
   // prevented once, in v11.
-  return Math.min(advanceTurns()*2*Math.PI, bankable);
+  return Math.min(advanceLapsFor(turns)*2*Math.PI, bankable);
 }
 
 // Signed angle accumulated about the spiral centre, unwrapped. Called per pen sample with
@@ -4798,7 +4928,7 @@ function renderGeoSet(which){
   // A dual task gives the drawing region only a share of the width.
   const usableW=u.width_mm*u.split;
   const times=TRACE_SPEEDS_CM_S.map(v=>`${Math.round(pathCM/v)} s at ${v} cm/s`).join(", ");
-  const label=which==="pen"?"Stylus":"Finger";
+  const label=GEOM_LABEL[which]||which;
   const sizeLine=`<b>${label}</b> — pitch ${pitch} mm × ${turns} turns: radius
       <b>${radius} mm</b>, <b>${dia} mm</b> across, path <b>${pathCM.toFixed(0)} cm</b>.`;
   // The window can report no size at all -- a hidden tab, a pane mid-layout. Printing
@@ -4832,7 +4962,7 @@ function renderGeoSet(which){
 // Parameters page, and editing one of the fields it depends on.
 function updateGeo(){
   if(!$("pitch_pen")) return;
-  renderGeoSet("pen"); renderGeoSet("finger");
+  GEOM_SETS.forEach(w=>renderGeoSet(w));
 }
 // The examiner sets turns; an analyst needs degrees. Both, on the page, so neither has to
 // convert -- and so a value the spiral cannot reach is caught here rather than on an iPad.
@@ -4867,13 +4997,24 @@ function renderAdvanceNote(){
     never touch the circle, so ${laps} full laps also ends the spiral. Anyone who cannot
     finish is covered by <b>Next spiral</b>, which is recorded as the examiner ending it.
     ${laps>t?`<br><span style="color:#8c2020"><b>More laps than the template has turns.</b>
-      The spiral has ${t}; asking for ${laps} means it can only end with Next spiral.</span>`:""}`;
+      The spiral has ${t}; asking for ${laps} means it can only end with Next spiral.</span>`:""}
+    ${(()=>{ // WHAT A SHORTER TEMPLATE ASKS FOR. The requirement is a fraction of the
+             // template, so a set with fewer turns asks for fewer laps -- printed here so an
+             // examiner can see it without having to run the trial to find out.
+      const rows=GEOM_SETS.filter(w=>$("turns_"+w) && +$("turns_"+w).value!==t)
+        .map(w=>{ const tw=+$("turns_"+w).value, g=advanceGate(tw);
+          return `<li><b>${GEOM_LABEL[w]}</b>, ${tw} turns: <b>${g.laps} laps</b> and
+            ${g.rings} rings, the gate opening at ${g.openAt.toFixed(1)} laps.</li>`; });
+      return rows.length ? `<br><b>The other geometry sets.</b> The requirement above is a
+        proportion of the template, not a fixed count, so a shorter template asks for less:
+        <ul style="margin:4px 0 0">${rows.join("")}</ul>` : ""; })()}`;
 }
-["pitch_pen","turns_pen","pitch_finger","turns_finger","endang","split","ppmm",
+["pitch_pen","turns_pen","pitch_finger","turns_finger",
+ "pitch_finger_small","turns_finger_small","endang","split","ppmm",
  "startdia","enddia","advturns"]
   .forEach(id=>{ const el=$(id); if(el) el.addEventListener("input",
     ()=>{ updateGeo(); renderAdvanceNote(); }); });
-["pen","finger"].forEach(which=>{
+GEOM_SETS.forEach(which=>{
   const sel=$("preset_"+which); if(!sel) return;
   sel.addEventListener("change",e=>{ if(!e.target.value) return;
     const [p,t]=e.target.value.split(",");
@@ -5380,7 +5521,7 @@ function layout(){
     // spiral is 120 mm across, and on a narrow screen the offset gives way rather than the
     // template being cropped. Recorded per trial, because it moves where the drawing happened.
     dx0=ux0; dw=uw;
-    const outerPx=geomPitch(TRIAL.implement)*geomTurns(TRIAL.implement)*p;
+    const outerPx=geomPitch(byId(TRIAL.task))*geomTurns(byId(TRIAL.task))*p;
     const want=(drawSide==="left"?-1:1)*uw*SPIRAL_SIDE_OFFSET;
     const room=Math.max(0, uw/2-outerPx-4);
     spiralShift=clamp(want, -room, room);
@@ -5513,7 +5654,7 @@ function drawScene(){
     g.setLineDash([]); }
 
   if(L.spiralOn){
-    const pitch=geomPitch(TRIAL.implement), turns=geomTurns(TRIAL.implement), radius=pitch*turns;
+    const pitch=geomPitch(byId(TRIAL.task)), turns=geomTurns(byId(TRIAL.task)), radius=pitch*turns;
     const dir=TRIAL.drawHand==="left"?"ccw":"cw";
     const sp=spiralPath(radius,turns,dir,+$("endang").value);
     SPIRAL={radius,turns,pitch,direction:dir,pathMM:sp.pathMM,instruction:$("instr").value,
@@ -5595,8 +5736,8 @@ function drawScene(){
         // in, so it should arm on being NEAR THE CIRCLE, not on a count that a tremulous hand
         // may never quite reach. Being a cue and not the trigger, arming a touch early costs
         // nothing.
-        const gateOpen = RUN.angle.bandsDrawn >= Math.max(2, advanceTurns()-1)
-                      && RUN.angle.lapsSwept >= advanceTurns()-LAP_GATE_SLACK_TURNS;
+        const G=advanceGate(geomTurns(byId(TRIAL.task)));
+        const gateOpen = RUN.angle.bandsDrawn >= G.rings && RUN.angle.lapsSwept >= G.openAt;
         const d=Math.hypot(RUN.penMM.x-RUN.endMM.x, RUN.penMM.y-RUN.endMM.y);
         // Reach chosen so the circle lights up about 30 deg of the final turn out -- the
         // "11 o'clock" the end zone was asked to flash from, with the zone itself at 12.
@@ -6120,7 +6261,8 @@ function showInstructionScreen(seq,c,returnToReady){
       border:1px solid #e9b7b7;border-radius:9px;background:#fdecec;color:#8c2020;
       max-width:660px;text-align:left;font-size:17px;line-height:1.55">
       <b>Platform limit.</b> ${PALM_WARNING}</div>` : ``;
-  // The drawing rules, one click away, identical to the ones PEN_SPRL shows inline. The
+  // The drawing rules, one click away, identical to the ones the single-task spirals show
+  // inline. The
   // dual-task screen stays short so the new demand is what the participant reads first,
   // but the wording they are held to is the same in both.
   const rulesNote = (ins.drawingRules && !ins.rulesShownInline) ? `<div style="margin-top:12px">
@@ -6130,7 +6272,7 @@ function showInstructionScreen(seq,c,returnToReady){
         max-width:660px;margin-left:auto;margin-right:auto">
         <ul style="font-size:19px;line-height:1.6;padding-left:22px">
           ${ins.drawingRules.map(l=>`<li>${l}</li>`).join("")}</ul>
-        <div class="note">Identical to the wording used for PEN_SPRL.</div>
+        <div class="note">Identical to the wording used by the single-task spiral.</div>
       </div></div>` : ``;
   const voiceNote = c.voice ? (TRIAL.voiceFailure
       ? `<p style="font-size:17px;color:#8c2020"><b>Not being recorded</b> — ${esc(TRIAL.voiceFailure.detail)}</p>`
@@ -6392,8 +6534,8 @@ function runTrial(seq,c){
   // One band per turn of the template, so "rings drawn" and "turns drawn" are the same count.
   if(c.spiral) RUN.angle=makeAngleAccumulator(TRIAL.drawHand==="left"?"ccw":"cw",
                                               (+$("startdia").value||8)/2,
-                                              geomPitch(TRIAL.implement),
-                                              geomTurns(TRIAL.implement),
+                                              geomPitch(c),
+                                              geomTurns(c),
                                               (+$("endang").value||90)*Math.PI/180);
   // A trial whose window opens at START gets its tone stream NOW, exactly as before v12.01.
   // Only an anchored trial defers the stream, and only because its window is deferred with
@@ -6806,13 +6948,15 @@ function runTrial(seq,c){
     // stay under a fifth of a turn, which a tremulous hand exceeds. Arrival as a gate lets a
     // spiral drawn 20% wide end on its FOURTH lap, because a wide spiral passes through the
     // red circle's location on the way round.
-    const ringsNeeded=Math.max(2, advanceTurns()-1);
-    if(!RUN.angle || RUN.angle.bandsDrawn < ringsNeeded){ RUN.endZoneSince=null; return; }
+    // Scaled to THIS template's turns, not to the examiner's number on its own: see
+    // advanceGate. At 12 x 5 these are the numbers the gate has always used.
+    const GATE=advanceGate(geomTurns(byId(TRIAL.task)));
+    if(!RUN.angle || RUN.angle.bandsDrawn < GATE.rings){ RUN.endZoneSince=null; return; }
     // Laps are signed crossings of the template's own end ray, so a five-turn spiral crosses
     // five times whether it is drawn at 60 mm or 90 mm. That is what makes the gate
     // scale-invariant where every radius test was not. The slack is what a bad hand loses;
     // see LAP_GATE_SLACK_TURNS.
-    if(RUN.angle.lapsSwept < advanceTurns()-LAP_GATE_SLACK_TURNS){ RUN.endZoneSince=null; return; }
+    if(RUN.angle.lapsSwept < GATE.openAt){ RUN.endZoneSince=null; return; }
     // THE GATE IS OPEN. Two things end the pass from here, recorded separately.
     //
     // 1. THE PEN REACHES THE RED CIRCLE -- which is what the participant was told would
@@ -6824,7 +6968,7 @@ function runTrial(seq,c){
     //    be a second task. With the gate in front, the only pen that can get here has
     //    already drawn the spiral.
     if(RUN.endMM && segHitsCircle(RUN.prevPenMM||RUN.penMM, RUN.penMM, RUN.endMM,
-                                  endZoneDiaMM(geomPitch(TRIAL.implement))/2)){
+                                  endZoneDiaMM(geomPitch(byId(TRIAL.task)))/2)){
       advancePass("end_zone"); return; }
     // 2. THE SPIRAL HAS BEEN DRAWN PAST ITS END without the red circle ever being touched --
     //    a drawing large enough that its last turn runs outside the template, or one that
@@ -6836,7 +6980,7 @@ function runTrial(seq,c){
     //    exactly the lap count by construction -- the angle not counted inside the start zone
     //    is exactly what the end-ray offset adds back -- so the comparison sits precisely on
     //    the value it is testing, and lands either side of it on rounding alone.
-    if(RUN.angle.lapsSwept >= advanceTurns()-1e-9){ advancePass("laps"); return; }
+    if(RUN.angle.lapsSwept >= GATE.laps-1e-9){ advancePass("laps"); return; }
     // A LIFT NO LONGER ADVANCES ANYTHING, and that is the point rather than an omission.
     //
     // Lifting is against the instruction and is also a MEASURE: some participants lift, and
@@ -7567,9 +7711,9 @@ function paramSet(){
             hand_role:TRIAL.hand, draw_hand:TRIAL.drawHand, tap_hand:TRIAL.tapHand,
             implement:TRIAL.implement, length_s:TRIAL.lengthS,
             self_paced:TRIAL.lengthS==null };
-  if(c.spiral) p.spiral={ geometry_set:geomSet(c.implement),
-    pitch_mm:geomPitch(c.implement), turns:geomTurns(c.implement),
-    geometry_note:"pitch and turns come from the geometry set for this task's implement; the stylus and finger families differ deliberately and are not comparable as measures",
+  if(c.spiral) p.spiral={ geometry_set:geomSet(c),
+    pitch_mm:geomPitch(c), turns:geomTurns(c),
+    geometry_note:"pitch and turns come from the geometry set this task names, falling back to the set for its implement. Three sets exist: pen and finger both ship 12 x 5 and are the same template drawn with different implements, so they are comparable; finger_small ships 10 x 3 for phone-scale feasibility and differs in BOTH pitch and turns, so a finger_small trial is not a controlled size contrast against a 12 x 5 one. Compare across templates using scale-free ratios only",
     end_angle_deg:+$("endang").value, instruction:$("instr").value,
     // The examiner's word on the four things the app cannot check for itself. Recorded
     // because a trial run on a dim, sliding, unlocked iPad is not the same trial.
@@ -7770,11 +7914,12 @@ function buildRecord(){
         passes: R.passes,
         // STATED TWICE ON PURPOSE: once in the unit the examiner set it in, once in the
         // exact quantities an analyst needs. Neither audience should have to derive the other's.
-        advance_rule:(()=>{ const t=geomTurns(TRIAL.implement), oR=geomPitch(TRIAL.implement)*t,
+        advance_rule:(()=>{ const cT=byId(TRIAL.task),
+            t=geomTurns(cT), oR=geomPitch(cT)*t, G=advanceGate(t),
             gR=(+$("startdia").value||8)/2, deg=x=>+(x*180/Math.PI).toFixed(1);
           const bankable=bankableRad(t,oR,gR), need=angleNeededRad(t,oR,gR);
           return {
-            turns_required:advanceTurns(), template_turns:t,
+            turns_required:G.laps, template_turns:t,
             required_net_angle_deg:deg(need),
             template_sweep_deg:deg(t*2*Math.PI),
             gated_sweep_deg:deg(t*2*Math.PI-bankable),
@@ -7788,17 +7933,23 @@ function buildRecord(){
             // older record keeps the key it knows.
             end_zone_dia_mm:+$("enddia").value, end_zone_mm:+$("enddia").value,
             min_pass_ms:MIN_PASS_MS,
-            outer_radius_mm:geomPitch(TRIAL.implement)*geomTurns(TRIAL.implement),
+            outer_radius_mm:oR,
             dwell_ms:0,
             ring_min_angle_deg:+(BAND_MIN_RAD*180/Math.PI).toFixed(0),
-            ring_width_mm:geomPitch(TRIAL.implement),
-            laps_required:advanceTurns(), rings_required:Math.max(2,advanceTurns()-1),
+            ring_width_mm:geomPitch(cT),
+            // SCALED TO THIS TEMPLATE. advturns_setting is what the examiner typed, against
+            // the reference stylus template; laps_required is what THIS template was actually
+            // held to. On a 12 x 5 they are the same number, which is why both are recorded:
+            // a record from a short template would otherwise look like a failed one.
+            laps_required:G.laps, rings_required:G.rings,
+            advturns_setting:advanceTurns(),
+            advance_fraction:+advanceFraction().toFixed(4),
             // The gate, stated in the same unit as laps_required, and what it allows for.
             lap_gate_slack_turns:LAP_GATE_SLACK_TURNS,
-            laps_required_to_open_gate:+(advanceTurns()-LAP_GATE_SLACK_TURNS).toFixed(3),
+            laps_required_to_open_gate:+G.openAt.toFixed(3),
             ends_pass:"end_zone (segment between samples intersects the end zone) OR laps_required full laps",
             gate_opens:"rings_required rings AND laps_required_to_open_gate laps",
-            gate_test:"A GATE AND A TRIGGER, which are different jobs. The TRIGGER is arrival: the pass ends when the segment between two consecutive pen samples intersects the end zone, a circle of end_zone_dia_mm at the template's own endpoint. Tested on the segment and not on a sample because a pen moving at speed covers 10 mm or more between samples, so a fast overshoot straight through the zone lands its samples either side of it. No dwell is required: overshooting the end of a line is ordinary motor behavior and commoner in the impaired, so requiring the pen to stop on the dot would be a second task. The GATE decides whether arrival is allowed to end the pass, and is two tests. LAPS answer whether most of the spiral was drawn: a lap is a signed crossing of the template's end ray, and a five-turn spiral crosses it five times whether it is drawn at 60 mm or 90 mm, so the test is scale-invariant where every position-based version was not -- those ended the pass 0.44 of a turn early at 110% of the template and a full turn early at 120%. The gate opens at laps_required minus lap_gate_slack_turns, the slack being what a bad hand loses from angle it really drew: 0.29 of a turn for 10 mm of radial wobble, and the same for five pen lifts rejoining 20 deg along. Because the trigger is arrival and not the lap count, that slack does not shorten the drawing. RINGS answer whether the shape was an expanding spiral rather than the same circle repeated, since circling in one spot crosses the end ray just as often as spiraling does. The template is divided into one ring per turn, each one pitch wide, and the angle swept is accumulated against the ring it was swept in; a ring counts as drawn once ring_min_angle_deg has been swept inside it. rings_required is one fewer than laps_required, which a spiral drawn anywhere from 70% to 150% of the template satisfies and which circling in one place never does. Net angle alone cannot distinguish an expanding spiral from the same circle repeated in one place, which banks angle identically; binning by radius can, because circling in one spot fills a single ring however long it continues and a radial dash to the end zone deposits almost no angle in the rings it crosses. Angle is not measured inside the start zone, where a few mm of tremor swings it wildly, but the pen's last angle is carried across such a dip rather than discarded, so the sweep made while dipped is credited on re-entry.",
+            gate_test:"A GATE AND A TRIGGER, which are different jobs. The TRIGGER is arrival: the pass ends when the segment between two consecutive pen samples intersects the end zone, a circle of end_zone_dia_mm at the template's own endpoint. Tested on the segment and not on a sample because a pen moving at speed covers 10 mm or more between samples, so a fast overshoot straight through the zone lands its samples either side of it. No dwell is required: overshooting the end of a line is ordinary motor behavior and commoner in the impaired, so requiring the pen to stop on the dot would be a second task. The GATE decides whether arrival is allowed to end the pass, and is two tests. LAPS answer whether most of the spiral was drawn: a lap is a signed crossing of the template's end ray, and a five-turn spiral crosses it five times whether it is drawn at 60 mm or 90 mm, so the test is scale-invariant where every position-based version was not -- those ended the pass 0.44 of a turn early at 110% of the template and a full turn early at 120%. The gate opens at laps_required minus lap_gate_slack_turns, the slack being what a bad hand loses from angle it really drew: 0.29 of a turn for 10 mm of radial wobble, and the same for five pen lifts rejoining 20 deg along. Because the trigger is arrival and not the lap count, that slack does not shorten the drawing. RINGS answer whether the shape was an expanding spiral rather than the same circle repeated, since circling in one spot crosses the end ray just as often as spiraling does. The template is divided into one ring per turn, each one pitch wide, and the angle swept is accumulated against the ring it was swept in; a ring counts as drawn once ring_min_angle_deg has been swept inside it. rings_required is one fewer than laps_required, which a spiral drawn anywhere from 70% to 150% of the template satisfies and which circling in one place never does. Net angle alone cannot distinguish an expanding spiral from the same circle repeated in one place, which banks angle identically; binning by radius can, because circling in one spot fills a single ring however long it continues and a radial dash to the end zone deposits almost no angle in the rings it crosses. Angle is not measured inside the start zone, where a few mm of tremor swings it wildly, but the pen's last angle is carried across such a dip rather than discarded, so the sweep made while dipped is credited on re-entry. Both requirements are a PROPORTION of the template rather than a fixed count: advturns is set against the reference five-turn stylus template, and a condition running a shorter template is held to the same fraction of it. Without that a three-turn template could never be finished, since five laps cannot be swept on a template that crosses its end ray three times and four rings cannot be drawn on a template that has three.",
             start_test:"the pass begins when the pen is inside the start zone, on every pass and not only the first",
             end_test:"the pass ends the first sample the pen is inside the end zone OR at or beyond outer_radius_mm, and only after turns_required rings have been drawn. There is no dwell: requiring the pen to still be inside the circle a moment later meant an overshoot advanced nothing, and overshooting the end of a line is ordinary. The outer-radius test exists because a pen can pass the END of the template without passing within half an end zone of the dot. advanced_by distinguishes them as 'end_zone' and 'outer_radius'. Net angle is signed about the template centre and is NOT accumulated while the radius is inside the start zone, so a perfect tracing can bank at most bankable_net_angle_deg rather than the full template sweep. A lift does NOT end a pass." }; })(),
         note:"a pass advances on reaching the end of the template with the required rings already drawn, or by the examiner pressing Next spiral. A lift does not advance it: lifting is against the instruction and is itself a measure, so every participant finishes the same way. lifts_in_pass and lift_ms_in_pass record it per pass. advanced_by 'examiner' carries the examiner's reaction time; 'window_end' is the final partial pass."
@@ -8597,6 +8748,7 @@ const STATE_FIELDS=["pid","grp","sex","byear","bmonth","domhand","ambihand","not
                     "ethnicity","education",
                     "visitno","sessnum","sessnote","instr","tmpl","implement",
                     "pitch_pen","turns_pen","pitch_finger","turns_finger",
+                    "pitch_finger_small","turns_finger_small",
                     "startdia","enddia","advturns","endang","split","tapdia","zonegap","longtrial",
                     "fstd","ftgt","lvl","seedmode","idle","ppmm"];
 // Start-up runs the same change handlers the UI does, and those handlers persist. Until
@@ -8667,7 +8819,12 @@ function restoreState(){
           ? (old.lengthS==null ? null : (Number(old.lengthS)||fixedLengthFor(c)))
           : (c.lengthS===null ? null : (Number(old.lengthS)||c.lengthS));
         fresh[c.id]={ include:!!old.include,
-          sustainedS: c.spiral ? (Number(old.sustainedS)>0 ? Number(old.sustainedS) : null) : null,
+          // A LOCKED WINDOW FOLLOWS THE BUILD, never the saved session. A session saved
+          // while the seconds were still editable would otherwise restore a length the task
+          // no longer offers, and no screen would show it as the reason a trial ran long.
+          sustainedS: !c.spiral ? null
+                    : c.windowLocked ? (c.sustainedS ?? null)
+                    : (Number(old.sustainedS)>0 ? Number(old.sustainedS) : null),
           repeats:Number(old.repeats)>0?Number(old.repeats):c.repeats,
           hands:allowed.includes(old.hands)?old.hands:allowed[0],
           lengthS:len,
