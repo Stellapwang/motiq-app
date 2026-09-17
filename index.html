@@ -1157,7 +1157,7 @@ const CATALOGUE = [
   // The window is LOCKED on this one: it is named for its length, so an editable seconds box
   // would let the id disagree with the record. The dual-task spirals below keep the box,
   // because their window is a genuine parameter and they have no one-spiral twin.
-  { id:"PEN_SPR60", label:"Spiral, keep drawing 60 s",      order:60,  tier:"core",   spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:2, lengthS:null, implement:"pen", sustainedS:60, windowLocked:1 },
+  { id:"PEN_SPR60", label:"Spiral, 60 s",      order:60,  tier:"core",   spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:2, lengthS:null, implement:"pen", sustainedS:60, windowLocked:1 },
   { id:"PEN_VODD", label:"Spiral + counting the high tones aloud", order:70, tier:"core", spiral:1, tap:0, audio:1, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
                    selfPaceable:1, fixedS:60, count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1 },
   // Intersecting pentagon COPY, not a spiral. The model is shown beside a blank area and the
@@ -1187,9 +1187,9 @@ const CATALOGUE = [
   // "Both, alternating" with one trial per hand. The battery table gives the hand as
   // alternating and the trial count as 1; read as 1 PER HAND, since a single trial cannot
   // alternate. Confirm if that is not what was meant.
-  { id:"FIN_SPR1_T5", label:"Spiral, finger, one only — 12 × 5", order:78, tier:"second", spiral:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:1, lengthS:null, implement:"finger", sustainedS:null, windowLocked:1 },
-  { id:"FIN_SPR1_T3", label:"Spiral, finger, one only — 10 × 3, phone scale", order:79, tier:"second", spiral:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:1, lengthS:null, implement:"finger", geomSet:"finger_small", sustainedS:null, windowLocked:1 },
-  { id:"FIN_SPR60", label:"Spiral, finger, keep drawing 60 s", order:80, tier:"second", spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:1, lengthS:null, implement:"finger", sustainedS:60, windowLocked:1 },
+  { id:"FIN_SPR1_T5", label:"Spiral, finger, one only", order:78, tier:"second", spiral:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:1, lengthS:null, implement:"finger", sustainedS:null, windowLocked:1 },
+  { id:"FIN_SPR1_T3", label:"Spiral, finger, one only, 10 × 3", order:79, tier:"second", spiral:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:1, lengthS:null, implement:"finger", geomSet:"finger_small", sustainedS:null, windowLocked:1 },
+  { id:"FIN_SPR60", label:"Spiral, finger, 60 s", order:80, tier:"second", spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:1, lengthS:null, implement:"finger", sustainedS:60, windowLocked:1 },
 
   // --- Exploratory ------------------------------------------------------------------
   // The three spiral-plus-TAP conditions are held. Their UI is built and they run, but the
@@ -3590,13 +3590,12 @@ function sustainedCell(c,s,blocked){
   // TASKS, so on these the window is a property and the way to get the other one is to
   // include the other task. The dual-task spirals keep both controls: their window is a real
   // parameter and they have no one-only twin.
+  // The cell states the setting and stops. It used to explain how to reach the other mode
+  // as well, which is a sentence of instruction printed on every row of a table an examiner
+  // reads at a glance -- and the other mode is a task in the same list, one row away.
   if(c.windowLocked) return c.sustainedS>0
-    ? `<div class="note" style="margin:0">
-        <b>${c.sustainedS} s</b>, fixed — a new spiral each time one is finished.
-        <div style="margin-top:4px">For a single spiral, include the one-only task.</div></div>`
-    : `<div class="note" style="margin:0 0 6px"><b>One spiral only.</b>
-        <div style="margin-top:4px">Ends when you press END. To keep drawing for a fixed
-        window, include the 60 s task.</div></div>`;
+    ? `<div class="note" style="margin:0"><b>${c.sustainedS} s</b></div>`
+    : `<div class="note" style="margin:0 0 6px"><b>One spiral only</b></div>`;
   const on=s.sustainedS>0;
   // Says what the participant does, not what the mechanism is called. "Fixed window" is a
   // term from the engine and means nothing to someone reading the plan table.
