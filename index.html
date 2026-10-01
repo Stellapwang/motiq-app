@@ -548,14 +548,33 @@
       <div class="r2" style="margin-top:10px">
         <div><label for="audioroute">Delivery</label>
           <select id="audioroute" onchange="renderAudioCheck()">
-            <option value="speaker">Device speaker</option>
-            <option value="wired">Wired headphones</option>
+            <option value="speaker">Built-in speaker (standard)</option>
+            <option value="wired">Wired headphones — hearing impairment only</option>
           </select></div>
         <div><label for="volstep">Volume steps used</label>
           <select id="volstep" onchange="renderAudioCheck()">
             <option value="0">Starting level</option>
             <option value="1">Raised once</option>
             <option value="max">At maximum</option>
+          </select></div>
+      </div>
+      <!-- THE ORIENTATION IS A STUDY DECISION, NOT A CONSTANT. Which way round the iPad is
+           held decides whether the drawing hand covers a speaker, and where the speakers are
+           is a property of the device model -- so it is set here, stated on the instruction
+           screen of every auditory condition, and recorded with every trial, rather than
+           being a sentence hard-coded from a guess about the hardware. -->
+      <div class="r2" style="margin-top:10px">
+        <div><label for="audioorient">Orientation for auditory tasks</label>
+          <select id="audioorient" onchange="renderAudioCheck(); saveState();">
+            <option value="landscape_home_right">Landscape, home edge to the right</option>
+            <option value="landscape_home_left">Landscape, home edge to the left</option>
+            <option value="portrait">Portrait</option>
+            <option value="unstated">Not stated to the participant</option>
+          </select></div>
+        <div><label for="audiospeaker">Speaker clear of the drawing hand</label>
+          <select id="audiospeaker" onchange="renderAudioCheck(); saveState();">
+            <option value="confirmed">Confirmed for this setup</option>
+            <option value="unchecked">Not checked</option>
           </select></div>
       </div>
       <label id="soundokRow" for="soundok" style="display:flex;align-items:flex-start;gap:9px;margin-top:12px;font-size:14px;cursor:pointer">
@@ -1075,7 +1094,7 @@
 
 <script>
 "use strict";
-const BUILD = "v13.01 2026-09-16";
+const BUILD = "v14.01 2026-10-01";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1966,6 +1985,31 @@ function instructionFor(taskId, opts){
     lines.push(`**${also?"At the same time, tap":"Tap"} the circle with your ${sideWord}index finger, AS FAST AS YOU CAN.**`);
   }
 
+  /* THE ORIENTATION, STATED TO THE PARTICIPANT on every auditory condition. The stimulus
+     comes out of the built-in speaker and the participant's voice goes into the built-in
+     microphone, and both are on the body of the iPad that the drawing hand is resting over.
+     A hand across a speaker is a level change the record cannot see and the examiner cannot
+     hear from the other side of the table -- it attenuates the stimulus for the participant
+     only, and on a dual task that is a quiet reduction in load on exactly the trials the
+     primary endpoint comes from.
+
+     Taken from the Delivery panel rather than written here, because where the speakers are
+     is a property of the device model and a sentence hard-coded from a guess about the
+     hardware is worse than one the examiner set. */
+  const AUDIO_ORIENT_WORD = {
+    landscape_home_right:"landscape, with the home edge to your right",
+    landscape_home_left:"landscape, with the home edge to your left",
+    portrait:"upright, in portrait" };
+  // Held back and appended last. It is a handling instruction rather than part of the task,
+  // and pushed where it is computed it landed ABOVE "tap the circle every time you hear a
+  // beep" on TAP_TONE -- which puts how to hold the iPad in front of what to do with it.
+  const orientLine = (()=>{
+    if(!c.audio || (opts&&opts.practice)) return null;
+    const orient=$("audioorient")?$("audioorient").value:"unstated";
+    return AUDIO_ORIENT_WORD[orient]
+      ? `Keep the iPad ${AUDIO_ORIENT_WORD[orient]}, so your hand does not cover the speaker.`
+      : null;
+  })();
   const a = AUDIO_DEFAULTS[taskId];
   if(c.audio){
     // THE DIGIT TASKS ARE SPOKEN WORDS AND A SINGLE-WORD ANSWER, so they come before the
@@ -2049,6 +2093,8 @@ function instructionFor(taskId, opts){
       ? "Use a <b>strong voice</b>, loud enough to be heard across the room, and keep it up while you draw."
       : "Use a <b>strong voice</b>, loud enough to be heard across the room.");
   }
+  // Last, because it is about holding the device rather than about the task.
+  if(orientLine) lines.push(orientLine);
 
   return { id:taskId, title:c.label, lines,
            drawingRules: c.spiral ? rules : null,
@@ -2324,8 +2370,13 @@ else autoDetect();
 function renderAudioCheck(){
   const ok=$("soundok").checked, route=$("audioroute").value, step=$("volstep").value;
   let msg="";
-  if(ok) msg=`<div class="good">Audible via ${route==="wired"?"wired headphones":"the device speaker"}.
-    Do not change the volume for the rest of the session — it is recorded with every trial.</div>`;
+  if(ok) msg=`<div class="good">Audible via ${route==="wired"?"wired headphones":"the built-in speaker"}.
+    Do not change the volume for the rest of the session — it is recorded with every trial.
+    ${route==="wired"?`<br><b>Headphones are the exception, not the standard.</b> The
+      stimulus is meant to reach the participant through the built-in speaker and to be
+      captured in the same recording as their voice; headphones remove it from the recording,
+      so response latency can no longer be measured within one file. Use them only for
+      hearing impairment, and every trial records that they were used.`:""}</div>`;
   else if(step==="0") msg=`<div class="warn">Not yet confirmed. Raise the volume one step and
     play the tones again.</div>`;
   else if(step==="1") msg=`<div class="warn">Still not confirmed. Raise to maximum and retry.</div>`;
@@ -3166,7 +3217,7 @@ function screenRecordBase(which){
   const b=birthInfo(), pid=$("pid").value||"";
   const iso=new Date().toISOString();
   return {
-    schema:"motiq_prototype/14", build:BUILD, record_type:"screening", screen:which,
+    schema:"motiq_prototype/15", build:BUILD, record_type:"screening", screen:which,
     screen_uid:`${iso.replace(/[:.]/g,"-")}_${pid||"unnamed"}_${which}`,
     started_iso:iso,
     participant:{ id:pid, group:$("grp").value||null,
@@ -9422,7 +9473,26 @@ function paramSet(){
   if(c.tap) p.tap={ zone_mm:+$("tapdia").value, zones:c.zones, spacing_mm:+$("zonegap").value };
   if(cfg) p.audio={ ...cfg, f_standard:+$("fstd").value, f_target:+$("ftgt").value,
     level:+$("lvl").value, lead_in_ms:cfg.lead,
-    seed:LAST_SEED, seed_mode:$("seedmode").value };
+    seed:LAST_SEED, seed_mode:$("seedmode").value,
+    /* THE PLAYBACK LEVEL, AS TWO SEPARATE FACTS. `level` is the digital amplitude this app
+       asks for, 0 to 1, and it is the only one of the two that the app controls. The system
+       volume is the examiner's, set once before the audibility check and not changeable from
+       a web page -- so what is recorded is how many steps up from the starting level they
+       went, which is what they actually did and what they can repeat. A record naming only
+       the digital level claims a loudness it cannot know. */
+    volume_step: $("volstep") ? $("volstep").value : null,
+    volume_fixed_before_check: !!($("soundok") && $("soundok").checked),
+    route_declared: $("audioroute") ? $("audioroute").value : null,
+    // HEADPHONES ARE THE EXCEPTION AND THE RECORD HAS TO SAY SO PER TRIAL. They remove the
+    // stimulus from the voice recording, so response latency can no longer be measured
+    // within one file -- which is a difference in what the trial can yield, not a detail of
+    // how it was delivered.
+    headphones_used: ($("audioroute") ? $("audioroute").value : "speaker")==="wired",
+    orientation_stated: $("audioorient") ? $("audioorient").value : null,
+    speaker_clear_of_hand: $("audiospeaker") ? $("audiospeaker").value : null,
+    voice_processing_disabled:true,
+    stimulus_in_voice_recording: ($("audioroute")?$("audioroute").value:"speaker")!=="wired",
+    note:"the stimulus is presented through the built-in speaker and is captured in the same recording as the participant's voice, so response latency is measured within that one file and does not depend on relating the audio clock to the pen clock. Headphones break that and are for hearing impairment only." };
   if(c.count) p.counting={ mode:c.countMode||"silent", of:c.countOf||"targets" };
   if(c.verbal) p.verbal=TRIAL.verbal||null;
   return p;
@@ -9437,7 +9507,7 @@ function buildRecord(){
   const heard = c.count ? countedHeard(R.seq, R.streamCutMs, c.countOf) : null;
   const scheduled = R.seq ? (c.countOf==="all" ? R.seq.n : R.seq.t) : null;
   return {
-    schema:"motiq_prototype/14", build:BUILD, record_type:"trial",
+    schema:"motiq_prototype/15", build:BUILD, record_type:"trial",
     note:"PROTOTYPE. Browser mm and browser timing are approximations.",
     trial_id:R.trialId, trial_uid:R.trialUid,
     session_key:SESSION_KEY,
@@ -9593,6 +9663,7 @@ function buildRecord(){
         : R.seq.onsets.filter((o,i)=>o<=R.streamCutMs && R.seq.isTarget[i]).length,
       onsets_ms:R.seq.onsets, tone_type:R.seq.isTarget.map(x=>x?"target":"standard"),
       intervals_ms:R.seq.intervals, min_isi_ms:R.seq.minISI,
+      max_isi_ms:R.seq.maxISI, mean_isi_ms:R.seq.meanISI,
       // THE GENERATED STIMULUS LIST, verbatim: index, type, scheduled onset. The three
       // arrays above say the same thing and are kept because every reader of an older
       // record knows them; this is the form the specification asks for, and it is the only
@@ -9629,6 +9700,19 @@ function buildRecord(){
        participant who practised from one whose examiner skipped it -- and the first trial of
        a task is exactly where that difference shows. "No practice is specified for this
        condition" is a third state and is not the same as either. */
+    /* THE TEMPLATE'S NAME, as the task description names it and as the printed sheet is
+       labeled. The geometry is exported in full beside it; the name is what ties a trial to
+       the sheet the participant was actually looking at, and working it back out of pitch,
+       turns and hand is a reconstruction that goes wrong the first time a geometry default
+       is edited. */
+    template_name: templateNameFor(c, TRIAL.drawHand||TRIAL.tapHand),
+    practice_turns_used: PRACTICE_TURNS,
+    /* THE SENTENCE THE EXAMINER WAS GIVEN TO SAY before this trial, and whether it came from
+       the task description or was generated for a repeat the description does not script.
+       The participant heard a particular sentence, and six trials of one task differ in
+       little else -- so a record that omits it cannot say what the participant was told. */
+    examiner_said: (()=>{ try{ return trialScript(); }catch(e){ return null; } })(),
+    examiner_said_source: (()=>{ try{ return trialScriptSource(); }catch(e){ return null; } })(),
     practice: {
       specified: practicePlan(c).length>0,
       ran: PRACTICE_DONE.has(c.id) || (!!c.finBlock && finBlockPractised()),
@@ -10026,11 +10110,39 @@ const CSV_HEAD=[
   "participant_language","administered_in_participant_language",
   "pitch_mm","turns","radius_mm","direction","template_path_mm","template_style","tap_zone_mm","zones",
   "pentagon_side_mm","pentagon_separation_mm","pentagon_scored",
-  "audio_key","stream_duration_s","floor_ms","mean_interval_ms","p_target","tone_ms",
-  "f_standard_hz","f_target_hz","tone_level","seed","seed_mode",
+  "audio_key","stream_duration_s","floor_ms","mean_interval_ms","tone_ms",
+  "f_standard_hz","f_target_hz","tone_level","seed","seed_mode","seed_source",
+  // p_target IS GONE RATHER THAN EMPTIED. The column held a target probability, and the
+  // count is not sampled from one any more -- a reader seeing it blank would conclude the
+  // stream had no targets. What replaces it is the number the trial was BUILT to contain,
+  // the table row it came from, and which trial of the task this was.
+  "target_count_planned","target_count_source","trial_index_in_task",
+  "stimulus_kind","digit_set","digit_slot_ms",
+  // The gap law in force, on every row, because it is the thing that defines the stream and
+  // it is no longer reconstructible from a mean and a floor alone.
+  "gap_min_ms","gap_mean_ms","gap_max_ms","gap_discard_above_ms","gap_redraws",
+  "sequence_regenerations","min_target_gap_ms","mean_isi_ms",
   "n_tones","n_targets","n_tones_played","n_targets_played","stream_cut_ms","stop_mode",
   "self_paced_stream","adjacent_targets_allowed",
   "min_isi_ms","output_latency_ms",
+  // THE AUDIO PATH, per trial. headphones_used matters most: headphones take the stimulus
+  // out of the voice recording, so a trial recorded through them cannot yield a within-file
+  // response latency at all.
+  "audio_route_declared","headphones_used","volume_step","volume_fixed_before_check",
+  "stimulus_in_voice_recording","orientation_stated","speaker_clear_of_hand",
+  "audio_clock_t0_s","audio_base_latency_s",
+  // The audibility check, so a trial can be read without finding a session record.
+  "audibility_outcome","audibility_form","audibility_attempts","audibility_examiner_heard",
+  // Practice. "Specified for this condition" and "happened in this session" are different
+  // facts and a single flag cannot carry both.
+  "practice_specified","practice_ran","practice_skipped","practice_template",
+  // The examiner's record of the trial. Fields 1 and 2 stay apart here as they do in the
+  // record: collapsing them loses the only thing their order was protecting.
+  "examiner_observed_count","examiner_unable_to_track","examiner_observed_of",
+  "participant_reported_kind","participant_reported_total","participant_reported_level",
+  "reported_scored_against","examiner_quality","examiner_task_switch","examiner_note",
+  "template_name","practice_turns_used",
+  "examiner_said","examiner_said_source",
   "n_pen_samples","achieved_rate_hz","n_strokes",
   "n_taps_left","n_taps_right","n_taps_single","alternation_pct",
   "tones_presented","responses_made","omissions","omission_rate","omission_window_ms",
@@ -10083,6 +10195,8 @@ function csvRows(rec){
   const EV=(rec.trial&&rec.trial.examiner_events)||{};
   const HV=rec.hover||{}, PL=rec.pen_lifts||{};
   const SU=rec.sustained||{}, AN=rec.anchoring||{};
+  const GL=(seq&&seq.gap_law)||{}, PLC=(seq&&seq.placement)||{};
+  const AUD=rec.audibility||{}, PR_=rec.practice||{}, EE=rec.examiner_entry||{};
   const pts=(rec.strokes||[]).flat();
   const dur=pts.length>1?(pts[pts.length-1].t-pts[0].t):0;
   const rate=dur>0?((pts.length-1)/(dur/1000)).toFixed(1):"";
@@ -10147,14 +10261,34 @@ function csvRows(rec){
     sp.template_style??"", tapp.zone_mm??"", tapp.zones??"",
     rec.pentagon?.side_mm??"", rec.pentagon?.centre_separation_mm??"",
     rec.pentagon?bit(rec.pentagon.scored):"",
-    au.key??"", au.durS??"", au.floorMs??"", au.meanMs??"", au.ptg??"", au.tone??"",
+    au.key??"", au.durS??"", au.floorMs??"", au.meanMs??"", au.tone??"",
     au.f_standard??"", au.f_target??"", au.level??"", au.seed??"", au.seed_mode??"",
+    seq?(seq.seed_source??""):"",
+    seq?(seq.target_count_planned??""):"", seq?(seq.target_count_source??""):"",
+    seq?(seq.trial_index_in_task??""):"",
+    seq?(seq.stimulus_kind??""):"", seq?(seq.digit_set??""):"", seq?(seq.digit_slot_ms??""):"",
+    GL.min_ms??"", GL.mean_ms??"", GL.max_ms??"", GL.discard_above_ms??"", GL.redraws??"",
+    PLC.regenerations??"", PLC.min_target_gap_ms??"", seq?(seq.mean_isi_ms??""):"",
     seq?seq.n_tones:"", seq?seq.n_targets:"",
     seq?(seq.n_tones_played??""):"", seq?(seq.n_targets_played??""):"",
     seq?(seq.stream_cut_ms??""):"", seq?(seq.stop_mode??""):"",
     seq?bit(seq.self_paced_stream):"", seq?bit(seq.adjacent_targets_allowed):"",
     seq?Math.round(seq.min_isi_ms):"",
     rec.audio_runtime?rec.audio_runtime.output_latency_ms.toFixed(2):"",
+    au.route_declared??"", au.headphones_used==null?"":bit(au.headphones_used),
+    au.volume_step??"", au.volume_fixed_before_check==null?"":bit(au.volume_fixed_before_check),
+    au.stimulus_in_voice_recording==null?"":bit(au.stimulus_in_voice_recording),
+    au.orientation_stated??"", au.speaker_clear_of_hand??"",
+    seq?(seq.audio_clock_t0_s??""):"", seq?(seq.audio_base_latency_s??""):"",
+    AUD.outcome??"", AUD.form??"", AUD.attempts??"",
+    AUD.examiner_could_hear==null?"":bit(AUD.examiner_could_hear),
+    bit(PR_.specified), bit(PR_.ran), bit(PR_.skipped), PR_.template??"",
+    EE.observed_count??"", EE.observed_unable_to_track==null?"":bit(EE.observed_unable_to_track),
+    EE.observed_of??"",
+    EE.reported_kind??"", EE.reported_total??"", EE.reported_level??"",
+    EE.scored_against_target_count??"", EE.quality??"", EE.task_switch??"", EE.note??"",
+    rec.template_name??"", rec.practice_turns_used??"",
+    rec.examiner_said??"", rec.examiner_said_source??"",
     pts.length, rate, (rec.strokes||[]).length,
     num(tp.nL), num(tp.nR), num(tp.nS),
     Number.isFinite(tp.altPct)?tp.altPct.toFixed(1):"",
@@ -10413,13 +10547,13 @@ function exportAllJSON(){
       started_iso:r.started_iso, mime_type:r.mime_type,
       bytes:r.bytes ?? (r.blob?r.blob.size:null) }));
     save(`${fileStem()}.json`, JSON.stringify({
-      schema:"motiq_prototype/14", build:BUILD, exported_iso:new Date().toISOString(),
+      schema:"motiq_prototype/15", build:BUILD, exported_iso:new Date().toISOString(),
       note:"trials are per trial; screening is per participant administration; audio_index lists the voice clips held in IndexedDB on the device that produced this file, and the clip bytes are downloaded separately.",
       trials, screening, audio_index:audio
     },null,2),"application/json");
   }).catch(()=>{
     save(`${fileStem()}.json`, JSON.stringify({
-      schema:"motiq_prototype/14", build:BUILD, exported_iso:new Date().toISOString(),
+      schema:"motiq_prototype/15", build:BUILD, exported_iso:new Date().toISOString(),
       note:"the voice clip store could not be read, so audio_index is empty; the clips may still exist on the device.",
       trials, screening, audio_index:[]
     },null,2),"application/json");
@@ -10555,7 +10689,12 @@ const STATE_FIELDS=["pid","grp","sex","byear","bmonth","domhand","ambihand","not
                     "pitch_pen","turns_pen","pitch_finger","turns_finger",
                     "pitch_finger_small","turns_finger_small",
                     "startdia","enddia","advturns","endang","split","tapdia","zonegap","longtrial",
-                    "fstd","ftgt","lvl","seedmode","idle","ppmm"];
+                    "fstd","ftgt","lvl","seedmode","idle","ppmm",
+                    // The audio path the examiner set: the route, how far the volume was
+                    // raised, and the orientation stated to the participant. All three are
+                    // written into every trial record, so losing them on a reload would mean
+                    // the trials after it claim a setup nobody chose.
+                    "audioroute","volstep","audioorient","audiospeaker"];
 // Start-up runs the same change handlers the UI does, and those handlers persist. Until
 // restoreState() has had its chance to read what is on the device, persisting would write
 // the empty start-up DOM straight over a saved session -- which is how a reload came to
