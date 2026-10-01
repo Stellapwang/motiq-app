@@ -972,6 +972,23 @@
       </div>
     </fieldset>
 
+    <!-- THE DIGIT CONDITIONS CANNOT RUN WITHOUT THE RECORDINGS, and this is how they are
+         run anyway. It is a rehearsal switch, not a stimulus setting: it exists so the two
+         conditions can be walked through before a speaker has been recorded, and every
+         trial it produces is marked DATA HELD for the reason given. -->
+    <fieldset>
+      <legend>Spoken digits <span style="font-weight:400;color:var(--muted)">— rehearsal only</span></legend>
+      <div id="standinNote"></div>
+      <div class="r2" style="margin-top:10px">
+        <div><label for="digitstandin">Stimulus for VOC_VDGT and PEN_VDGT</label>
+          <select id="digitstandin" onchange="setDigitStandin(this.value)">
+            <option value="none">None — the conditions stay blocked</option>
+            <option value="speech">The device announces 1, 2, 3, 4, 5 — rehearsal</option>
+          </select></div>
+        <div style="align-self:end"><button class="ghost sm" onclick="demoDigits()">Play 1 to 5</button></div>
+      </div>
+    </fieldset>
+
     <div class="navrow">
       <button class="big ghost" onclick="goPage(3)">Back to session</button>
       <button class="big" onclick="goPage(3)">Done</button></div>
@@ -2312,7 +2329,7 @@ function goPage(n){
   if(n===1) requestAnimationFrame(()=>{ tapPracticeReset(); practiceRender(); });
   if(n===3){ renderPlan(); renderQueue(); }
   renderStatus();
-  if(n===4){ renderAudioTable(); updateGeo(); renderAdvanceNote(); }
+  if(n===4){ renderAudioTable(); updateGeo(); renderAdvanceNote(); renderStandinNote(); }
   if(n===5) renderInstrPage();
   if(n===6){ renderSaved(); renderScreens(); renderAudioStore();
     if(!LAST){ $("saveState").innerHTML="";
@@ -3955,12 +3972,33 @@ function taskBlocked(c){
 // is down, so the dual task is not a dual task on this platform. They stay selectable --
 // the UI is built and the trials are worth collecting for everything except the tap channel
 // -- and every trial says so in its record.
-const dataHeldReason = c => {
-  if(!c || !c.dataHeld) return null;
-  if(c.dataHeld==="palm rejection") return PALM_WARNING;
-  return String(c.dataHeld);
+/* WHY A CONDITION'S DATA IS HELD, which is no longer a fixed catalogue field. Palm rejection
+   is a property of the platform and is written on the row; the digit stand-in is a property
+   of this SESSION, switched on by the examiner, so it has to be asked for rather than read.
+   Everything that showed a held badge or wrote data_held now goes through here. */
+const DIGIT_STANDIN_HELD="digit stand-in";
+const heldKeyFor = c => {
+  if(!c) return null;
+  if(c.dataHeld) return c.dataHeld;
+  if(avKind(c.id)==="digits" && digitStandin() && !DIGIT_SET.installed)
+    return DIGIT_STANDIN_HELD;
+  return null;
 };
-const HELD_SHORT={ "palm rejection":"tap responses suppressed by palm rejection" };
+const STANDIN_WARNING =
+  "The five numbers are spoken by this iPad's speech synthesis, not by one speaker recorded "+
+  "once, so the stimulus is a property of the operating system and two devices can present "+
+  "different words. Speech also cannot be scheduled on the audio clock, so each onset is "+
+  "dispatched from a timer and drifts from the schedule; the actual dispatch times and the "+
+  "measured drift are recorded. This is for walking through the conditions, not for data.";
+const dataHeldReason = c => {
+  const k=heldKeyFor(c);
+  if(!k) return null;
+  if(k==="palm rejection") return PALM_WARNING;
+  if(k===DIGIT_STANDIN_HELD) return STANDIN_WARNING;
+  return String(k);
+};
+const HELD_SHORT={ "palm rejection":"tap responses suppressed by palm rejection",
+                   [DIGIT_STANDIN_HELD]:"the digits are spoken by the device, not recorded" };
 
 // How long a task's auditory stream is expected to run, for planning only.
 // A fixed-length trial runs its length. A self-paced one is cut when drawing stops, so
@@ -4038,8 +4076,9 @@ function renderPlan(){
              dropped it in that state. lengthCell owns it in both states now, and leaving this
              behind printed it twice on every switched-off spiral. -->
         <td>${lengthCell(c,s2,blocked)}</td>
-        <td class="note" style="padding-top:10px">${c.dataHeld?`<div style="color:#8c2020;font-weight:600;margin-bottom:3px">DATA HELD — ${esc(HELD_SHORT[c.dataHeld]||c.dataHeld)}</div>`:""}${[c.spiral?"drawing":null,c.tap?"tapping":null,
-            c.audio?"<b>tones</b>":null, c.count?"count aloud":null,
+        <td class="note" style="padding-top:10px">${heldKeyFor(c)?`<div style="color:#8c2020;font-weight:600;margin-bottom:3px">DATA HELD — ${esc(HELD_SHORT[heldKeyFor(c)]||heldKeyFor(c))}</div>`:""}${[c.spiral?"drawing":null,c.tap?"tapping":null,
+            c.audio?`<b>${avKind(c.id)==="digits"?"spoken digits":"tones"}</b>`:null,
+            c.count?"count aloud":null,
             c.verbal?"spoken task":null, c.voice?"<b>voice</b>":null].filter(Boolean).join(" · ")}</td>
         <td>${adhocCell(c,s2,blocked)}${c.tier==="expl"
           ? `<div style="margin-top:5px"><button class="ghost sm"
@@ -6094,6 +6133,10 @@ function audio(){ if(!ctx) ctx=new (window.AudioContext||window.webkitAudioConte
 function newMaster(){ const c=audio(); stopAudio();
   MASTER=c.createGain(); MASTER.gain.value=1; MASTER.connect(c.destination); OSCS=[]; return MASTER; }
 function stopAudio(){
+  // The speech stand-in is dispatched from timers rather than from the audio graph, so
+  // silencing the graph does not silence it. Without this, ending a trial early leaves the
+  // device talking over the next screen.
+  clearSpeech();
   try{ if(MASTER) MASTER.gain.setValueAtTime(0,audio().currentTime); }catch(e){}
   OSCS.forEach(o=>{try{o.stop();}catch(e){}}); OSCS=[];
   if(MASTER){ try{MASTER.disconnect();}catch(e){} MASTER=null; }
@@ -6167,10 +6210,133 @@ const DIGIT_SET = {
   samples:{}
 };
 const digitSlotCeilingMs = () => AV_GAP.minMs-150;
+
+/* ===========================================================================
+   THE SPEECH STAND-IN
+
+   No recordings exist, so the two digit conditions refuse to be planned. This lets them be
+   run anyway, with the device speaking the five numbers, so the conditions can be walked
+   through before a speaker has been recorded.
+
+   IT IS A REHEARSAL AND THE RECORD SAYS SO ON EVERY TRIAL. Every trial it produces is
+   DATA HELD, which is the mechanism the palm-rejection conditions already use: the UI is
+   built and the trials run, but the data is not the measure the condition is meant to
+   produce. Three separate reasons, and none of them is fixable from here:
+
+     THE VOICE IS THE DEVICE'S. SpeechSynthesis is a property of the operating system, so
+     two iPads on different iOS versions speak different stimuli while the record would
+     otherwise claim one set. This is the whole reason the specification asks for one
+     speaker recorded once.
+
+     THE ONSETS DRIFT. Everything else in this app hands the whole stream to the Web Audio
+     clock up front, which is sample-accurate and runs independently of the main thread.
+     Speech cannot be scheduled on that clock: an utterance is dispatched from a timer and
+     starts when the synthesizer gets to it. So the ACTUAL dispatch time of every stimulus
+     is recorded rather than derived, and the drift from the schedule is summarised on the
+     trial, because a response latency measured against a schedule the sound did not follow
+     is worse than no latency at all.
+
+     THE WORDS MAY NOT FIT. A spoken digit runs 400 to 600 ms against a 450 ms slot and a
+     600 ms minimum gap, so at the short end of the distribution one word can still be
+     speaking when the next is due. cancel() is called before each utterance so a late one
+     is cut rather than pushing everything after it -- a queue that serialises would turn a
+     60-stimulus trial into a cumulative slide -- and the cut is counted.
+   =========================================================================== */
+const DIGIT_STANDIN={ mode:"none", voice:null, primed:false };
+const digitStandin = () => DIGIT_STANDIN.mode==="none" ? null : DIGIT_STANDIN.mode;
+const speechAvailable = () => typeof window!=="undefined" && !!window.speechSynthesis
+                           && typeof SpeechSynthesisUtterance==="function";
+// Chosen once and recorded, because which voice spoke is part of what the stimulus was.
+function standinVoice(){
+  if(!speechAvailable()) return null;
+  if(DIGIT_STANDIN.voice) return DIGIT_STANDIN.voice;
+  const vs=window.speechSynthesis.getVoices()||[];
+  DIGIT_STANDIN.voice = vs.find(v=>/^en[-_]US/i.test(v.lang))
+                     || vs.find(v=>/^en/i.test(v.lang)) || vs[0] || null;
+  return DIGIT_STANDIN.voice;
+}
+if(speechAvailable()) try{
+  // Voices load asynchronously; without this the first trial of a session picks nothing and
+  // the platform default is used silently.
+  window.speechSynthesis.addEventListener("voiceschanged", ()=>{ DIGIT_STANDIN.voice=null; standinVoice(); });
+}catch(e){}
+// IOS WANTS A GESTURE BEFORE IT WILL SPEAK AT ALL, and the stream on a spiral condition
+// starts at the first pen contact rather than at the START press. So the first utterance is
+// primed from a button, once per session, and is silent.
+function primeSpeech(){
+  if(!speechAvailable() || DIGIT_STANDIN.primed) return;
+  try{ const u=new SpeechSynthesisUtterance(" "); u.volume=0;
+       window.speechSynthesis.speak(u); DIGIT_STANDIN.primed=true; }catch(e){}
+}
+const DIGIT_WORD={1:"one",2:"two",3:"three",4:"four",5:"five"};
+let SPEECH_TIMERS=[];
+function clearSpeech(){
+  SPEECH_TIMERS.forEach(t=>clearTimeout(t)); SPEECH_TIMERS=[];
+  if(speechAvailable()) try{ window.speechSynthesis.cancel(); }catch(e){}
+}
+/* One spoken digit, dispatched as close to `whenMs` from now as a timer allows. The actual
+   dispatch time is handed back so the record carries what happened rather than what was
+   asked for. */
+function speakDigitAt(digit, whenMs, onSpoken){
+  const t=setTimeout(()=>{
+    try{
+      // A LATE UTTERANCE IS CUT, NOT QUEUED. Queuing makes every later stimulus wait behind
+      // it, which on a 60-stimulus trial is a slide rather than a slip.
+      if(window.speechSynthesis.speaking || window.speechSynthesis.pending){
+        window.speechSynthesis.cancel();
+        if(onSpoken) onSpoken(performance.now(), true);
+      } else if(onSpoken) onSpoken(performance.now(), false);
+      const u=new SpeechSynthesisUtterance(DIGIT_WORD[digit]||String(digit));
+      const v=standinVoice(); if(v) u.voice=v;
+      u.lang=(v&&v.lang)||"en-US";
+      // Faster than default, so a word is likelier to finish inside the slot.
+      u.rate=1.25; u.volume=Math.max(0, Math.min(1, +$("lvl").value*2));
+      window.speechSynthesis.speak(u);
+    }catch(e){}
+  }, Math.max(0, whenMs));
+  SPEECH_TIMERS.push(t);
+}
+function setDigitStandin(mode){
+  DIGIT_STANDIN.mode = mode==="speech" ? "speech" : "none";
+  if(DIGIT_STANDIN.mode==="speech"){ primeSpeech(); standinVoice(); }
+  // The conditions become selectable or stop being, so everything that reads taskBlocked
+  // has to be redrawn.
+  renderStandinNote(); renderPlan(); renderAudioTable(); saveState();
+}
+function renderStandinNote(){
+  const el=$("standinNote"); if(!el) return;
+  const v=standinVoice();
+  el.innerHTML = !speechAvailable()
+    ? `<div class="warn">This device exposes no speech synthesis, so the rehearsal stand-in
+       is not available here. The two digit conditions stay blocked until the recordings are
+       installed.</div>`
+    : digitStandin()
+    ? `<div class="bad"><b>VOC_VDGT and PEN_VDGT are running on a rehearsal stand-in.</b>
+       The device speaks the numbers${v?` in <b>${esc(v.name)}</b> (${esc(v.lang)})`:""}, which is
+       not the specified stimulus: the voice belongs to this iPad's operating system rather
+       than to one speaker recorded once, and speech cannot be scheduled on the audio clock,
+       so the onsets drift from the schedule. <b>Every trial is marked DATA HELD</b> and
+       carries the measured drift. Use it to walk through the conditions, not to collect.</div>`
+    : `<div class="note" style="margin:0">No recordings are installed, so VOC_VDGT and
+       PEN_VDGT cannot be planned. Switch this on to walk through them with the device
+       speaking the numbers — the trials run and are marked DATA HELD. See
+       <code>DIGIT_SET</code> for what installing the real recordings requires.</div>`;
+}
+// Hear the stand-in without starting a trial.
+function demoDigits(){
+  if(!speechAvailable()) return;
+  primeSpeech(); clearSpeech();
+  DIGIT_SET.digits.forEach((d,i)=>speakDigitAt(d, 120+i*700));
+}
 // Decoded once per digit and held, because decoding inside the scheduling loop
 // would put a variable delay between the schedule and the sound.
 const DIGIT_BUFFERS={};
 function digitSetProblem(){
+  // A REHEARSAL STAND-IN MAKES THE CONDITION RUNNABLE, NOT VALID. It stops being blocked and
+  // starts being DATA HELD, which is the honest state: the screens, the timing rules, the
+  // placement and the examiner entry are all exercised, and the stimulus is not the one the
+  // specification names.
+  if(!DIGIT_SET.installed && digitStandin()) return null;
   if(!DIGIT_SET.installed) return "no digit recordings are installed in this build";
   const missing=DIGIT_SET.digits.filter(d=>!DIGIT_SET.samples[d]);
   if(missing.length) return `recordings are missing for ${missing.join(", ")}`;
@@ -6202,9 +6368,27 @@ function assignDigits(seq, seed){
 }
 // One stimulus, scheduled at an absolute AudioContext time. Returns the duration
 // it occupies, which is the tone length or the digit slot.
-function playStimulus(at, isTarget, cfg, kind, digit){
+function playStimulus(at, isTarget, cfg, kind, digit, idx){
   if(kind==="digits"){
     const buf=DIGIT_BUFFERS[digit];
+    // THE STAND-IN, when no recording exists for this digit. Dispatched from a timer against
+    // the audio clock's own notion of now, so the delay is measured from the same origin the
+    // schedule was built on; the actual dispatch time is written back into RUN so the record
+    // carries what happened.
+    if(!buf && digitStandin()==="speech"){
+      const delay=Math.max(0, (at-audio().currentTime)*1000);
+      // ONLY A NUMBERED STIMULUS WRITES BACK. The audibility check plays digits too and
+      // passes no index, and it runs before readyTrial has replaced RUN -- so without this
+      // it would write a dispatch time under the key "undefined" into whatever RUN object
+      // was left from the previous trial.
+      speakDigitAt(digit, delay, (whenPerf, cut)=>{
+        if(!RUN || typeof idx!=="number" || RUN.perf0==null) return;
+        RUN.speechActual=RUN.speechActual||{};
+        RUN.speechActual[idx]=+(whenPerf-RUN.perf0).toFixed(1);
+        if(cut) RUN.speechCuts=(RUN.speechCuts||0)+1;
+      });
+      return DIGIT_SET.slotMs;
+    }
     if(!buf) return DIGIT_SET.slotMs;
     const c=audio(), src=c.createBufferSource(), g=c.createGain();
     src.buffer=buf; g.gain.value=+$("lvl").value;
@@ -7371,10 +7555,18 @@ function showInstructionScreen(seq,c,returnToReady){
         : btn("std","Play the beep")) +
       `<div class="note" style="margin-top:6px">Play ${twoTones?"these":"this"} before
         starting.</div></div>` : ``;
-  const palmNote = palmRejectionAffected(c) ? `<div style="margin-top:16px;padding:14px 18px;
+  /* WHY THIS CONDITION'S DATA IS HELD, on the screen the examiner reads immediately before
+     running it. It used to be palm rejection only, named as a platform limit -- which was
+     the only reason a condition could be held when it was written. The digit stand-in is a
+     second reason and an examiner-chosen one, so the note asks dataHeldReason rather than
+     testing for palm rejection: a held condition that says nothing here is one somebody runs
+     believing it is collecting. */
+  const heldWhy = dataHeldReason(c);
+  const palmNote = heldWhy ? `<div style="margin-top:16px;padding:14px 18px;
       border:1px solid #e9b7b7;border-radius:9px;background:#fdecec;color:#8c2020;
       max-width:660px;text-align:left;font-size:17px;line-height:1.55">
-      <b>Platform limit.</b> ${PALM_WARNING}</div>` : ``;
+      <b>${palmRejectionAffected(c)?"Platform limit.":"Data held — rehearsal only."}</b>
+      ${heldWhy}</div>` : ``;
   // The drawing rules, one click away, identical to the ones the single-task spirals show
   // inline. The
   // dual-task screen stays short so the new demand is what the participant reads first,
@@ -8062,6 +8254,10 @@ function readyTrial(seq,c,justInstructed){
   const start=document.createElement("button"); start.textContent="START";
   start.onclick=()=>{ $("ctrl").innerHTML=""; LAST_TASK=TRIAL.task; LAST_HAND=handNow;
                       if($("saypre")) $("saypre").innerHTML="";
+                      // The one gesture every trial has. iOS will not speak before one, and
+                      // on a spiral condition the stream starts at the first pen contact,
+                      // which is not a gesture Safari counts.
+                      if(digitStandin()) primeSpeech();
                       runTrial(seq,c); };
   $("ctrl").appendChild(start);
 
@@ -8136,7 +8332,7 @@ function runTrial(seq,c){
     // clocks at the moment the stream started -- the AudioContext time and the trial time
     // -- so every actual onset is reconstructible to sample accuracy rather than asserted.
     seq.onsets.forEach((on,i)=>playStimulus(t0+on/1000, seq.isTarget[i], cfgL,
-      seq.kind, seq.digits?seq.digits[i]:null));
+      seq.kind, seq.digits?seq.digits[i]:null, i));
     RUN.toneT0Ms=+(performance.now()-perf0).toFixed(1);
     RUN.toneClockT0=+t0.toFixed(6);
     RUN.toneClockBase=a.baseLatency||0;
@@ -9913,7 +10109,39 @@ function buildRecord(){
       // could slip -- but the two clocks are still recorded so an actual onset is
       // reconstructible rather than asserted. Output latency is NOT folded in: whether to
       // subtract it is an analysis decision, and folding it in makes that unrecoverable.
-      actual_onsets_ms:R.actualOnsets||null,
+      /* ACTUAL ONSETS. On the real recordings these are the schedule, because every
+         stimulus is committed to the sample-accurate audio clock before the first sound
+         plays. ON THE SPEECH STAND-IN THEY ARE MEASURED, one per stimulus, from the timer
+         that dispatched it -- and they are the only onsets a reader should use, because the
+         schedule is what was asked for and not what was spoken. */
+      actual_onsets_ms: (R.speechActual
+        ? R.seq.onsets.map((on,i)=>R.speechActual[i] ?? null)
+        : R.actualOnsets) || null,
+      onset_source: R.speechActual ? "measured_at_dispatch" : "audio_clock_schedule",
+      /* THE DRIFT, SUMMARISED, so nobody has to compute it to find out whether the trial is
+         usable even as a rehearsal. cut_count is utterances abandoned because the previous
+         word was still speaking when the next was due. */
+      speech_standin: R.speechActual ? (()=>{
+        /* DRIFT AGAINST THE SAME NUMBER THE REAL PATH REPORTS AS ITS ONSET, which is
+           RUN.actualOnsets -- the expected trial-relative time, lead-in included. An earlier
+           version rebuilt that expression here from toneT0Ms and the lead and got it wrong by
+           exactly the lead, so the first stimulus of every trial reported half a second of
+           drift it did not have. Comparing against the value actually used removes the
+           possibility. */
+        const d=[], exp=R.actualOnsets||[];
+        R.seq.onsets.forEach((on,i)=>{ const a=R.speechActual[i];
+          if(a!=null && exp[i]!=null) d.push(a-exp[i]); });
+        const abs=d.map(Math.abs);
+        return { dispatched:d.length, scheduled:R.seq.n,
+          expected_onsets_ms:exp.length?exp:null,
+          drift_mean_ms: d.length?+(d.reduce((a,b)=>a+b,0)/d.length).toFixed(1):null,
+          drift_max_abs_ms: abs.length?+Math.max(...abs).toFixed(1):null,
+          cut_count: R.speechCuts||0,
+          voice: DIGIT_STANDIN.voice ? DIGIT_STANDIN.voice.name : null,
+          voice_lang: DIGIT_STANDIN.voice ? DIGIT_STANDIN.voice.lang : null,
+          user_agent_note:"the voice is this device's, so user_agent is what identifies the stimulus set",
+          note:"a rehearsal stand-in for the unrecorded digits. The words are spoken by the device's speech synthesis and dispatched from timers, so onsets drift from the schedule and a late word is cut rather than queued. Not the specified stimulus and not data." };
+      })() : null,
       audio_clock_t0_s:R.toneClockT0??null,
       audio_base_latency_s:R.toneClockBase??null,
       audio_output_latency_s:R.toneClockOut??null,
@@ -9924,7 +10152,11 @@ function buildRecord(){
       placement:R.seq.targetPlan||null,
       stimulus_kind:R.seq.kind||null,
       seed_source:R.seq.seedSource||null,
-      digit_set: R.seq.kind==="digits" ? DIGIT_SET.id : null,
+      // NAMES THE STAND-IN WHEN ONE WAS USED, because this is the field an analyst filters
+      // on. Reporting the placeholder id would say "no recordings" where the truth is "words
+      // this device spoke", and those are different trials.
+      digit_set: R.seq.kind!=="digits" ? null
+        : (R.speechActual ? "standin/speech_synthesis" : DIGIT_SET.id),
       digit_slot_ms: R.seq.kind==="digits" ? DIGIT_SET.slotMs : null } : null,
     // THE AUDIBILITY CHECK, on every trial of an auditory condition rather than once on the
     // session. A trial record has to stand on its own: an analyst holding one row must be
@@ -10102,9 +10334,15 @@ function buildRecord(){
       } : { palm_rejection:false },
     // A held condition produces a record like any other, and that record says why the
     // measure it was meant to produce is not in it. Without this the trials look ordinary.
-    data_held: R.c && R.c.dataHeld ? { held:true, reason:R.c.dataHeld,
+    // THE NOTE FOLLOWS THE REASON. It was the palm-rejection sentence unconditionally, which
+    // was right while palm rejection was the only way a condition could be held -- and on a
+    // digit stand-in trial it would have told an analyst the platform had broken a dual task,
+    // on a condition that is not a dual task and was not broken by the platform.
+    data_held: heldKeyFor(R.c) ? { held:true, reason:heldKeyFor(R.c),
         detail:dataHeldReason(R.c),
-        note:"this condition runs and records, but the platform prevents it from being the dual task it is designed as. Do not analyze its dual-task contrast; the single-task channel is unaffected." }
+        note: heldKeyFor(R.c)===DIGIT_STANDIN_HELD
+          ? "the stimulus is a rehearsal stand-in, not the specified recordings. The response data is against words this device spoke, at onsets that drifted from the schedule, so neither accuracy nor latency is comparable with a trial run on the real set. Exclude these trials rather than adjusting them."
+          : "this condition runs and records, but the platform prevents it from being the dual task it is designed as. Do not analyze its dual-task contrast; the single-task channel is unaffected." }
       : { held:false },
     // The model the participant was actually looking at. Scoring a copy against a remembered
     // description of the figure is not the same as scoring it against the figure; the vertices
@@ -10971,6 +11209,11 @@ function saveState(){
       // must not be able to get out of a failed one by reloading either.
       audibility:AUDIBILITY,
       practiceDone:[...PRACTICE_DONE], practiceSkipped:[...PRACTICE_SKIPPED],
+      // Deliberately persisted: a rehearsal switch that silently turned itself off on a
+      // reload would leave the two conditions blocked again mid-session with no explanation,
+      // and one that silently turned itself ON would be worse. It is shown in red wherever
+      // it is in force.
+      digitStandin:DIGIT_STANDIN.mode,
       series:SERIES, repeats:REPEATS, lastTask:LAST_TASK, lastHand:LAST_HAND,
       audio:AUDIO_DEFAULTS,
       // What the build that saved this session shipped. On the way back in it is the only
@@ -11001,6 +11244,10 @@ function restoreState(){
     // entirely if nothing in it resolves -- an order of ids this build does not have is a
     // saved session from a different battery, and administrationOrder() rebuilding it from
     // the catalogue is the right outcome.
+    if(st.digitStandin==="speech" && !DIGIT_SET.installed){
+      DIGIT_STANDIN.mode="speech";
+      if($("digitstandin")) $("digitstandin").value="speech";
+    }
     if(Array.isArray(st.practiceDone))
       PRACTICE_DONE=new Set(st.practiceDone.map(taskId).filter(id=>byId(id)));
     if(Array.isArray(st.practiceSkipped))

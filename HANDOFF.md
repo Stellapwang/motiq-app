@@ -211,7 +211,11 @@ occasionally runs past four seconds, which does not sound like a long gap -- it 
 the iPad has stopped working, and the examiner would stop a good trial.
 
 **The digit recordings are not in this build.** `DIGIT_SET` ships empty and the two digit
-conditions refuse to be planned. The recordings have to be one speaker, recorded once, all
+conditions refuse to be planned. A rehearsal stand-in on the Parameters page will let them
+run with the device SPEAKING the five numbers -- enough to walk through the conditions
+before a speaker has been recorded, and marked DATA HELD on every trial it produces, with
+the measured dispatch drift recorded. **Do not carry the stand-in across.** It exists
+because the recordings do not; once they do, it is dead code. The recordings have to be one speaker, recorded once, all
 five in a fixed slot of 450 ms or less, each word at the start of its slot and padded with
 silence rather than time-stretched, RMS-matched with peaks limited. **The slot length has to
 be measured before the minimum interval is fixed**, because the silence between consecutive
