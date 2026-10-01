@@ -8432,7 +8432,7 @@ function finish(){
   // whether the task happened to be sustained.
   //
   // VOC_VODD is not sustained, so the trial ends on its own clock and finish() ran straight
-  // into askCount; the count overlay (z-index 3) covered the END sign before anybody saw it,
+  // into the entry screen; the overlay (z-index 3) covered the END sign before anybody saw
   // and the participant was asked for a number while still believing the task was running.
   // PEN_VODD is sustained, so its window closed and put END up minutes earlier, and the
   // number was asked afterwards. Two tasks that differ only in having a drawing hand were
@@ -8440,41 +8440,216 @@ function finish(){
   //
   // The sign goes up first in both, and stays up behind the prompt: the participant sees the
   // task end, and is then asked. Long enough to read a word, short enough not to be a wait.
-  if(c.count && RUN.reportedCount===undefined){
+  // GATED ON THE ENTRY SCREEN, NOT ON c.count. It used to run only where a participant
+  // total was collected, which left the digit conditions with no examiner record at all --
+  // they have no total to ask for, and that is exactly why what the EXAMINER heard is the
+  // only record of how the trial went.
+  if(needsAvEntry(c) && !(RUN.examinerEntry && RUN.examinerEntry.done)){
     if(!($("stopsign") && $("stopsign").classList.contains("on"))) showStopSign(true);
     // Measured from when the sign went up, so a sustained task whose window closed long ago
     // asks straight away and a fixed-length one that just raised it waits the full beat.
     const shown = STOP_SIGN_AT ? performance.now()-STOP_SIGN_AT : 0;
     const wait = Math.max(0, COUNT_PROMPT_DELAY_MS - shown);
-    setTimeout(()=>{ if(RUN && !RUN.saved) askCount(seq); }, wait);
+    setTimeout(()=>{ if(RUN && !RUN.saved) askExaminerEntry(seq); }, wait);
     return;
   }
   showEndControls(seq,c,pts,rate,att,tp);
 }
 
-// Uses showOverlay like every other overlay screen. It previously replaced the whole
-// overlay's innerHTML, destroying #ovBody / #ovFoot -- after which every later
-// showOverlay call threw, leaving this very prompt stranded back on screen.
-function askCount(seq){
-  const c=RUN.c;
-  const what = c.countOf==="all" ? "How many beeps in total?" : "How many high beeps?";
-  // The heading already asks the question, and the examiner is the only person who can see
-  // this screen. A line telling them to ask is one they have to read past every trial.
-  const sub  = "";
-  showOverlay(`<h3>${what}</h3>
-    ${sub?`<p>${sub}</p>`:""}
-    <input id="countInput" type="number" min="0" max="500"
-      style="max-width:200px;font-size:26px;text-align:center;margin-top:6px">
-    <p style="font-size:15px;color:#5d6570;margin-top:14px">Leave blank if they did not give a number.</p>`,
-    [{ label:"Record", onClick:()=>{
-        const el=$("countInput"), v=el?el.value:"";
-        RUN.reportedCount = v===""?null:+v;
+/* ===========================================================================
+   THE EXAMINER ENTRY SCREEN
+
+   Five fields in a stated order, replacing the single "How many high beeps?" box. The box
+   collected one number -- what the participant said at the end -- and the specification
+   makes that the SECOND field, behind something the old screen never asked for at all.
+
+   1. OBSERVED COUNT. What the examiner HEARD. On a counting condition it is the last number
+      the participant was heard to reach; on a digit condition it is how many "yes" responses
+      were heard. The examiner may instead record UNABLE TO TRACK, which is a real outcome
+      and not a missing value: a participant counting fast and quietly under a dual-task load
+      is genuinely hard to follow, and "I could not follow it" is information while a blank
+      is not.
+
+   2. PARTICIPANT-REPORTED TOTAL, on the counting conditions only. What they say when asked
+      at the end. It records an integer, or lost_track, or not_asked, or not_applicable --
+      and is NEVER LEFT BLANK, because a blank cannot be told apart from an unanswered
+      screen afterwards, while "not_asked" says the examiner made a decision.
+
+   WHY THE ORDER IS ENFORCED, and why field 1 locks once entered. Both fields are the
+   examiner's judgment about the same quantity, and the second one comes with the right
+   answer attached: a participant who says "fourteen" when the examiner thought they heard
+   twelve invites the examiner to decide they must have miscounted. Entering what was heard
+   BEFORE hearing what was claimed, and then being unable to revise it, is the whole point.
+   Field 2 is not reachable until field 1 is in, and field 1 cannot be edited afterwards.
+
+   3. QUALITY RATING: performed as instructed, partial, or unable. The trial-level judgment
+      that decides whether the data answers the question the trial was asked for.
+   4. NOTE. Free text.
+   5. TASK-SWITCHING FLAG, on the dual tasks only: did they stop drawing to respond, or stop
+      responding to draw. The instruction tells them to do neither, and a participant who
+      protects one task is the single most important thing to know about a dual-task trial --
+      without it a cost that is really a strategy looks like a cost.
+
+   NOTHING IS SHOWN AS CORRECT OR INCORRECT and the correct count is never displayed on this
+   screen. The examiner reads it aloud to nobody, but they do go on to administer three more
+   trials, and an examiner who knows the answer prompts differently.
+   =========================================================================== */
+const AV_QUALITY = [
+  ["as_instructed","Performed as instructed"],
+  ["partial",      "Partial"],
+  ["unable",       "Unable"]
+];
+const AV_REPORT_OPTS = [
+  ["lost_track",     "Lost track"],
+  ["not_asked",      "Not asked"],
+  ["not_applicable", "Not applicable"]
+];
+const AV_SWITCH = [
+  ["none",            "Neither — both kept going"],
+  ["stopped_drawing", "Stopped drawing to respond"],
+  ["stopped_responding","Stopped responding to draw"],
+  ["both",            "Both, at different points"],
+  ["not_observed",    "Could not tell"]
+];
+// Which fields a condition has. Field 2 exists only where a running total is held, so the
+// digit conditions do not have it: there is no total to report, which is the point of them.
+const avEntrySpec = c => ({
+  observe: c.avObserve || null,
+  report:  !!c.count,
+  switch:  isDualTask(c)
+});
+// Does this trial need the entry screen at all?
+const needsAvEntry = c => !!(c && c.audio && c.respond==="speak" && c.avObserve);
+
+function askExaminerEntry(seq){
+  const c=RUN.c, spec=avEntrySpec(c);
+  const E = RUN.examinerEntry = RUN.examinerEntry || {
+    observed_count:null, observed_unable:false, observed_entered:false,
+    reported_kind:null, reported_value:null,
+    quality:null, note:"", task_switch:null };
+  const observedLabel = spec.observe==="yes_responses"
+    ? "How many “yes” responses did you hear?"
+    : "What was the last number you heard them reach?";
+  const render=()=>{
+    const locked=E.observed_entered;
+    const rows=[];
+    // NUMBERED CONSECUTIVELY AS SHOWN, not by the specification's field numbers. A digit
+    // condition has no field 2, and printing "1, 3, 4" on screen reads as a field that
+    // failed to render rather than as one that does not exist for this condition. The
+    // specification's numbering is what `field_order` in the record preserves; this counter
+    // is only what the examiner reads down the page.
+    let fieldNo=0;
+    const num=()=>String(++fieldNo);
+    // ---- field 1 -----------------------------------------------------------------
+    rows.push(`<div style="text-align:left;max-width:560px;margin:0 auto 18px">
+      <div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em">${num()} · WHAT YOU HEARD</div>
+      <div style="font-size:21px;margin:4px 0 8px">${observedLabel}</div>
+      ${locked
+        ? `<div style="font-size:24px"><b>${E.observed_unable?"Unable to track":E.observed_count}</b>
+           <span class="note" style="margin:0 0 0 10px">recorded, and not editable — see below</span></div>`
+        : `<input id="obsInput" type="number" min="0" max="500" value="${E.observed_count??""}"
+             style="max-width:170px;font-size:26px;text-align:center">
+           <label style="display:flex;align-items:center;gap:9px;font-size:16px;margin-top:9px">
+             <input type="checkbox" ${E.observed_unable?"checked":""}
+               onchange="window.__avEntry('unable',this.checked)">
+             I could not follow it well enough to say</label>`}
+    </div>`);
+    // ---- field 2 -----------------------------------------------------------------
+    if(spec.report) rows.push(`<div style="text-align:left;max-width:560px;margin:0 auto 18px;
+        ${locked?"":"opacity:.4;pointer-events:none"}">
+      <div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em">${num()} · WHAT THEY REPORT</div>
+      <div style="font-size:21px;margin:4px 0 8px">“How many high beeps in total?”</div>
+      ${locked
+        ? `<input id="repInput" type="number" min="0" max="500"
+             value="${E.reported_kind==="integer"?E.reported_value:""}"
+             placeholder="their number"
+             style="max-width:170px;font-size:26px;text-align:center"
+             oninput="window.__avEntry('repNum',this.value)">
+           <div style="margin-top:9px">${AV_REPORT_OPTS.map(([k,l])=>
+             `<button class="ghost sm" style="margin:3px 6px 3px 0;${E.reported_kind===k
+               ?"background:#e3f3ea;border-color:#9ecfb5;font-weight:600":""}"
+               onclick="window.__avEntry('repKind','${k}')">${l}</button>`).join("")}</div>`
+        : `<div class="note" style="margin:0">Available once field 1 is recorded.</div>`}
+    </div>`);
+    // ---- field 3 -----------------------------------------------------------------
+    rows.push(`<div style="text-align:left;max-width:560px;margin:0 auto 18px">
+      <div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em">${num()} · QUALITY</div>
+      <div style="margin-top:6px">${AV_QUALITY.map(([k,l])=>
+        `<button class="ghost sm" style="margin:3px 6px 3px 0;${E.quality===k
+          ?"background:#e3f3ea;border-color:#9ecfb5;font-weight:600":""}"
+          onclick="window.__avEntry('quality','${k}')">${l}</button>`).join("")}</div>
+    </div>`);
+    // ---- field 4 -----------------------------------------------------------------
+    rows.push(`<div style="text-align:left;max-width:560px;margin:0 auto 4px">
+      <div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em">${num()} · NOTE</div>
+      <textarea id="avNote" rows="2" style="width:100%;font-size:17px;margin-top:6px"
+        oninput="window.__avEntry('note',this.value)"
+        placeholder="anything about this trial worth recording">${esc(E.note||"")}</textarea>
+    </div>`);
+    // ---- field 5 -----------------------------------------------------------------
+    // LAST, which is the order the specification states. An earlier draft put it above the
+    // note so the free text would be the final thing typed; the note no longer re-renders
+    // on each keystroke, so there is nothing to gain from the swap and a stated order is
+    // worth more than the convenience was.
+    if(spec.switch) rows.push(`<div style="text-align:left;max-width:560px;margin:0 auto 18px">
+      <div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em">${num()} · TASK SWITCHING</div>
+      <div style="font-size:17px;margin:4px 0 6px;color:#5d6570">Did either task stop while the
+        other one was being done?</div>
+      <div>${AV_SWITCH.map(([k,l])=>
+        `<button class="ghost sm" style="margin:3px 6px 3px 0;${E.task_switch===k
+          ?"background:#e3f3ea;border-color:#9ecfb5;font-weight:600":""}"
+          onclick="window.__avEntry('switch','${k}')">${l}</button>`).join("")}</div>
+    </div>`);
+    const missing=[];
+    if(!E.observed_entered) missing.push("field 1");
+    if(spec.report && E.observed_entered && !E.reported_kind) missing.push("field 2");
+    if(!E.quality) missing.push("the quality rating");
+    if(spec.switch && !E.task_switch) missing.push("the task-switching answer");
+    const btns=[];
+    if(!E.observed_entered) btns.push({ label:"Record what you heard", onClick:()=>{
+        const el=$("obsInput"), v=el?el.value:"";
+        if(!E.observed_unable && v===""){
+          alert("Enter the number you heard, or tick that you could not follow it.\n\n"+
+                "This field is what you heard, and it is recorded before you ask them for "+
+                "their total — which is why it cannot be left for later.");
+          return; }
+        E.observed_count = E.observed_unable ? null : +v;
+        E.observed_entered=true;
+        render(); } });
+    btns.push({ label:"Save the trial", ghost:!!missing.length, onClick:()=>{
+        if(missing.length){ alert("Still to complete: "+missing.join(", ")+"."); return; }
         hideOverlay();
-        finish();                   // re-enter now that the count exists
-      }},
-     { label:"Exit", ghost:true, onClick:()=>{
-        if(!confirm("Leave without recording the count?\n\nThe trial is lost, including the number the participant gave.")) return;
-        backToSession(); }}]);
+        E.done=true;
+        // Kept under its old name as well, because the result panel, the CSV and the
+        // record all read reportedCount and it still means the same thing.
+        RUN.reportedCount = E.reported_kind==="integer" ? E.reported_value : null;
+        finish(); } });
+    btns.push({ label:"Exit", ghost:true, onClick:()=>{
+        if(!confirm("Leave without recording this trial?\n\nThe trial is lost, including "+
+                    "what you heard and anything the participant said.")) return;
+        backToSession(); } });
+    showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em;
+        margin:0 0 14px">${RUN.task} · trial complete — your record of it</div>`+
+      rows.join("") +
+      `<div class="note" style="max-width:560px;margin:14px auto 0;text-align:left">
+        Do not tell them the number. Three more trials of this kind may follow, and an
+        examiner who knows the answer prompts differently.</div>`, btns);
+  };
+  window.__avEntry=(what,v)=>{
+    if(what==="unable"){ E.observed_unable=!!v; if(v && $("obsInput")) $("obsInput").value=""; render(); return; }
+    if(what==="repKind"){ E.reported_kind=v; E.reported_value=null;
+      if($("repInput")) $("repInput").value=""; render(); return; }
+    if(what==="repNum"){
+      if(v===""){ if(E.reported_kind==="integer"){ E.reported_kind=null; E.reported_value=null; } }
+      else { E.reported_kind="integer"; E.reported_value=+v; }
+      render(); return; }
+    if(what==="quality"){ E.quality=v; render(); return; }
+    if(what==="switch"){ E.task_switch=v; render(); return; }
+    // The note must not re-render: doing so would rebuild the textarea and lose the caret
+    // on every keystroke.
+    if(what==="note"){ E.note=v; return; }
+  };
+  render();
 }
 
 function showEndControls(seq,c,pts,rate,att,tp){
@@ -8532,7 +8707,7 @@ function renderResult(seq,c,pts,rate,att,tp){
         <th>Achieved rate</th><td class="num">${rate.toFixed(0)} Hz</td></tr>
     <tr><th>Strokes</th><td class="num">${STROKES.length}</td>
         <th>Drawing time</th><td class="num">${(pts.length>1?(pts[pts.length-1].t-pts[0].t)/1000:0).toFixed(1)} s</td></tr>`:""}
-    ${c.count?`<tr><th>Counted</th><td class="num">${RUN.reportedCount??"–"}</td>
+    ${c.count?`<tr><th>Reported</th><td class="num">${RUN.reportedCount??"–"}</td>
         <th>Actually presented</th><td class="num">${heardScheduled??"–"}</td></tr>`
       :`<tr><th>Taps</th><td class="num">${TAPS.length}</td>
         <th>First contact</th><td class="num">${RUN.firstContactMs??"–"} ms</td></tr>`}
@@ -8626,15 +8801,42 @@ function renderResult(seq,c,pts,rate,att,tp){
     as the tone onsets. The alignment is marked <code>uncharacterized</code> in the record:
     MediaRecorder start latency has not been measured on this device, so the first sample in the
     file is not known to correspond to that instant.</div>`:""}
-  ${c.count&&seq?(RUN.reportedCount==null
-    ? `<div class="warn">No count reported, so this trial has no validity check.</div>`
-    : (()=>{ const heard=countedHeard(seq, RUN.streamCutMs, c.countOf);
-        const err=RUN.reportedCount-heard;
-        return `<div class="${Math.abs(err)<=2?"good":"warn"}">Count error <b>${err>0?"+":""}${err}</b>
-          (${RUN.reportedCount} reported, ${heard} actually played${heard!==heardScheduled?` of ${heardScheduled} scheduled`:""}).
-          This is a validity criterion for the
-          trial, not a measure — a large error means attention was not on the tones.</div>`; })())
-    :""}`;
+  ${needsAvEntry(c)?(()=>{
+      const E=RUN.examinerEntry||{};
+      const want=seq&&seq.targetPlan?seq.targetPlan.wanted:null;
+      const heard=seq?countedHeard(seq, RUN.streamCutMs, c.countOf):null;
+      const rep=E.reported_kind==="integer"?E.reported_value:null;
+      // THREE LEVELS, NOT AN ERROR IN BEEPS. A continuous count error invites being analysed
+      // as a measure of counting accuracy, and it is not one -- it is a validity criterion,
+      // and the distance between 14 and 30 carries no more information than the fact that 30
+      // is wrong. Scored against the trial's TARGET COUNT, which the trial was built to
+      // contain exactly, rather than against what happened to play.
+      const bits=[];
+      bits.push(`<div class="note" style="margin:0"><b>What you heard:</b> ${
+        E.observed_unable ? "unable to track"
+          : (E.observed_count??"not recorded")}${want!=null?` · the trial contained
+        <b>${want}</b> target${want===1?"":"s"}`:""}${
+        heard!=null&&want!=null&&heard!==want?` (${heard} actually played)`:""}.</div>`);
+      if(!c.count) bits.push(`<div class="note" style="margin:4px 0 0">This condition collects
+        no participant total: there is no running count to report, which is what separates it
+        from the counting condition.</div>`);
+      else if(rep==null) bits.push(`<div class="warn">No number from the participant —
+        recorded as <code>${E.reported_kind||"not recorded"}</code>, which is a result and not
+        a gap.</div>`);
+      else {
+        const ok = want!=null && Math.abs(rep-want)<=2;
+        bits.push(`<div class="${ok?"good":"warn"}">Reported total <b>${rep}</b> —
+          <b>${ok?"plausible":"grossly discrepant"}</b>${want!=null?` against ${want},
+          within ±2`:""}. A validity criterion for the trial, not a measure: it is scored in
+          three levels rather than as a count error, because the distance from the right
+          answer says nothing a wrong answer does not.</div>`);
+      }
+      if(E.quality) bits.push(`<div class="note" style="margin:4px 0 0"><b>Quality:</b> ${
+        (AV_QUALITY.find(([k])=>k===E.quality)||[,E.quality])[1]}${
+        E.task_switch?` · <b>switching:</b> ${
+        (AV_SWITCH.find(([k])=>k===E.task_switch)||[,E.task_switch])[1].toLowerCase()}`:""}.</div>`);
+      return bits.join("");
+    })():""}`;
 
   if(tp && c.zones===2){
     const f=(v,u)=>(v==null||isNaN(v))?"–":(u?v.toFixed(2)+" Hz":v.toFixed(0)+" ms");
@@ -9065,6 +9267,52 @@ function buildRecord(){
         error: (R.reportedCount!=null && heard!=null) ? R.reportedCount-heard : null,
         note:"count error is a trial validity criterion, not a measure; presented counts the tones of the counted class that actually sounded"
       } : null,
+    /* THE EXAMINER'S RECORD OF THE TRIAL, with every field stored separately.
+
+       FIELDS 1 AND 2 ARE NOT MERGED, and the reason is the reason the entry screen enforces
+       their order: they are two different quantities that happen to be about the same thing.
+       Field 1 is what the examiner heard, taken before they knew what the participant would
+       claim; field 2 is what the participant claimed. Collapsing them into one "count" field
+       -- preferring whichever is present, say -- destroys exactly the comparison they exist
+       to support, and does it silently.
+
+       THE REPORTED TOTAL IS SCORED IN THREE LEVELS, NOT AS A CONTINUOUS ERROR. "Within two
+       of the target count" is plausible, anything further is grossly discrepant, and no
+       number is its own category. A continuous count error invites being analysed as a
+       measure of counting accuracy, and it is not one: it is a validity criterion, and the
+       distance between 14 and 30 carries no more information than the fact that 30 is wrong.
+
+       SCORED AGAINST THE TRIAL'S TARGET COUNT, which is what the specification says, and it
+       is now a real quantity rather than a sampled one -- the trial was built to contain
+       exactly that many. presented_actual is recorded beside it for the case where the
+       stream was cut short, so a trial that played 9 of its 14 targets is not read as a
+       participant who undercounted by five. */
+    examiner_entry: needsAvEntry(c) ? (()=>{
+      const E=R.examinerEntry||{};
+      const want = R.seq && R.seq.targetPlan ? R.seq.targetPlan.wanted : null;
+      const rep = E.reported_kind==="integer" ? E.reported_value : null;
+      const level = rep==null ? (E.reported_kind || "no_number")
+        : (want!=null && Math.abs(rep-want)<=2 ? "plausible" : "grossly_discrepant");
+      return {
+        field_order:["observed_count","participant_reported_total","quality","note","task_switch"],
+        observed_count: E.observed_unable ? null : (E.observed_count??null),
+        observed_unable_to_track: !!E.observed_unable,
+        observed_of: c.avObserve || null,
+        // Present and false on every digit condition, because "this condition has no field
+        // 2" is a fact about the condition and an empty field is not the same statement.
+        has_participant_report: !!c.count,
+        reported_kind: c.count ? (E.reported_kind||null) : "not_applicable",
+        reported_total: rep,
+        reported_level: c.count ? level : "not_applicable",
+        plausible_window: 2,
+        scored_against_target_count: want,
+        presented_actual: heard,
+        quality: E.quality||null,
+        note: E.note||"",
+        task_switch: isDualTask(c) ? (E.task_switch||null) : "not_applicable",
+        entry_order_enforced:true,
+        note_on_order:"field 1 is recorded before the participant is asked for their total, and is not editable afterwards. Both fields are the examiner's judgment about the same quantity and the second arrives with the answer attached, so the order is what keeps field 1 independent of it."
+      }; })() : null,
     verbal: c.verbal ? { ...(TRIAL.verbal||{}),
         fluency_cue_ms: R.fluencyCueMs ?? null,
         note:"prompt_text is the exact wording used with this participant on this trial. The app cannot score serial subtraction or fluency, so no count is collected."
