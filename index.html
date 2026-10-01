@@ -1663,8 +1663,13 @@ const avHasTargets = task =>
 function taskTrialOrdinal(){
   if(!TRIAL) return 1;
   if(TRIAL.adhoc || TRIAL.index==null) return 1;
+  // TEST TRIALS ONLY. The ordinal is what AV_TARGET_COUNTS and AV_SEEDS are keyed on, so
+  // counting the practice rows that now sit ahead of the trials would shift every dual
+  // trial one place down the table -- trial 1 would be handed trial 2's target count and
+  // trial 2's seed, which is a silent change to the stimuli every participant receives.
   let k=0;
-  for(let i=0;i<=TRIAL.index && i<QUEUE.length;i++) if(QUEUE[i].task===TRIAL.task) k++;
+  for(let i=0;i<=TRIAL.index && i<QUEUE.length;i++)
+    if(QUEUE[i].task===TRIAL.task && !isPracticeRow(QUEUE[i])) k++;
   return Math.max(1,k);
 }
 // The count this trial asks for, and where the number came from. A repeat beyond
@@ -4071,11 +4076,18 @@ function renderOrderPanel(){
   if(!sel.length){ host.innerHTML=""; return; }
   const FIN=finTemplateOrder();
   const finPlanned=FIN.order.filter(id=>sel.some(c=>c.id===id));
-  let h=`<table style="margin-top:10px"><tr><th>#</th><th>Task</th><th>Trials</th>
+  let h=`<table style="margin-top:10px"><tr><th>#</th><th>Task</th><th>Practice + trials</th>
           <th>Move</th></tr>`;
   sel.forEach((c,i)=>{
     const st=PLAN[c.id];
     const n=(st.hands==="each"||st.hands==="roles") ? st.repeats*2 : st.repeats;
+    // Stated beside the trial count, because the practice is part of what the task costs and
+    // is the half of it an examiner cannot otherwise see. Before the list is built this is
+    // what the task WILL get; after it, it is what the list holds.
+    const prBuilt = QUEUE.length ? practiceRowsOf(c.id).length : null;
+    const pr = prBuilt!=null ? prBuilt
+             : (practicePlan(c).length && (!c.finBlock || finPracticeFirst()===c.id)
+                 ? practicePlan(c).length : 0);
     // The arrows move within the WHOLE order, not within this filtered list, so a selected
     // task can be moved past an unselected one and the position is honored if that task is
     // selected later. Moving the first or last selected task off the end does nothing.
@@ -4083,7 +4095,7 @@ function renderOrderPanel(){
         <td><b>${c.id}</b> <span class="note" style="margin:0">${esc(c.label)}</span>
           ${c.finBlock?`<span class="note" style="margin:0;color:var(--warm)">
              · ${FIN_LABEL[c.id]||""}, order set by participant id</span>`:""}</td>
-        <td class="num">${n}</td>
+        <td class="num">${pr?`<span class="note" style="margin:0">${pr} practice +</span> `:""}${n}</td>
         <td>${i>0?`<button class="ghost sm" onclick="moveTask('${c.id}',-1)">↑</button>`:""}
             ${i<sel.length-1?`<button class="ghost sm" onclick="moveTask('${c.id}',1)">↓</button>`:""}
         </td></tr>`;
@@ -4256,7 +4268,8 @@ function planSet(id,key,val){ PLAN[id][key]=val; renderPlan(); saveState(); }
 
 // Consequences, not constraints: what this plan implies.
 function planSummary(){
-  let trials=0, secs=0, targetsByHand={dominant:0,nondominant:0}, anySelfPaced=false;
+  let trials=0, trials_practice=0, secs=0,
+      targetsByHand={dominant:0,nondominant:0}, anySelfPaced=false;
   CATALOGUE.forEach(c=>{
     const s=PLAN[c.id]; if(!s.include || taskBlocked(c)) return;
     const n = (s.hands==="each"||s.hands==="roles") ? s.repeats*2 : s.repeats;
@@ -4265,6 +4278,16 @@ function planSummary(){
     const len = s.lengthS!=null ? s.lengthS
               : (c.audio ? expectedStreamS(c,s) : selfPacedEstS());
     secs += n*(len+overheadFor(c.id));
+    // THE PRACTICE IS PART OF WHAT THE SESSION COSTS. It was left out of both estimates
+    // while it was a run-time decision, so the app told the examiner a session was shorter
+    // than it is -- by two spiral practices and a dual-task practice on every participant.
+    const prHands = (practicePlan(c).length && (!c.finBlock || finPracticeFirst()===c.id))
+      ? practicePlan(c).length : 0;
+    if(prHands){
+      trials_practice += prHands;
+      const prLen = c.spiral && !c.sustainedS ? selfPacedEstS() : AV_PRACTICE.durS;
+      secs += prHands*(prLen+overheadFor(c.id));
+    }
     const a=AUDIO_DEFAULTS[c.id];
     if(c.audio && a && a.hasTargets){
       // READ FROM THE TABLE, NOT FROM A RATE. The old projection multiplied an expected
@@ -4288,7 +4311,9 @@ function planSummary(){
   const low=Math.min(targetsByHand.dominant,targetsByHand.nondominant);
   const est=selfPacedEstS();
   $("planSummary").innerHTML=
-    `<div class="note"><b>${trials}</b> trials, roughly <b>${mins} min</b> including instruction
+    `<div class="note"><b>${trials}</b> trials${trials_practice
+       ? ` and <b>${trials_practice}</b> practice run${trials_practice===1?"":"s"}`:""},
+     roughly <b>${mins} min</b> including instruction
      and transitions (${OVERHEAD_S} s allowed per trial${anySelfPaced
        ? `; self-paced trials assumed <b>${est} s</b> each, never counted below a task's own
           audio floor`:``}).</div>` +
@@ -4379,6 +4404,19 @@ function buildQueue(){
     }
     return list;
   })();
+  /* WHICH FINGER CONDITION CARRIES THE BLOCK'S PRACTICE. The description gives the finger
+     block one practice "using the first template presented" and none when the template size
+     switches, so it belongs to whichever of the two runs first -- and to the only one of
+     them if just one is planned. Decided here, once, against the order actually about to be
+     built, rather than discovered at run time from whether the other one happened to go
+     first. */
+  const finPracticeHolder = (()=>{
+    const planned=ord.filter(id=>{ const c=byId(id);
+      return c && c.finBlock && PLAN[id] && PLAN[id].include && !taskBlocked(c); });
+    if(!planned.length) return null;
+    const assigned=FIN.order.filter(id=>planned.includes(id));
+    return (assigned[0] || planned[0]);
+  })();
   ord.map(byId).filter(Boolean).forEach(c=>{
     const s=PLAN[c.id]; if(!s.include) return;
     const why=taskBlocked(c);
@@ -4387,6 +4425,20 @@ function buildQueue(){
       sustainedS:s.sustainedS??null,
       verbalType:c.verbal?VERBAL_KEY(s.verbalType,c.verbal):null,
       status:"pending", skipReason:null });
+    /* PRACTICE GOES IN THE LIST, AHEAD OF THE TASK'S TRIALS AND INSIDE ITS BLOCK.
+       It used to be decided at run time from the task's own flags, which worked -- the
+       practice fired at whichever trial of the task came first, wherever that sat -- and was
+       invisible: the trial list showed six rows for a task that administers two practice runs
+       and six trials, the Session sequence panel said "6 trials", and neither time estimate
+       counted the practice at all. An examiner could not see it, could not move it, and was
+       told the session was shorter than it is.
+       Worse, the per-trial arrows can interleave two tasks' trials, and a run-time gate fires
+       on the first trial of a task WHEREVER it ends up -- so a practice run could be stranded
+       in the middle of another task. A row cannot be stranded: it moves with its block. */
+    if(practiceRowsWanted(c, finPracticeHolder)) practicePlan(c).forEach((hand,i)=>
+      QUEUE.push({ task:c.id, hand, kind:"practice",
+        practiceStep:i+1, practiceOf:practicePlan(c).length,
+        lengthS:null, sustainedS:null, status:"pending", skipReason:null }));
     if(s.hands==="none"){ for(let r=0;r<s.repeats;r++) push("none"); }
     else if(s.hands==="each"){ for(let r=0;r<s.repeats;r++){ push("dominant"); push("nondominant"); } }
     else if(s.hands==="roles"){ for(let r=0;r<s.repeats;r++){ push("dominant","A"); push("nondominant","B"); } }
@@ -4455,15 +4507,25 @@ let SESSION_STARTED_AT=null;
 function renderGlance(){
   const el=$("glance"); if(!el) return;
   if(!QUEUE.length){ el.classList.add("hidden"); el.innerHTML=""; return; }
-  const done=QUEUE.filter(q=>q.status==="done").length;
-  const skipped=QUEUE.filter(q=>q.status==="skipped").length;
-  const left=QUEUE.length-done-skipped;
+  // PRACTICE ROWS ARE IN THE QUEUE AND ARE NOT TRIALS. Counting them as trials would make
+  // "4 of 19 done" mean two different things in one sentence; counting them nowhere would
+  // put the time they take back out of the estimate, which is the defect this fixes.
+  const tests=QUEUE.filter(q=>!isPracticeRow(q));
+  const prs=QUEUE.filter(isPracticeRow);
+  const done=tests.filter(q=>q.status==="done").length;
+  const skipped=tests.filter(q=>q.status==="skipped").length;
+  const prLeft=prs.filter(q=>q.status==="pending").length;
+  const left=tests.length-done-skipped;
   const est=selfPacedEstS();
   let remainS=0;
   QUEUE.forEach(q=>{ if(q.status!=="pending") return;
     const c=byId(q.task); if(!c) return;
-    const len = q.lengthS!=null ? q.lengthS
-              : (c.audio ? expectedStreamS(c,{lengthS:null}) : est);
+    // A practice row is 20 s of stream, or one short spiral. Reading expectedStreamS for it
+    // would charge the session a full 60 s window for a 20 s practice.
+    const len = isPracticeRow(q)
+      ? (c.spiral && !c.sustainedS ? est : AV_PRACTICE.durS)
+      : (q.lengthS!=null ? q.lengthS
+         : (c.audio ? expectedStreamS(c,{lengthS:null}) : est));
     remainS += len + overheadFor(q.task); });
   const elapsed = SESSION_STARTED_AT ? (Date.now()-SESSION_STARTED_AT)/1000 : 0;
   const mmss = t => `${Math.floor(t/60)}:${String(Math.floor(t%60)).padStart(2,"0")}`;
@@ -4471,7 +4533,8 @@ function renderGlance(){
   el.innerHTML=`<div class="note" style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;
       background:#eef4fb;border:1px solid #cfe0f2;border-radius:8px;padding:9px 13px;
       margin:0 0 12px;font-size:14px;color:var(--ink)">
-    <span><b>${done}</b> done${skipped?` · <b>${skipped}</b> skipped`:""} · <b>${left}</b> to go</span>
+    <span><b>${done}</b> done${skipped?` · <b>${skipped}</b> skipped`:""} · <b>${left}</b> to go${
+      prLeft?` · <b>${prLeft}</b> practice`:""}</span>
     <span>elapsed <b>${mmss(elapsed)}</b></span>
     <span>about <b>${mmss(remainS)}</b> left
       <span class="note" style="margin:0">(at the ${est} s self-paced assumption)</span></span>
@@ -4484,29 +4547,52 @@ function renderQueue(){
   if(QPOS<QUEUE.length){
     const q=QUEUE[QPOS];
     $("nextUp").classList.remove("hidden");
+    // "Next up" is read before the row is loaded into TRIAL, so it counts the rows itself
+    // rather than calling queuePosition.
+    const nTests=QUEUE.filter(r=>!isPracticeRow(r)).length;
+    const nPos=QUEUE.slice(0,QPOS+1).filter(r=>!isPracticeRow(r)).length;
+    const what = isPracticeRow(q)
+      ? `<b>practice ${q.practiceStep} of ${q.practiceOf}</b>`
+      : `trial <b>${nPos}</b> of ${nTests}`;
+    const len = isPracticeRow(q)
+      ? ((byId(q.task)||{}).spiral && !(byId(q.task)||{}).sustainedS ? "one short spiral" : AV_PRACTICE.durS+" s")
+      : (q.lengthS===null?"self-paced":q.lengthS+" s");
     $("nextUpBody").innerHTML=`<div style="font-size:19px"><b>${q.task}</b> —
-      ${handWord(q.hand)}${q.role?" ("+q.role+")":""} · trial <b>${QPOS+1}</b> of ${QUEUE.length}
-      · ${q.lengthS===null?"self-paced":q.lengthS+" s"}
+      ${handWord(q.hand)}${q.role?" ("+q.role+")":""} · ${what}
+      · ${len}
       ${paramExploring()?`<span class="note" style="margin:0;color:var(--warm)">· parameter exploration</span>`:""}
       </div><div id="nextUpParams"></div>`;
     renderNextUpParams();
   } else {
     $("nextUp").classList.remove("hidden");
-    $("nextUpBody").innerHTML=`<div class="good">All ${QUEUE.length} planned trials are done or
+    $("nextUpBody").innerHTML=`<div class="good">All ${
+      QUEUE.filter(q=>!isPracticeRow(q)).length} planned trials are done or
       skipped. Build a new session, or change the plan and build again.</div>`;
   }
   $("queueBox").classList.remove("hidden");
   let h=`<tr><th>#</th><th>Task</th><th>Hand</th><th>Length</th><th>Status</th><th>Move</th></tr>`;
   QUEUE.forEach((q,i)=>{
     const cls=i===QPOS?"now":(q.status!=="pending"?"done":"");
-    const movable=q.status==="pending";
-    h+=`<tr><td class="${cls}">${i+1}</td><td class="${cls}">${q.task}</td>
+    const pr=isPracticeRow(q), c=byId(q.task);
+    // A PRACTICE ROW IS NOT INDIVIDUALLY MOVABLE. It belongs to its task and moves with it
+    // from the Session sequence panel; arrows here would let an examiner put a practice run
+    // after the trials it exists to prepare, or into the middle of another task. ✕ stays,
+    // because dropping a practice row is a real decision -- it is Skip practice -- and it is
+    // refused on the dual tasks, where the description offers no skip.
+    const movable=q.status==="pending" && !pr;
+    const droppable=q.status==="pending";
+    const len = pr ? (c && c.spiral && !c.sustainedS ? "practice" : AV_PRACTICE.durS+" s")
+                   : (q.lengthS===null?"self-paced":q.lengthS+" s");
+    h+=`<tr${pr?' style="background:#fbfaf6"':""}><td class="${cls}">${i+1}</td>
+        <td class="${cls}">${q.task}${pr?` <span class="note" style="margin:0">practice
+          ${q.practiceStep} of ${q.practiceOf}</span>`:""}</td>
         <td class="${cls}">${handWord(q.hand)}${q.role?" ("+q.role+")":""}</td>
-        <td class="${cls}">${q.lengthS===null?"self-paced":q.lengthS+" s"}</td>
+        <td class="${cls}">${len}</td>
         <td class="${cls}">${q.status}${q.skipReason?" — "+esc(q.skipReason):""}</td>
         <td>${movable?`<button class="ghost sm" onclick="moveTrial(${i},-1)">↑</button>
-             <button class="ghost sm" onclick="moveTrial(${i},1)">↓</button>
-             <button class="ghost sm" onclick="dropTrial(${i})">✕</button>`:""}</td></tr>`;
+             <button class="ghost sm" onclick="moveTrial(${i},1)">↓</button>`:""}
+            ${droppable?`<button class="ghost sm" onclick="dropTrial(${i})">✕</button>`:""}
+            ${pr?`<span class="note" style="margin:0">moves with the task</span>`:""}</td></tr>`;
   });
   $("queueTable").innerHTML=h;
   renderStatus();
@@ -4646,21 +4732,58 @@ function moveTrial(i,dir){
   const j=i+dir;
   if(j<QPOS || j>=QUEUE.length || i<QPOS) return;
   if(QUEUE[j].status!=="pending") return;
+  // A TRIAL CANNOT BE MOVED PAST ITS OWN PRACTICE, in either direction, and a practice row
+  // cannot be moved at all. The practice exists to prepare the trials that follow it, so a
+  // trial on the far side of it has not been prepared -- and the list is the only place
+  // where an examiner could produce that by pressing an arrow twice.
+  if(isPracticeRow(QUEUE[i]) || isPracticeRow(QUEUE[j])){
+    alert("Practice moves with its task.\n\nUse the arrows in the Session sequence panel on "+
+          "the session page to move the whole task, practice and trials together.");
+    return; }
   [QUEUE[i],QUEUE[j]]=[QUEUE[j],QUEUE[i]];
-  renderQueue();
+  renderQueue(); saveState();
 }
 function dropTrial(i){
   if(i<QPOS || QUEUE[i].status!=="pending") return;
-  if(!confirm(`Remove ${QUEUE[i].task} (${handWord(QUEUE[i].hand)}) from the list?`)) return;
-  QUEUE.splice(i,1); renderQueue();
+  const q=QUEUE[i];
+  // Dropping a practice row IS Skip practice, so it goes through the same decision: the
+  // whole task's practice, and refused where the description offers no skip.
+  if(isPracticeRow(q)){
+    const c=byId(q.task);
+    if(!practiceSkippable(c)){
+      alert("The practice cannot be skipped on a dual task.\n\nIt is the only place a "+
+            "participant can be shown that neither half may stop while the other is done, "+
+            "and a participant who can do both halves separately can still not do the task.");
+      return; }
+    if(!confirm(`Skip the practice for ${q.task}?\n\nEvery trial of this task will record `+
+                `that practice was skipped.`)) return;
+    QUEUE.forEach(r=>{ if(r.task===q.task && isPracticeRow(r) && r.status==="pending"){
+      r.status="skipped"; r.skipReason="practice skipped by the examiner"; } });
+    PRACTICE_SKIPPED.add(q.task);
+    renderQueue(); saveState(); return; }
+  if(!confirm(`Remove ${q.task} (${handWord(q.hand)}) from the list?`)) return;
+  QUEUE.splice(i,1); renderQueue(); saveState();
 }
 
 function skipCurrent(){
   if(QPOS>=QUEUE.length) return;
+  // SKIPPING A PRACTICE ROW IS SKIPPING THE PRACTICE, not skipping one row of it, and it
+  // goes through the same rule as the Skip control on the practice screen -- the whole
+  // task's practice, and refused on a dual task where the description offers no skip.
+  // Otherwise an examiner could reach past the refusal by skipping the row instead.
+  if(isPracticeRow(QUEUE[QPOS])){
+    const c=byId(QUEUE[QPOS].task);
+    if(!practiceSkippable(c)){
+      alert("The practice cannot be skipped on a dual task.\n\nIt is the only place a "+
+            "participant can be shown that neither half may stop while the other is done.");
+      return; }
+    if(!confirm(`Skip the practice for ${QUEUE[QPOS].task}?\n\nEvery trial of this task `+
+                `will record that practice was skipped.`)) return;
+    skipRemainingPractice(QUEUE[QPOS].task); return; }
   const why=prompt("Skip this trial. Reason (recorded on the session):","");
   if(why===null) return;
   QUEUE[QPOS].status="skipped"; QUEUE[QPOS].skipReason=why||"no reason given";
-  QPOS++; renderQueue();
+  QPOS++; renderQueue(); saveState();
 }
 // Another run of the battery inside the same attendance: visit unchanged, session +1.
 function newSession(){
@@ -6866,13 +6989,22 @@ function runCurrent(){
   if(!storageGuard()){ goPage(6); return; }
   if(QPOS>=QUEUE.length){ sessionComplete(); return; }
   const q=QUEUE[QPOS], c=byId(q.task);
+  const phys = q.hand==="none" ? null : physHand(q.hand);
   TRIAL={ ...q, index:QPOS,
-    drawHand: (c.spiral||c.pent) ? physHand(q.hand) : null,
+    drawHand: (c.spiral||c.pent) ? (phys || physHand("dominant")) : null,
     tapHand:  c.zones===2 ? "both"
              : c.pent ? null
-             : c.spiral&&c.tap ? (physHand(q.hand)==="right"?"left":"right")
-             : physHand(q.hand),
+             : c.spiral&&c.tap ? ((phys||"right")==="right"?"left":"right")
+             : phys,
     implement: c.implement || "pen" };
+  // A PRACTICE ROW IS THE SAME TRIAL ENGINE WITH THREE OVERRIDES: a short template, a short
+  // window, and the flag every downstream branch reads. Set here, where the row is turned
+  // into a TRIAL, so the practice cannot differ from the trial in any way nobody chose.
+  if(isPracticeRow(q)){
+    TRIAL.practice={ step:q.practiceStep, of:q.practiceOf, hand:q.hand };
+    TRIAL.sustainedS = c.sustainedS ? practiceWindowS(c) : null;
+    TRIAL.lengthS = (c.audio && !c.spiral) ? AV_PRACTICE.durS : (c.spiral ? null : c.lengthS);
+  }
   // The instruction page appears only when the task changes. A hand swap inside a
   // task is not a change of task; it is called out on the ready screen instead.
   const newTask = TRIAL.task !== LAST_TASK;
@@ -6896,7 +7028,7 @@ function runCurrent(){
 function showTaskStartScreen(cont){
   const c=byId(TRIAL.task);
   const { total } = taskTrialSpan();
-  const hands=[...new Set(QUEUE.filter(q=>q.task===TRIAL.task).map(q=>q.hand))];
+  const hands=[...new Set(testRowsOf(TRIAL.task).map(q=>q.hand))];
   const handWords = hands.length>1 ? "alternating hands, starting with the dominant"
     : hands[0]==="both" ? "both hands together"
     : hands[0]==="none" ? "no hand — listening and speaking only"
@@ -6930,13 +7062,14 @@ function showTaskStartScreen(cont){
    signal until now was the next trial's reminder line naming a different task. */
 function showTaskEndScreen(taskId){
   const c=byId(taskId);
-  const done=QUEUE.filter(q=>q.task===taskId && q.status==="done").length;
-  const skipped=QUEUE.filter(q=>q.task===taskId && q.status==="skipped").length;
+  const done=testRowsOf(taskId).filter(q=>q.status==="done").length;
+  const skipped=testRowsOf(taskId).filter(q=>q.status==="skipped").length;
+  const prSkipped=practiceRowsOf(taskId).filter(q=>q.status==="skipped").length;
   const nextTask=(()=>{ for(let i=QPOS;i<QUEUE.length;i++)
       if(QUEUE[i].status==="pending") return QUEUE[i].task; return null; })();
   showOverlay(`<h3 style="font-size:32px">${esc(c?c.label:taskId)} — finished</h3>
     <p style="font-size:20px">${done} trial${done===1?"":"s"} saved${
-      skipped?`, ${skipped} skipped`:""}.</p>
+      skipped?`, ${skipped} skipped`:""}${prSkipped?`, practice skipped`:""}.</p>
     <p style="font-size:19px;color:#5d6570">${nextTask
       ? `Next in the session: <b>${nextTask}</b> — ${esc((byId(nextTask)||{}).label||"")}`
       : "That is the last task in the session."}</p>`,
@@ -7296,8 +7429,11 @@ function setTaskCue(id){
 // How many trials of this task the plan holds, and which one this is.
 function taskTrialSpan(){
   if(!TRIAL || TRIAL.adhoc || TRIAL.index==null) return { ord:1, total:1 };
+  // Test trials only, for the same reason taskTrialOrdinal counts them: "last one, let's
+  // come back to your right hand" has to be the last TRIAL, not the last row.
   let ord=0, total=0;
-  QUEUE.forEach((q,i)=>{ if(q.task!==TRIAL.task) return; total++; if(i<=TRIAL.index) ord++; });
+  QUEUE.forEach((q,i)=>{ if(q.task!==TRIAL.task || isPracticeRow(q)) return;
+    total++; if(i<=TRIAL.index) ord++; });
   return { ord:Math.max(1,ord), total:Math.max(1,total) };
 }
 /* THE SCRIPTS, TAKEN FROM THE TASK DESCRIPTION WORD FOR WORD rather than generated.
@@ -7370,7 +7506,7 @@ function trialScript(){
     return (total>1 && ord>1 ? (last?"Last one. Are you ready?":"Let’s do it again. Are you ready?")
                              : "Are you ready?") + tail;
   const alternating = total>1 &&
-    new Set(QUEUE.filter(q=>q.task===TRIAL.task).map(q=>q.hand)).size>1;
+    new Set(testRowsOf(TRIAL.task).map(q=>q.hand)).size>1;
   if(!alternating)
     return (ord===1 ? `Are you ready? Use your ${hand} hand.`
           : last    ? `Last one with your ${hand} hand.`
@@ -7404,7 +7540,7 @@ function reminderText(){
   else if(cfg) bits.push(cfg.hasTargets?"targets only":"every stimulus");
   if(c.verbal && TRIAL.verbal) bits.push(TRIAL.verbal.prompt_type_label.toLowerCase() +
     (TRIAL.verbal.prompt_text?` — “${esc(TRIAL.verbal.prompt_text)}”`:""));
-  const pos = TRIAL.adhoc ? "run now" : `${TRIAL.index+1}/${QUEUE.length}`;
+  const pos = positionWord();
   return `<b>${TRIAL.task}</b> ${pos} · ${bits.join(" · ")}`;
 }
 
@@ -7460,7 +7596,7 @@ function reminderText(){
    =========================================================================== */
 let PRACTICE_DONE=new Set();
 let PRACTICE_SKIPPED=new Set();
-let PRACTICE=null;
+// PRACTICE is gone with the cursor it held: the queue is the cursor now.
 // How many practice runs a condition gets, and on which hands.
 function practicePlan(c){
   if(!c) return [];
@@ -7479,11 +7615,60 @@ function practicePlan(c){
 // and the second finds it already done.
 const finBlockPractised = () =>
   CATALOGUE.some(c=>c.finBlock && PRACTICE_DONE.has(c.id));
+// Which finger condition WOULD carry the block's practice, for the sequence panel before any
+// list exists. buildQueue decides it for real against the order it is about to emit.
+function finPracticeFirst(){
+  const planned=administrationOrder().filter(id=>{ const c=byId(id);
+    return c && c.finBlock && PLAN[id] && PLAN[id].include && !taskBlocked(c); });
+  if(!planned.length) return null;
+  const F=finTemplateOrder();
+  return F.order.filter(id=>planned.includes(id))[0] || planned[0];
+}
+// Whether buildQueue should emit practice rows for this condition.
+function practiceRowsWanted(c, finHolder){
+  if(!c || !practicePlan(c).length) return false;
+  // Only the condition carrying the finger block's practice gets rows; the other finds the
+  // practice already administered and goes straight to its trials.
+  if(c.finBlock) return c.id===finHolder;
+  return true;
+}
+// Kept for the ad-hoc path, which builds no queue: a Run-now trial is a parameter-tuning
+// trial and is never practised, so this only ever answers false there.
 function practiceNeeded(c){
   if(!c || PRACTICE_DONE.has(c.id) || PRACTICE_SKIPPED.has(c.id)) return false;
   if(c.finBlock && finBlockPractised()) return false;
   return practicePlan(c).length>0;
 }
+// A practice row, told apart from a trial everywhere it matters.
+const isPracticeRow = q => !!(q && q.kind==="practice");
+/* WHERE THIS TRIAL SITS AMONG THE TRIALS, which is not where its row sits in the list now
+   that practice rows share the list. "Trial 3 of 4" on a task with two trials and two
+   practice runs is a sentence that is wrong twice, and it appeared on the reminder line, the
+   hand-change screen, the end-of-trial panel and in the record.
+
+   Both are returned: `pos`/`total` count trials, which is what a person is told, and
+   `row`/`rows` locate the row in the list, which is what finds it again. */
+function queuePosition(){
+  if(!TRIAL || TRIAL.adhoc || TRIAL.index==null)
+    return { pos:null, total:null, row:null, rows:QUEUE.length, practice:false };
+  const practice=isPracticeRow(QUEUE[TRIAL.index]);
+  let pos=0, total=0;
+  QUEUE.forEach((q,i)=>{ if(isPracticeRow(q)) return;
+    total++; if(i<=TRIAL.index) pos++; });
+  return { pos:practice?null:Math.max(1,pos), total, row:TRIAL.index+1, rows:QUEUE.length,
+           practice };
+}
+// "trial 3 of 12", or what to say instead on a practice row.
+function positionWord(){
+  if(!TRIAL || TRIAL.adhoc) return "run now";
+  const Q=queuePosition();
+  if(Q.practice) return `practice ${TRIAL.practice?TRIAL.practice.step:""} of ${
+    TRIAL.practice?TRIAL.practice.of:""}`.replace(/\s+/g," ").trim();
+  return Q.pos==null ? "" : `trial ${Q.pos} of ${Q.total}`;
+}
+// The task's TEST trials, which is what "trial 3 of 6" and the target-count table count.
+const testRowsOf = task => QUEUE.filter(q=>q.task===task && !isPracticeRow(q));
+const practiceRowsOf = task => QUEUE.filter(q=>q.task===task && isPracticeRow(q));
 // SKIP exists everywhere the description offers it, and nowhere it does not.
 const practiceSkippable = c => !isDualTask(c);
 // A practice spiral is the SHORT template: three turns at the condition's own pitch, which
@@ -7546,65 +7731,57 @@ function practiceRecap(c){
   return null;
 }
 
-function startPractice(c, cont){
-  PRACTICE={ task:c.id, hands:practicePlan(c), i:0, cont, base:{...TRIAL}, ran:0 };
-  practiceIntro();
-}
-function practiceIntro(){
-  const P=PRACTICE, c=byId(P.task);
-  if(P.i>=P.hands.length) return practiceFinished();
-  const hand=P.hands[P.i];
-  const btns=[
-    { label:"Next", onClick:()=>{ hideOverlay(); runPracticeTrial(); } },
-    { label:"Instruction", ghost:true, onClick:()=>{
-        showInstructionScreen(null, c, {practice:true}); } },
-    { label:"Back", ghost:true, onClick:()=>backToSession() }];
-  if(practiceSkippable(c)) btns.splice(1,0,
-    { label:"Skip practice", ghost:true, onClick:()=>{
-        if(!confirm("Skip the practice for this task?\n\nEvery trial of this task will "+
-                    "record that practice was skipped.")) return;
-        PRACTICE_SKIPPED.add(c.id); saveState(); hideOverlay(); P.cont(); } });
-  const tpl = c.spiral ? practiceTemplateName(geomPitch(c), physHand(hand==="none"?"dominant":hand)) : null;
+/* The practice screens, driven by the queue row rather than by a run of their own. The
+   earlier version held its own cursor in a PRACTICE object and walked the hands itself,
+   which is the same job the queue already does for trials -- and doing it twice is what kept
+   the practice out of the list, out of the sequence panel and out of both time estimates. */
+function showPracticeIntro(c, seq){
+  const step=TRIAL.practice.step, of=TRIAL.practice.of, hand=TRIAL.practice.hand;
+  const go=()=>{ TRIAL.introDone=true; hideOverlay(); readyTrial(seq, c, false); };
+  const btns=[{ label:"Next", onClick:go }];
+  if(practiceSkippable(c)) btns.push({ label:"Skip practice", ghost:true, onClick:()=>{
+      if(!confirm("Skip the practice for this task?\n\nEvery trial of this task will record "+
+                  "that practice was skipped.")) return;
+      hideOverlay(); skipRemainingPractice(c.id); } });
+  btns.push({ label:"Instruction", ghost:true,
+              onClick:()=>showInstructionScreen(seq, c, {practice:true}) });
+  btns.push({ label:"Back", ghost:true, onClick:()=>backToSession() });
+  const tpl = c.spiral ? practiceTemplateName(geomPitch(c), TRIAL.drawHand) : null;
   const same = c.spiral && geomTurns_raw(c)<=PRACTICE_TURNS;
   showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em;
-      margin:0 0 14px">${P.task} · practice ${P.i+1} of ${P.hands.length}</div>
+      margin:0 0 14px">${TRIAL.task} · practice ${step} of ${of}</div>
     <h3 style="font-size:28px;line-height:1.3">Practice</h3>
-    <p style="font-size:22px;line-height:1.45">“${practiceScript(c, hand, P.i)}”</p>
+    <p style="font-size:22px;line-height:1.45">“${practiceScript(c, hand, step-1)}”</p>
     ${tpl?`<p style="font-size:16px;color:#5d6570">Template <code>${tpl}</code>${
       same?" — this condition's test template is already three turns, so the practice runs the same one"
           :" — three turns, the small spiral"}.</p>`:""}
     ${c.audio?`<p style="font-size:16px;color:#5d6570">${AV_PRACTICE.durS} s containing
       ${AV_PRACTICE.targets} targets.</p>`:""}
-    <p class="note" style="margin-top:12px">Nothing here is saved. Reset it and run it again
-    as often as the participant needs.</p>`, btns);
+    <p class="note" style="margin-top:12px">Nothing here is saved. Run it again as often as
+    the participant needs.</p>`, btns);
 }
-function runPracticeTrial(){
-  const P=PRACTICE, c=byId(P.task), hand=P.hands[P.i];
-  const phys = hand==="none" ? null : physHand(hand);
-  TRIAL={ ...P.base, hand,
-    drawHand: (c.spiral||c.pent) ? (phys||physHand("dominant")) : null,
-    tapHand:  c.zones===2 ? "both" : c.pent ? null
-            : c.spiral&&c.tap ? ((phys||"right")==="right"?"left":"right") : phys,
-    implement: c.implement || "pen",
-    // THE PRACTICE OVERRIDES, in one place: a short template, a short window, and a flag
-    // every downstream branch reads rather than inferring practice from the lengths.
-    practice:{ step:P.i+1, of:P.hands.length, hand },
-    sustainedS: c.sustainedS ? practiceWindowS(c) : null,
-    lengthS: c.audio && !c.spiral ? AV_PRACTICE.durS : (c.spiral ? null : P.base.lengthS) };
-  openTrial(false);
+// SKIPPING TAKES THE WHOLE TASK'S PRACTICE, not the row in front of the examiner. "Skip
+// practice" is a decision about the task; skipping one hand and practising the other is not
+// a thing the description offers and is not what anybody pressing it means.
+function skipRemainingPractice(taskId){
+  QUEUE.forEach(q=>{ if(q.task===taskId && isPracticeRow(q) && q.status==="pending"){
+    q.status="skipped"; q.skipReason="practice skipped by the examiner"; } });
+  PRACTICE_SKIPPED.add(taskId);
+  // Past every practice row of this task, wherever the cursor is standing.
+  while(QPOS<QUEUE.length && QUEUE[QPOS].status!=="pending") QPOS++;
+  renderQueue(); saveState();
+  RUN=null; runCurrent();
 }
 // The screen after a practice run. Not the save screen: there is nothing to save.
 function practiceResult(){
-  const P=PRACTICE, c=byId(P.task);
-  P.ran++;
+  const c=RUN.c, step=TRIAL.practice.step, of=TRIAL.practice.of;
   const seq=RUN&&RUN.seq;
   const played = seq ? countedHeard(seq, RUN?RUN.streamCutMs:null, c.countOf||"targets") : null;
   // THE DESCRIPTION ASKS THE QUESTION AFTER THE DUAL-TASK PRACTICE, and this is the one
   // place in the battery where the examiner may act on the answer: practice is where a
   // misunderstanding is supposed to be found and corrected. During a test trial no field is
   // shown as correct and the count is never displayed; here it is, deliberately, because an
-  // examiner who cannot tell whether the participant understood cannot decide to run the
-  // practice again.
+  // examiner who cannot tell whether the participant understood cannot decide to run it again.
   const ask = (c.count && seq)
     ? `<p style="font-size:21px">“How many high beeps did you count in total?”</p>
        <p style="font-size:17px;color:#5d6570">There were <b>${played}</b>. This is practice,
@@ -7612,34 +7789,51 @@ function practiceResult(){
     : (seq && avKind(c.id)==="digits"
       ? `<p style="font-size:17px;color:#5d6570">There were <b>${played}</b> twos. This is
          practice, so you may correct a misunderstanding and run it again.</p>` : "");
-  const more = P.i+1 < P.hands.length;
+  const more = step<of;
+  const advance=()=>{
+    if(QUEUE[QPOS] && isPracticeRow(QUEUE[QPOS])) QUEUE[QPOS].status="done";
+    PRACTICE_DONE.add(c.id);
+    if(QPOS===TRIAL.index) QPOS++;
+    renderQueue(); saveState();
+    hideOverlay(); RUN=null;
+    // THE RECAP GOES BETWEEN THE LAST PRACTICE AND THE FIRST TRIAL, which is where the
+    // description puts it. Keyed on what the NEXT row is rather than on the step count, so
+    // a practice row dropped from the list cannot leave the recap unshown.
+    const nxt=QUEUE[QPOS];
+    if(nxt && nxt.task===c.id && !isPracticeRow(nxt)){ showPracticeRecap(c); return; }
+    runCurrent();
+  };
   showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em;
-      margin:0 0 14px">${P.task} · practice ${P.i+1} of ${P.hands.length} · not saved</div>
+      margin:0 0 14px">${TRIAL.task} · practice ${step} of ${of} · not saved</div>
     <h3 style="font-size:26px">Practice run finished</h3>${ask}`,
-    [{ label: more ? "Next practice" : "Go to the trials", onClick:()=>{
-         hideOverlay(); P.i++; practiceIntro(); } },
-     { label:"Run it again", ghost:true, onClick:()=>{ hideOverlay(); runPracticeTrial(); } },
-     { label:"Instruction", ghost:true, onClick:()=>showInstructionScreen(null, c, {practice:true}) },
+    [{ label: more ? "Next practice" : "Go to the trials", onClick:advance },
+     { label:"Run it again", ghost:true, onClick:()=>{
+         hideOverlay(); RUN=null; TRIAL.introDone=true; openTrial(false); } },
+     { label:"Instruction", ghost:true,
+       onClick:()=>showInstructionScreen(null, c, {practice:true}) },
      { label:"Exit", ghost:true, onClick:()=>backToSession() }]);
 }
-function practiceFinished(){
-  const P=PRACTICE, c=byId(P.task);
-  PRACTICE_DONE.add(P.task); saveState();
+function showPracticeRecap(c){
   const recap=practiceRecap(c);
-  const cont=P.cont;
-  PRACTICE=null;
-  // THE RECAP IS A SCREEN HERE, which the description calls "no screen". It means there is
-  // no screen for the PARTICIPANT, and that is still true -- this one faces the examiner and
+  if(!recap){ runCurrent(); return; }
+  // THE RECAP IS A SCREEN HERE, which the description calls "no screen". It means there is no
+  // screen for the PARTICIPANT, and that is still true -- this one faces the examiner and
   // holds the words they have to say before the first trial. Without it the recap is a
   // paragraph in a document nobody has open during a session.
-  if(!recap){ TRIAL={...P.base}; cont(); return; }
   showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em;
-      margin:0 0 14px">${P.task} · before the first trial</div>
+      margin:0 0 14px">${c.id} · before the first trial</div>
     <h3 style="font-size:24px">Read this, then start</h3>
     <p style="font-size:22px;line-height:1.5">“${recap}”</p>`,
-    [{ label:"Ready", onClick:()=>{ hideOverlay(); TRIAL={...P.base}; cont(); } },
+    [{ label:"Ready", onClick:()=>{ hideOverlay(); runCurrent(); } },
      { label:"Practice again", ghost:true, onClick:()=>{
-         hideOverlay(); PRACTICE_DONE.delete(P.task); startPractice(c, cont); } },
+         // Back to this task's practice rows, re-opened as pending, and the cursor with them.
+         let first=-1;
+         QUEUE.forEach((q,i)=>{ if(q.task!==c.id || !isPracticeRow(q)) return;
+           q.status="pending"; q.skipReason=null; if(first<0) first=i; });
+         if(first>=0) QPOS=first;
+         PRACTICE_DONE.delete(c.id); PRACTICE_SKIPPED.delete(c.id);
+         renderQueue(); saveState();
+         hideOverlay(); runCurrent(); } },
      { label:"Exit", ghost:true, onClick:()=>backToSession() }]);
 }
 
@@ -7798,12 +7992,11 @@ function readyTrial(seq,c,justInstructed){
     const form=audibilityForm(TRIAL.task);
     if(form && !AUDIBILITY[form]){ showAudibilityCheck(form, ()=>readyTrial(seq,c,justInstructed)); return; }
     if(form && audibilityBlocks(TRIAL.task)){ audibilityFailed(form); return; }
-    // PRACTICE COMES AFTER THE CHECK AND BEFORE THE FIRST TRIAL, which is the order the
-    // description gives. Never while a practice run is itself being set up -- that is what
-    // TRIAL.practice guards -- and never on an ad-hoc run, which is a parameter-tuning trial
-    // and not an administration.
-    if(!TRIAL.practice && !TRIAL.adhoc && practiceNeeded(c)){
-      startPractice(c, ()=>{ openTrial(false); }); return; }
+    // THE PRACTICE INTRO, which carries the line the examiner reads. It sits after the
+    // audibility check and before the practice run, which is the order the description
+    // gives, and it is reached through readyTrial because that is the one door every run
+    // goes through -- a Run-it-again lands here too and gets the same screen.
+    if(TRIAL.practice && !TRIAL.introDone){ showPracticeIntro(c, seq); return; }
   }
   $("hud").classList.remove("cue"); $("hud").classList.remove("big");
   $("hud").textContent = (TRIAL.lengthS===null && !c.audio) ? "" : (TRIAL.lengthS??"")+" s";
@@ -7832,7 +8025,7 @@ function readyTrial(seq,c,justInstructed){
           : `Now draw with the <b>${handNow.toUpperCase()}</b> hand`)
       : `Now tap with the <b>${handNow.toUpperCase()}</b> index finger`;
     showOverlay(`<h3 style="font-size:34px;line-height:1.3">${what}</h3>
-      <p style="font-size:19px;color:#5d6570">${TRIAL.task}${TRIAL.adhoc?" · run now":` · trial ${TRIAL.index+1} of ${QUEUE.length}`}</p>`,
+      <p style="font-size:19px;color:#5d6570">${TRIAL.task} · ${positionWord()}</p>`,
       [{label:"Ready", onClick:hideOverlay},
        {label:"Exit", ghost:true, onClick:()=>backToSession()}]);
   } else hideOverlay();
@@ -7886,7 +8079,10 @@ function showQueueOverlay(seq,c){
   showOverlay(`<h3>Trial list</h3>
     <div style="width:min(90vw,620px)"><table style="font-size:16px">${rows}</table></div>`,
     [{label:"Back", onClick:hideOverlay},
-     {label:"Skip this trial", ghost:true, onClick:()=>{
+     {label: isPracticeRow(QUEUE[QPOS])?"Skip this practice":"Skip this trial", ghost:true,
+      onClick:()=>{
+        if(isPracticeRow(QUEUE[QPOS])){ hideOverlay(); skipCurrent();
+          if(QUEUE[QPOS] && QUEUE[QPOS].status==="pending") runCurrent(); return; }
         const why=prompt("Reason for skipping (recorded):","")||"no reason given";
         QUEUE[QPOS].status="skipped"; QUEUE[QPOS].skipReason=why; QPOS++;
         hideOverlay(); renderQueue(); runCurrent(); }}]);
@@ -9231,7 +9427,10 @@ function showEndControls(seq,c,pts,rate,att,tp){
     // than in runCurrent, because runCurrent is also how the NEXT button on the end screen
     // itself continues -- putting the test there would show the screen again on the way out
     // of it.
-    const moreOfThis = !wasAdhoc && QUEUE.some((q,i)=>i>=QPOS && q.task===wasTask && q.status==="pending");
+    // Test trials only: a practice row left pending behind the cursor is not a reason to
+    // withhold the end-of-task screen.
+    const moreOfThis = !wasAdhoc && QUEUE.some((q,i)=>
+      i>=QPOS && q.task===wasTask && !isPracticeRow(q) && q.status==="pending");
     if(!wasAdhoc && !moreOfThis){ showTaskEndScreen(wasTask); return; }
     runCurrent(); };
   $("ctrl").appendChild(nx);
@@ -9274,7 +9473,7 @@ function renderResult(seq,c,pts,rate,att,tp){
   const V=RUN.voice;
   $("rsum").innerHTML=`<table>
     <tr><th>Task</th><td>${RUN.task}${RUN.stoppedEarly?" (ended early)":""}</td>
-        <th>Trial</th><td>${TRIAL.adhoc?"run now (not in the list)":`${TRIAL.index+1} of ${QUEUE.length}`}</td></tr>
+        <th>Trial</th><td>${TRIAL.adhoc?"run now (not in the list)":positionWord()}</td></tr>
     ${c.spiral?`<tr><th>Pen samples</th><td class="num">${pts.length}</td>
         <th>Achieved rate</th><td class="num">${rate.toFixed(0)} Hz</td></tr>
     <tr><th>Strokes</th><td class="num">${STROKES.length}</td>
@@ -9536,8 +9735,18 @@ function buildRecord(){
     adhoc: !!TRIAL.adhoc,
     plan: TRIAL.adhoc ? { position:null, planned_total:null, queue:null,
              note:"run directly from the plan table with Run now; not part of a built trial list" }
-        : { position:TRIAL.index+1, planned_total:QUEUE.length,
-            queue:QUEUE.map(q=>({task:q.task,hand:q.hand,status:q.status,skip:q.skipReason})) },
+        // POSITION AMONG THE TRIALS, with the row index beside it. The list holds practice
+        // rows too, so the row number and the trial number are different quantities and a
+        // record carrying only one of them cannot answer both questions.
+        : { position:queuePosition().pos, planned_total:queuePosition().total,
+            row_in_list:TRIAL.index+1, rows_in_list:QUEUE.length,
+            // KIND IS IN THE SNAPSHOT, because the list holds practice rows now and a row
+            // that only says {task, hand, status:"done"} reads as a trial that was run. Two
+            // practice rows ahead of a task would otherwise make a four-row list look like
+            // four trials with two of them already collected.
+            queue:QUEUE.map(q=>({task:q.task,hand:q.hand,
+              kind:isPracticeRow(q)?"practice":"trial",
+              status:q.status,skip:q.skipReason})) },
     param_signature:sig, parameters:params,
     participant:{ id:$("pid").value, group:$("grp").value||null,
       // Integer-coded per the study's demographics table. The labels stay alongside so a
@@ -9724,10 +9933,21 @@ function buildRecord(){
        little else -- so a record that omits it cannot say what the participant was told. */
     examiner_said: (()=>{ try{ return trialScript(); }catch(e){ return null; } })(),
     examiner_said_source: (()=>{ try{ return trialScriptSource(); }catch(e){ return null; } })(),
-    practice: {
+    practice: (()=>{
+      // READ FROM THE QUEUE ROWS, which are what the examiner saw and could change. The
+      // session-level sets are kept as the fallback for an ad-hoc run, which builds no
+      // queue -- but where rows exist they are the record of what happened, and a flag that
+      // disagreed with the list the examiner was looking at would be the wrong one.
+      const rows=practiceRowsOf(c.id);
+      const ranRows=rows.filter(q=>q.status==="done").length;
+      const skippedRows=rows.filter(q=>q.status==="skipped").length;
+      return {
       specified: practicePlan(c).length>0,
-      ran: PRACTICE_DONE.has(c.id) || (!!c.finBlock && finBlockPractised()),
-      skipped: PRACTICE_SKIPPED.has(c.id),
+      ran: rows.length ? ranRows>0
+         : (PRACTICE_DONE.has(c.id) || (!!c.finBlock && finBlockPractised())),
+      skipped: rows.length ? (skippedRows>0 && ranRows===0) : PRACTICE_SKIPPED.has(c.id),
+      runs_administered: rows.length ? ranRows : null,
+      runs_planned: rows.length || null,
       hands: practicePlan(c),
       template: c.spiral ? practiceTemplateName(geomPitch(c), TRIAL.drawHand) : null,
       // A finger condition may be covered by the OTHER finger condition's practice, which
@@ -9736,8 +9956,8 @@ function buildRecord(){
       covered_by_block: !!(c.finBlock && !PRACTICE_DONE.has(c.id) && finBlockPractised()),
       stream_s: c.audio ? AV_PRACTICE.durS : null,
       stream_targets: c.audio ? AV_PRACTICE.targets : null,
-      note:"a practice run is administered to the participant and is not saved as a trial. specified is whether the task description gives this condition a practice; ran and skipped are what happened in this session."
-    },
+      note:"a practice run is administered to the participant and is not saved as a trial. It is a row in the trial list, ahead of the task's trials and inside its block, so it moves with the task and is counted in the session estimate. specified is whether the task description gives this condition a practice; ran and skipped are what happened in this session."
+      }; })(),
     audibility: c.audio ? (audibilityFor(c.id) || { outcome:"not_run", form:avKind(c.id),
         note:"the trial ran without the check having been recorded, which readyTrial should "+
              "make impossible; treat the trial as unverified for audibility." }) : null,
