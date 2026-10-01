@@ -3857,6 +3857,11 @@ function taskBlocked(c){
     const why=digitSetProblem();
     if(why) return why;
   }
+  // A FAILED CHECK IS A BLOCK, not merely a skipped trial. Without this the plan table
+  // would still offer the condition and Build session would put it back in the list, so a
+  // check the examiner has already run and failed could be walked around by rebuilding.
+  if(audibilityBlocks(c.id))
+    return `audibility check failed (${AUDIBILITY_FORM_LABEL[avKind(c.id)]})`;
   return null;
 }
 // A HELD task is not a blocked one. Blocked means it cannot run; held means it runs, and
@@ -4596,6 +4601,12 @@ function newSession(){
   SESSION_KEY=nextSessionNumber(); SERIES=0;
   Object.keys(REPEATS).forEach(k=>delete REPEATS[k]);
   QUEUE=[]; QPOS=0; LAST=null;
+  // THE CHECK IS A STATEMENT ABOUT THIS SITTING, not about the participant. Their hearing
+  // has not changed, but the volume, the room, whether a hearing aid is in and which way
+  // the iPad is facing have not been re-established -- and the check also confirms the
+  // EXAMINER can hear the stimulus from where they are sitting. Carrying a pass forward
+  // carries a claim about a setup that no longer exists.
+  AUDIBILITY={ tones:null, digits:null };
   $("sessnum").value=sessNo()+1;
   renderStatus(); renderPlan(); renderQueue();
 }
@@ -4608,6 +4619,12 @@ function newVisit(){
   SESSION_KEY=nextSessionNumber(); SERIES=0;
   Object.keys(REPEATS).forEach(k=>delete REPEATS[k]);
   QUEUE=[]; QPOS=0; LAST=null;
+  // THE CHECK IS A STATEMENT ABOUT THIS SITTING, not about the participant. Their hearing
+  // has not changed, but the volume, the room, whether a hearing aid is in and which way
+  // the iPad is facing have not been re-established -- and the check also confirms the
+  // EXAMINER can hear the stimulus from where they are sitting. Carrying a pass forward
+  // carries a claim about a setup that no longer exists.
+  AUDIBILITY={ tones:null, digits:null };
   $("visitno").value=visitNo()+1; $("sessnum").value=1;
   renderStatus(); renderPlan(); renderQueue();
 }
@@ -4634,6 +4651,7 @@ function newParticipant(){
   // the pen check, sound check, screening screens and consent belong to the person,
   // not the device
   Object.keys(PENCHECK).forEach(k=>delete PENCHECK[k]);
+  AUDIBILITY={ tones:null, digits:null };
   if($("soundok")) $("soundok").checked=false;
   if($("volstep")) $("volstep").value="0";
   if($("audioroute")) $("audioroute").value="speaker";
@@ -7114,7 +7132,162 @@ function reminderText(){
 //
 // A hand-change screen exists to catch a change the participant would otherwise miss because
 // no instruction screen appeared. When one just did, there is nothing to catch.
+/* ===========================================================================
+   THE AUDIBILITY CHECK
+
+   Six stimuli in a fixed order, three target and three non-target. The participant
+   identifies each one; the examiner marks it right or wrong. All six right is a pass; one
+   repetition is allowed, and all six right on the repeat is a pass after repeat. Anything
+   else fails, and a FAILED CHECK MEANS THE CONDITION IS NOT ADMINISTERED -- the point of
+   the check is to find out before a 60-second trial is spent whether the participant can
+   hear the thing the trial is about.
+
+   TWO FORMS, NOT ONE CHECK. The specification says the check runs once per session at the
+   first auditory condition, and that is right for a session with one kind of stimulus in
+   it. This battery has two, and they ask different questions: tones ask whether two pitches
+   can be TOLD APART, digits ask whether five spoken words can be UNDERSTOOD. A pass on
+   pitch discrimination says nothing about word intelligibility -- presbycusis takes the
+   high frequencies that consonants live in, so a participant can pass the tone check
+   comfortably and still not be able to tell "two" from "three". So: the tone form runs once
+   at the first tone condition, the digit form once at the first digit condition, each
+   stored separately on the session, and neither ever repeats.
+
+   THE ORDER IS FIXED AND IS NOT ALTERNATING. Three of each in a fixed order means the order
+   has to be written down somewhere, and the obvious one -- target, non-target, target --
+   lets a participant pass by noticing the pattern rather than by hearing. These two
+   sequences have runs in them instead.
+
+   The digit non-targets are 3, 5 and 1. Three is there on purpose: among the five digits it
+   is the one most confusable with the target in English, so including it is what makes the
+   check sensitive rather than merely administered. =========================================================================== */
+const AUDIBILITY_SEQ = {
+  // false = non-target, true = target.
+  tones:  [false, true,  true,  false, true,  false],
+  digits: [3,     2,     2,     5,     2,     1]
+};
+const AUDIBILITY_FORM_LABEL = {
+  tones:"two pitches told apart", digits:"five spoken numbers understood" };
+// Outcome per form, for this session. Null means not yet run.
+let AUDIBILITY = { tones:null, digits:null };
+// Which form a task needs, or null for a task with no auditory stream.
+const audibilityForm = taskId => byId(taskId) && byId(taskId).audio ? avKind(taskId) : null;
+// The outcome standing against a task, whatever form it uses.
+const audibilityFor = taskId => { const f=audibilityForm(taskId); return f ? AUDIBILITY[f] : null; };
+const AUDIBILITY_PASSES = ["pass","pass_after_repeat"];
+const audibilityBlocks = taskId => { const o=audibilityFor(taskId);
+  return !!(o && !AUDIBILITY_PASSES.includes(o.outcome)); };
+
+/* The check, as a screen. Stepped one stimulus at a time rather than played as a run of
+   six, because the examiner has to ask after each one and record the answer -- "I'll play
+   six numbers, tell me each number you hear" is a six-turn exchange, not a six-stimulus
+   burst. Marking each item also means a fail says WHICH ones were missed, which a single
+   pass/fail verdict does not. */
+function showAudibilityCheck(kind, cont){
+  const seq=AUDIBILITY_SEQ[kind];
+  const st={ i:0, marks:[], attempt:1, examinerHeard:false };
+  const isTarget = k => kind==="tones" ? seq[k] : seq[k]===DIGIT_SET.target;
+  const nameOf = k => kind==="tones" ? (seq[k]?"the HIGH beep":"the LOW beep") : String(seq[k]);
+  const play = k => {
+    newMaster();
+    const at=audio().currentTime+0.08;
+    if(kind==="digits") playStimulus(at, isTarget(k), AUDIO_DEFAULTS[TRIAL.task]||{tone:100},
+                                     "digits", seq[k]);
+    else tone(at, isTarget(k)?+$("ftgt").value:+$("fstd").value, 100, +$("lvl").value);
+  };
+  const script = kind==="tones"
+    ? "I’ll play six beeps. After each one, tell me whether it was the low beep or the high beep."
+    : "I’ll play six numbers. Tell me each number you hear.";
+  const finish=outcome=>{
+    AUDIBILITY[kind]={ outcome, form:kind, attempts:st.attempt,
+      sequence: seq.slice(), marks: st.marks.slice(),
+      examiner_could_hear: st.examinerHeard,
+      level: +$("lvl").value, volume_step: $("volstep")?+$("volstep").value:null,
+      route_declared: $("audioroute")?$("audioroute").value:null,
+      digit_set: kind==="digits" ? DIGIT_SET.id : null,
+      at_iso: new Date().toISOString() };
+    saveState();
+    hideOverlay();
+    if(AUDIBILITY_PASSES.includes(outcome)) cont();
+    else audibilityFailed(kind);
+  };
+  const render=()=>{
+    const done=st.i>=seq.length;
+    const right=st.marks.filter(Boolean).length;
+    const body = done
+      ? `<h3>${right} of ${seq.length} identified correctly</h3>
+         <p style="font-size:18px">${st.marks.map((m,k)=>
+            `<span style="display:inline-block;margin:2px 7px;color:${m?"var(--ok)":"#8c2020"}">
+             ${k+1}. ${nameOf(k)} ${m?"✓":"✗"}</span>`).join("")}</p>
+         ${right===seq.length
+           ? `<p class="good" style="font-size:18px">${st.attempt===1?"Pass":"Pass after repeat"}.
+              This is recorded on the session and the check will not be presented again
+              for ${AUDIBILITY_FORM_LABEL[kind]}.</p>`
+           : st.attempt===1
+             ? `<p class="warn" style="font-size:18px">One repetition is allowed. All six have
+                to be correct on the second presentation for a pass after repeat.</p>`
+             : `<p class="bad" style="font-size:18px"><b>Fail.</b> Every condition using
+                ${kind==="tones"?"tones":"spoken numbers"} will be left out of this session,
+                and each one records the reason.</p>`}`
+      : `<h3>Audibility check — ${kind==="tones"?"tones":"spoken numbers"}</h3>
+         <p style="font-size:19px">${script}</p>
+         <p style="font-size:17px;color:#5d6570">Stimulus <b>${st.i+1}</b> of ${seq.length}${
+            st.attempt>1?" · second presentation":""}</p>
+         <p style="font-size:16px;color:#5d6570">Play it, ask, then mark what they said.
+         The right answer for this one is <b>${nameOf(st.i)}</b>.</p>
+         <label style="display:flex;align-items:center;gap:9px;justify-content:center;
+           font-size:16px;margin-top:10px">
+           <input type="checkbox" ${st.examinerHeard?"checked":""}
+             onchange="window.__audHeard(this.checked)">
+           I can hear it clearly from where I am sitting, at the volume that is set</label>`;
+    const btns = done
+      ? (right===seq.length
+          ? [{ label:"Continue", onClick:()=>finish(st.attempt===1?"pass":"pass_after_repeat") }]
+          : st.attempt===1
+            ? [{ label:"Present again", onClick:()=>{ st.attempt=2; st.i=0; st.marks=[]; render(); } },
+               { label:"Record a fail", ghost:true, onClick:()=>finish("fail") }]
+            : [{ label:"Record a fail", onClick:()=>finish("fail") }])
+      : [{ label:"Play", onClick:()=>play(st.i) },
+         { label:"Correct", onClick:()=>{ st.marks.push(true);  st.i++; render(); } },
+         { label:"Wrong", ghost:true, onClick:()=>{ st.marks.push(false); st.i++; render(); } },
+         { label:"Exit", ghost:true, onClick:()=>backToSession() }];
+    showOverlay(body, btns);
+  };
+  window.__audHeard = v => { st.examinerHeard=!!v; };
+  render();
+}
+/* A FAILED CHECK TAKES EVERY CONDITION OF THAT KIND OUT OF THE SESSION, not just the one
+   that was about to run. The check is a statement about the participant, so a second
+   condition using the same stimuli would fail it for the same reason, and presenting one
+   after the other has already failed is asking a participant to sit through sixty seconds
+   of something they cannot hear. Each skipped trial records the reason rather than being
+   quietly dropped, so a session with a gap in it explains its own gap. */
+function audibilityFailed(kind){
+  const why=`audibility check failed (${AUDIBILITY_FORM_LABEL[kind]})`;
+  let n=0;
+  QUEUE.forEach((q,i)=>{ if(q.status!=="pending") return;
+    if(audibilityForm(q.task)!==kind) return;
+    q.status="skipped"; q.skipReason=why; n++; });
+  renderQueue(); saveState();
+  showOverlay(`<h3>Check failed — these conditions are left out</h3>
+    <p style="font-size:19px"><b>${n}</b> trial${n===1?"":"s"} ${n===1?"has":"have"} been
+    marked skipped, with the reason recorded on ${n===1?"it":"each of them"}.</p>
+    <p style="font-size:17px;color:#5d6570">Headphones raise the level but do not correct
+    impaired frequency discrimination or word intelligibility, so retrying with headphones is
+    not a way past this. Run the conditions that need no sound and leave the rest.</p>`,
+    [{ label:"Back to the session", onClick:()=>{ hideOverlay(); backToSession(); } }]);
+}
+
 function readyTrial(seq,c,justInstructed){
+  // THE CHECK COMES BEFORE THE TRIAL IS SET UP, AND GATES IT. Placed here rather than on
+  // the instruction screen's Ready button because readyTrial is the one door every trial
+  // goes through -- a repeat, an ad-hoc run, and a trial reached after the instruction page
+  // was skipped all arrive here, and a check that can be walked around is not a gate.
+  // It self-gates on the session outcome, so it presents once per form and never again.
+  {
+    const form=audibilityForm(TRIAL.task);
+    if(form && !AUDIBILITY[form]){ showAudibilityCheck(form, ()=>readyTrial(seq,c,justInstructed)); return; }
+    if(form && audibilityBlocks(TRIAL.task)){ audibilityFailed(form); return; }
+  }
   $("hud").classList.remove("cue"); $("hud").classList.remove("big");
   $("hud").textContent = (TRIAL.lengthS===null && !c.audio) ? "" : (TRIAL.lengthS??"")+" s";
   $("reminder").innerHTML=reminderText();
@@ -8707,7 +8880,41 @@ function buildRecord(){
       n_targets_played: R.streamCutMs==null ? R.seq.t
         : R.seq.onsets.filter((o,i)=>o<=R.streamCutMs && R.seq.isTarget[i]).length,
       onsets_ms:R.seq.onsets, tone_type:R.seq.isTarget.map(x=>x?"target":"standard"),
-      intervals_ms:R.seq.intervals, min_isi_ms:R.seq.minISI } : null,
+      intervals_ms:R.seq.intervals, min_isi_ms:R.seq.minISI,
+      // THE GENERATED STIMULUS LIST, verbatim: index, type, scheduled onset. The three
+      // arrays above say the same thing and are kept because every reader of an older
+      // record knows them; this is the form the specification asks for, and it is the only
+      // one that cannot be mis-zipped by reading two arrays of different lengths.
+      stimuli:R.seq.stimuli||null,
+      // WHICH WORD each slot played, on a digit condition. "The participant said yes to a
+      // 3" is a different error from "the participant said yes to a 2 they heard late", and
+      // without this the two are indistinguishable in the data.
+      digits:R.seq.digits||null,
+      // ACTUAL ONSETS, alongside the scheduled ones. Every stimulus is committed to the
+      // audio clock before the first sound plays, so there is no per-stimulus dispatch that
+      // could slip -- but the two clocks are still recorded so an actual onset is
+      // reconstructible rather than asserted. Output latency is NOT folded in: whether to
+      // subtract it is an analysis decision, and folding it in makes that unrecoverable.
+      actual_onsets_ms:R.actualOnsets||null,
+      audio_clock_t0_s:R.toneClockT0??null,
+      audio_base_latency_s:R.toneClockBase??null,
+      audio_output_latency_s:R.toneClockOut??null,
+      target_count_planned: R.seq.targetPlan ? R.seq.targetPlan.wanted : null,
+      target_count_source:  R.seq.targetPlan ? R.seq.targetPlan.count_source : null,
+      trial_index_in_task:  R.seq.targetPlan ? R.seq.targetPlan.trial_index : null,
+      gap_law:R.seq.gapLaw||null,
+      placement:R.seq.targetPlan||null,
+      stimulus_kind:R.seq.kind||null,
+      seed_source:R.seq.seedSource||null,
+      digit_set: R.seq.kind==="digits" ? DIGIT_SET.id : null,
+      digit_slot_ms: R.seq.kind==="digits" ? DIGIT_SET.slotMs : null } : null,
+    // THE AUDIBILITY CHECK, on every trial of an auditory condition rather than once on the
+    // session. A trial record has to stand on its own: an analyst holding one row must be
+    // able to see that the participant was established as able to hear the stimulus, without
+    // having to find a session-level record that may not have been exported with it.
+    audibility: c.audio ? (audibilityFor(c.id) || { outcome:"not_run", form:avKind(c.id),
+        note:"the trial ran without the check having been recorded, which readyTrial should "+
+             "make impossible; treat the trial as unverified for audibility." }) : null,
     // SUSTAINED SPIRAL. A fixed window with a fresh template each time one is completed,
     // so duration stops varying with drawing speed and throughput becomes definable.
     sustained: R.sustained ? {
@@ -9597,6 +9804,10 @@ function saveState(){
       // build that saved the session, so a task added later would come back missing from it
       // and administrationOrder() would have to repair something that was never broken.
       orderOverride:ORDER_OVERRIDE,
+      // Stored on the SESSION, which is what makes "once per session" true across a reload:
+      // an examiner who reloads mid-session must not be asked to run the check again, and
+      // must not be able to get out of a failed one by reloading either.
+      audibility:AUDIBILITY,
       series:SERIES, repeats:REPEATS, lastTask:LAST_TASK, lastHand:LAST_HAND,
       audio:AUDIO_DEFAULTS,
       // What the build that saved this session shipped. On the way back in it is the only
@@ -9627,6 +9838,8 @@ function restoreState(){
     // entirely if nothing in it resolves -- an order of ids this build does not have is a
     // saved session from a different battery, and administrationOrder() rebuilding it from
     // the catalogue is the right outcome.
+    if(st.audibility && typeof st.audibility==="object")
+      AUDIBILITY={ tones:st.audibility.tones||null, digits:st.audibility.digits||null };
     if(Array.isArray(st.orderOverride)){
       const ord=st.orderOverride.map(taskId).filter(id=>byId(id));
       ORDER_OVERRIDE = ord.length ? ord : null;
