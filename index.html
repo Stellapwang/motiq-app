@@ -2162,7 +2162,25 @@ const geomSet   = x => typeof x==="string"
   ? (GEOM_LABEL[x] ? x : (x==="finger" ? "finger" : "pen"))
   : (x && x.geomSet) || (x && x.implement==="finger" ? "finger" : "pen");
 const geomPitch = x => +$("pitch_"+geomSet(x)).value;
-const geomTurns = x => +$("turns_"+geomSet(x)).value;
+// The set's own turn count, with no practice override. The gate scaling and the Parameters
+// page want this one: they describe the TEMPLATE, not whatever is on screen right now.
+const geomTurns_raw = x => +$("turns_"+geomSet(x)).value;
+/* A PRACTICE SPIRAL IS THREE TURNS, and it is three turns HERE rather than in a copy of the
+   drawing code. The template, the end point, the ring count, the lap gate and the exported
+   geometry all read geomTurns, so a practice that short-circuited any one of them would
+   produce a practice whose rules differ from the trial's -- which is the failure the
+   practice pad has already had twice.
+
+   Scoped to the condition the practice is running: geomTurns("pen") and geomTurns(otherTask)
+   are untouched, so the advance gate's reference template and the Parameters page keep
+   reading the real one. */
+const geomTurns = x => {
+  const base=geomTurns_raw(x);
+  if(typeof TRIAL!=="undefined" && TRIAL && TRIAL.practice
+     && x && typeof x==="object" && x.id===TRIAL.task)
+    return Math.min(base, PRACTICE_TURNS);
+  return base;
+};
 
 /* TEMPLATE NAMES, as the task description names them.
 
@@ -4607,6 +4625,7 @@ function newSession(){
   // EXAMINER can hear the stimulus from where they are sitting. Carrying a pass forward
   // carries a claim about a setup that no longer exists.
   AUDIBILITY={ tones:null, digits:null };
+  PRACTICE_DONE=new Set(); PRACTICE_SKIPPED=new Set();
   $("sessnum").value=sessNo()+1;
   renderStatus(); renderPlan(); renderQueue();
 }
@@ -4625,6 +4644,7 @@ function newVisit(){
   // EXAMINER can hear the stimulus from where they are sitting. Carrying a pass forward
   // carries a claim about a setup that no longer exists.
   AUDIBILITY={ tones:null, digits:null };
+  PRACTICE_DONE=new Set(); PRACTICE_SKIPPED=new Set();
   $("visitno").value=visitNo()+1; $("sessnum").value=1;
   renderStatus(); renderPlan(); renderQueue();
 }
@@ -4652,6 +4672,7 @@ function newParticipant(){
   // not the device
   Object.keys(PENCHECK).forEach(k=>delete PENCHECK[k]);
   AUDIBILITY={ tones:null, digits:null };
+  PRACTICE_DONE=new Set(); PRACTICE_SKIPPED=new Set();
   if($("soundok")) $("soundok").checked=false;
   if($("volstep")) $("volstep").value="0";
   if($("audioroute")) $("audioroute").value="speaker";
@@ -5265,7 +5286,7 @@ const advanceTurns = () => +(($("advturns")||{}).value) || ADVANCE_TURNS_DEFAULT
 // through a condition that ships a short template. The practice pad has scaled exactly this
 // way since its three-turn spiral; this is that rule, applied to the trial now that a trial
 // can run a short template too.
-const advanceFraction = () => Math.min(1, advanceTurns()/Math.max(1, geomTurns("pen")));
+const advanceFraction = () => Math.min(1, advanceTurns()/Math.max(1, geomTurns_raw("pen")));
 const advanceLapsFor  = t => Math.max(1, Math.round((+t||0)*advanceFraction()));
 // The three numbers the gate is made of, for a template of t turns. At the reference
 // geometry -- 5 turns with advturns at 5 -- these come out 5, 4 and 5 minus the slack, which
@@ -5693,7 +5714,15 @@ let LAST_SEED=null;
               same sequence and any comparison between them is confounded with
               having heard it twice. */
 let LAST_SEED_SOURCE=null;
+// The practice sequence's own seed, one per stimulus kind. Fixed, so every participant
+// practises on the same sequence, and distinct from every trial seed in AV_SEEDS so a
+// practice run can never present the stream a trial is about to.
+const AV_PRACTICE_SEEDS={ tones:1052837441, digits:1744920583 };
 function drawSeed(){
+  if(typeof TRIAL!=="undefined" && TRIAL && TRIAL.practice){
+    LAST_SEED=AV_PRACTICE_SEEDS[avKind(TRIAL.task)] || AV_PRACTICE_SEEDS.tones;
+    LAST_SEED_SOURCE="practice"; return LAST_SEED;
+  }
   const mode=$("seedmode").value;
   if(mode==="fixed"){ LAST_SEED=1; LAST_SEED_SOURCE="fixed"; return LAST_SEED; }
   if(mode==="random"){ LAST_SEED=Math.floor(Math.random()*2147483647)+1;
@@ -6925,6 +6954,14 @@ function audioCfgFor(task){
   // A sustained trial has a definite window, so its stream is bounded by that window and
   // ends with it: stopMode "fixed", generated to the window length. endWindow() stops the
   // audio when the window closes.
+  // A PRACTICE STREAM IS SHORT AND CARRIES THREE TARGETS, which is the whole of what makes
+  // it a practice: long enough to contain the thing being practised, short enough not to be
+  // a trial.
+  if(TRIAL.practice){
+    return { ...a, key:task, durS:AV_PRACTICE.durS,
+      stopMode:"fixed", floorS:undefined, tailS:undefined,
+      self_paced:false, window_bound:!!c.spiral, practice:true };
+  }
   const sustained = !!(c.spiral && TRIAL.sustainedS>0);
   if(sustained){
     return { ...a, key:task,
@@ -6966,10 +7003,15 @@ function openTrial(showInstruction){
   if(cfg){
     // The target count and the seed both come from WHICH TRIAL OF THIS TASK this is,
     // not from a probability and not from the participant. See AV_TARGET_COUNTS.
-    const ord=taskTrialOrdinal(), tc=avTargetCount(TRIAL.task, ord);
+    const ord=taskTrialOrdinal();
+    // A PRACTICE SEQUENCE IS NOT A TRIAL INDEX. It takes the three targets the description
+    // asks for and its own seed, so it is identical for every participant and is never
+    // mistaken for trial 1 -- which it would be if it read the table.
+    const tc = TRIAL.practice ? { count:AV_PRACTICE.targets, source:"practice" }
+                              : avTargetCount(TRIAL.task, ord);
     try{ seq=makeSequence({ durationS:cfg.durS, targetCount:tc.count, seed:drawSeed(),
                             respond:cfg.respond, kind:avKind(TRIAL.task),
-                            countSource:tc.source, ordinal:ord });
+                            countSource:tc.source, ordinal:TRIAL.practice?null:ord });
          // Which word each non-target slot plays. Seeded from the sequence seed, so the
          // same trial index presents the same words to every participant.
          seq.digits=assignDigits(seq, seq.seed); }
@@ -6984,7 +7026,10 @@ function openTrial(showInstruction){
   const finishOpen=()=> showInstruction ? showInstructionScreen(seq,c) : readyTrial(seq,c);
   const afterMic =()=> c.verbal ? showVerbalSetup(c,finishOpen) : finishOpen();
 
-  if(c.voice){
+  // PRACTICE IS NOT RECORDED, so it does not ask for the microphone. Asking would put the
+  // permission sheet in front of the examiner twice, and a practice run that captured audio
+  // would leave a recording in the store with no trial record to belong to.
+  if(c.voice && !TRIAL.practice){
     if(!voiceConsented()){
       // Should be unreachable -- the plan blocks it -- but a queue built before consent
       // was withdrawn could still contain one, and it must not record silently.
@@ -7315,6 +7360,228 @@ function reminderText(){
 // A hand-change screen exists to catch a change the participant would otherwise miss because
 // no instruction screen appeared. When one just did, there is nothing to catch.
 /* ===========================================================================
+   PRACTICE, INSIDE THE SESSION
+
+   The task description gives seven of the twelve conditions a practice screen, and the app
+   had none: it has a Practice TAB, which is a rehearsal pad for the examiner and for
+   checking that the Pencil is seen, and that is a different thing from a practice trial
+   administered to the participant as part of the task.
+
+   WHAT IS PRACTISED IS NOT THE MOVEMENT, IT IS THE RULE. A participant can be told to trace
+   a spiral and will do it; what they cannot be told in a way that survives is that holding
+   still in the red circle is what makes the next one appear, or that "yes" is only for the
+   number two, or -- on a dual task -- that neither half is allowed to stop while the other
+   is done. Those are the things that go wrong in the first thirty seconds of a trial that
+   is then not comparable with anybody else's.
+
+   WHAT THE DESCRIPTION SPECIFIES, condition by condition:
+
+     PEN_SPR1        one spiral per hand, on the SMALL template, examiner-advanced
+     PEN_SPR60       one repeated-spiral sequence per hand, small template
+     VOC_VODD        a 20 s sequence containing three targets
+     VOC_VDGT        the same, with the digits
+     PEN_VODD        ONE 20 s dual-task sequence, DOMINANT HAND ONLY, and NO SKIP CONTROL
+     PEN_VDGT        the same, with the digits
+     FIN_SPR1        one spiral per hand, on the first template presented, once for the
+                     block rather than once per template
+     PEN_PENT, TAP_* none. "No separate practice trial is required."
+
+   NO SKIP ON THE DUAL TASKS, which is the description being deliberate rather than
+   inconsistent: the dual task is the only place where a participant can do both halves
+   correctly in isolation and still not do the task, and skipping its practice is how a
+   trial gets spent finding that out.
+
+   PRACTICE IS NOT SAVED. No trial record, no repeat number, no voice recording -- it is not
+   data and must not land in the export looking like a short trial. What IS recorded is
+   whether it ran, on each test trial that follows, because "this participant practised" and
+   "the examiner skipped it" are different facts about every trial of that task.
+   =========================================================================== */
+let PRACTICE_DONE=new Set();
+let PRACTICE_SKIPPED=new Set();
+let PRACTICE=null;
+// How many practice runs a condition gets, and on which hands.
+function practicePlan(c){
+  if(!c) return [];
+  if(c.tap && !c.spiral) return [];              // the tapping tasks are demonstrated, not practised
+  if(c.pent) return [];                          // copying a figure cannot be practised without copying it
+  // THE DUAL TASKS GET ONE, ON THE DOMINANT HAND. Not one per hand: the thing being
+  // practised is doing both at once, which is not hand-specific, and a second practice run
+  // costs forty more seconds of a session that already runs long.
+  if(isDualTask(c)) return ["dominant"];
+  if(c.audio) return ["none"];                   // the voice-only conditions: one sequence
+  if(c.spiral) return ["dominant","nondominant"];
+  return [];
+}
+// THE FINGER BLOCK PRACTISES ONCE, not once per template. "No additional practice is given
+// when switching template size" -- so whichever of the two runs first carries the practice,
+// and the second finds it already done.
+const finBlockPractised = () =>
+  CATALOGUE.some(c=>c.finBlock && PRACTICE_DONE.has(c.id));
+function practiceNeeded(c){
+  if(!c || PRACTICE_DONE.has(c.id) || PRACTICE_SKIPPED.has(c.id)) return false;
+  if(c.finBlock && finBlockPractised()) return false;
+  return practicePlan(c).length>0;
+}
+// SKIP exists everywhere the description offers it, and nowhere it does not.
+const practiceSkippable = c => !isDualTask(c);
+// A practice spiral is the SHORT template: three turns at the condition's own pitch, which
+// is SPR_P12T3 on the stylus and SPR_P10T3 on the small finger set -- where it coincides
+// with that condition's test template, because the test template is already three turns.
+// The screen says so rather than pretending the practice is smaller than it is.
+const practiceWindowS = c => isDualTask(c) ? AV_PRACTICE.durS
+                           : (c.sustainedS ? AV_PRACTICE.durS : null);
+// What the examiner says, from the task description.
+function practiceScript(c, hand, step){
+  const H=hand==="none" ? null : physHand(hand).toUpperCase();
+  if(isDualTask(c)) return "Let’s try both together for a few seconds first.";
+  if(c.audio && !c.spiral)
+    return avKind(c.id)==="digits"
+      ? "Let’s practice. Say “yes” only when you hear the number two."
+      : "Let’s practice. Count the high beeps out loud.";
+  if(c.spiral && c.sustainedS)
+    return `Now try it with your ${H} hand. When you reach the red circle, hold there for a `+
+           `second. When the spiral disappears, lift your pen and start the next one at the `+
+           `green circle.`;
+  if(c.spiral)
+    return step===0
+      ? `Let’s try with your ${H} hand with a small spiral.`
+      : `Now let’s try the other hand.`;
+  return "Let’s practice.";
+}
+// The instruction recap. The description calls it "no screen" -- it is a thing the examiner
+// says, not a thing the participant reads -- so it goes on the screen the examiner is
+// looking at between practice and the first trial, in quotation marks like every other line
+// they have to speak.
+function practiceRecap(c){
+  // No practice, no recap. TAP_TONE would otherwise fall into the tones branch below and be
+  // handed the counting recap -- unreachable today, because practiceRecap is only called
+  // after a practice run and TAP_TONE has none, but a wrong string waiting for somebody to
+  // give that task a practice is not better for being currently unreachable.
+  if(!practicePlan(c).length) return null;
+  if(isDualTask(c))
+    return avKind(c.id)==="digits"
+      ? "Both at once for one minute — keep tracing spirals and say “yes” when you hear the number two."
+      : "Both at once for one minute — keep tracing spirals and keep counting the high beeps out loud.";
+  if(c.audio && !c.spiral)
+    return avKind(c.id)==="digits"
+      ? "Now we’ll do it for one minute. Say “yes” when you hear the number two, and nothing for the other numbers."
+      : "Now we’ll do it for one minute. Count the high beeps out loud and keep going up. Say nothing for the low beeps.";
+  if(c.spiral && c.sustainedS)
+    return "Keep tracing spirals for one minute. At the red circle, hold your pen for a "+
+           "second. When the spiral disappears, lift your pen and start the next one at the "+
+           "green circle. Keep going until the screen says END.";
+  if(c.spiral){
+    const { total } = taskTrialSpan();
+    const perHand = Math.max(1, Math.round(total/2));
+    // Spelled out, because the examiner reads this aloud and "3 times" is not what anybody
+    // says. The description's own wording is "three times with each hand".
+    const WORD=["zero","once","twice","three times","four times","five times","six times"];
+    return `Now we’ll do the actual trials, ${WORD[perHand]||perHand+" times"} `+
+           `with each hand. Keep your drawing arm and hand lifted. Start at the green circle, `+
+           `trace the spiral to the red circle, and do not lift the pen. Stay on the line as `+
+           `closely as you can and go at a comfortable pace.`;
+  }
+  return null;
+}
+
+function startPractice(c, cont){
+  PRACTICE={ task:c.id, hands:practicePlan(c), i:0, cont, base:{...TRIAL}, ran:0 };
+  practiceIntro();
+}
+function practiceIntro(){
+  const P=PRACTICE, c=byId(P.task);
+  if(P.i>=P.hands.length) return practiceFinished();
+  const hand=P.hands[P.i];
+  const btns=[
+    { label:"Next", onClick:()=>{ hideOverlay(); runPracticeTrial(); } },
+    { label:"Instruction", ghost:true, onClick:()=>{
+        showInstructionScreen(null, c, {practice:true}); } },
+    { label:"Back", ghost:true, onClick:()=>backToSession() }];
+  if(practiceSkippable(c)) btns.splice(1,0,
+    { label:"Skip practice", ghost:true, onClick:()=>{
+        if(!confirm("Skip the practice for this task?\n\nEvery trial of this task will "+
+                    "record that practice was skipped.")) return;
+        PRACTICE_SKIPPED.add(c.id); saveState(); hideOverlay(); P.cont(); } });
+  const tpl = c.spiral ? practiceTemplateName(geomPitch(c), physHand(hand==="none"?"dominant":hand)) : null;
+  const same = c.spiral && geomTurns_raw(c)<=PRACTICE_TURNS;
+  showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em;
+      margin:0 0 14px">${P.task} · practice ${P.i+1} of ${P.hands.length}</div>
+    <h3 style="font-size:28px;line-height:1.3">Practice</h3>
+    <p style="font-size:22px;line-height:1.45">“${practiceScript(c, hand, P.i)}”</p>
+    ${tpl?`<p style="font-size:16px;color:#5d6570">Template <code>${tpl}</code>${
+      same?" — this condition's test template is already three turns, so the practice runs the same one"
+          :" — three turns, the small spiral"}.</p>`:""}
+    ${c.audio?`<p style="font-size:16px;color:#5d6570">${AV_PRACTICE.durS} s containing
+      ${AV_PRACTICE.targets} targets.</p>`:""}
+    <p class="note" style="margin-top:12px">Nothing here is saved. Reset it and run it again
+    as often as the participant needs.</p>`, btns);
+}
+function runPracticeTrial(){
+  const P=PRACTICE, c=byId(P.task), hand=P.hands[P.i];
+  const phys = hand==="none" ? null : physHand(hand);
+  TRIAL={ ...P.base, hand,
+    drawHand: (c.spiral||c.pent) ? (phys||physHand("dominant")) : null,
+    tapHand:  c.zones===2 ? "both" : c.pent ? null
+            : c.spiral&&c.tap ? ((phys||"right")==="right"?"left":"right") : phys,
+    implement: c.implement || "pen",
+    // THE PRACTICE OVERRIDES, in one place: a short template, a short window, and a flag
+    // every downstream branch reads rather than inferring practice from the lengths.
+    practice:{ step:P.i+1, of:P.hands.length, hand },
+    sustainedS: c.sustainedS ? practiceWindowS(c) : null,
+    lengthS: c.audio && !c.spiral ? AV_PRACTICE.durS : (c.spiral ? null : P.base.lengthS) };
+  openTrial(false);
+}
+// The screen after a practice run. Not the save screen: there is nothing to save.
+function practiceResult(){
+  const P=PRACTICE, c=byId(P.task);
+  P.ran++;
+  const seq=RUN&&RUN.seq;
+  const played = seq ? countedHeard(seq, RUN?RUN.streamCutMs:null, c.countOf||"targets") : null;
+  // THE DESCRIPTION ASKS THE QUESTION AFTER THE DUAL-TASK PRACTICE, and this is the one
+  // place in the battery where the examiner may act on the answer: practice is where a
+  // misunderstanding is supposed to be found and corrected. During a test trial no field is
+  // shown as correct and the count is never displayed; here it is, deliberately, because an
+  // examiner who cannot tell whether the participant understood cannot decide to run the
+  // practice again.
+  const ask = (c.count && seq)
+    ? `<p style="font-size:21px">“How many high beeps did you count in total?”</p>
+       <p style="font-size:17px;color:#5d6570">There were <b>${played}</b>. This is practice,
+       so you may tell them and run it again — nothing about the test trials shows a count.</p>`
+    : (seq && avKind(c.id)==="digits"
+      ? `<p style="font-size:17px;color:#5d6570">There were <b>${played}</b> twos. This is
+         practice, so you may correct a misunderstanding and run it again.</p>` : "");
+  const more = P.i+1 < P.hands.length;
+  showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em;
+      margin:0 0 14px">${P.task} · practice ${P.i+1} of ${P.hands.length} · not saved</div>
+    <h3 style="font-size:26px">Practice run finished</h3>${ask}`,
+    [{ label: more ? "Next practice" : "Go to the trials", onClick:()=>{
+         hideOverlay(); P.i++; practiceIntro(); } },
+     { label:"Run it again", ghost:true, onClick:()=>{ hideOverlay(); runPracticeTrial(); } },
+     { label:"Instruction", ghost:true, onClick:()=>showInstructionScreen(null, c, {practice:true}) },
+     { label:"Exit", ghost:true, onClick:()=>backToSession() }]);
+}
+function practiceFinished(){
+  const P=PRACTICE, c=byId(P.task);
+  PRACTICE_DONE.add(P.task); saveState();
+  const recap=practiceRecap(c);
+  const cont=P.cont;
+  PRACTICE=null;
+  // THE RECAP IS A SCREEN HERE, which the description calls "no screen". It means there is
+  // no screen for the PARTICIPANT, and that is still true -- this one faces the examiner and
+  // holds the words they have to say before the first trial. Without it the recap is a
+  // paragraph in a document nobody has open during a session.
+  if(!recap){ TRIAL={...P.base}; cont(); return; }
+  showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em;
+      margin:0 0 14px">${P.task} · before the first trial</div>
+    <h3 style="font-size:24px">Read this, then start</h3>
+    <p style="font-size:22px;line-height:1.5">“${recap}”</p>`,
+    [{ label:"Ready", onClick:()=>{ hideOverlay(); TRIAL={...P.base}; cont(); } },
+     { label:"Practice again", ghost:true, onClick:()=>{
+         hideOverlay(); PRACTICE_DONE.delete(P.task); startPractice(c, cont); } },
+     { label:"Exit", ghost:true, onClick:()=>backToSession() }]);
+}
+
+/* ===========================================================================
    THE AUDIBILITY CHECK
 
    Six stimuli in a fixed order, three target and three non-target. The participant
@@ -7469,6 +7736,12 @@ function readyTrial(seq,c,justInstructed){
     const form=audibilityForm(TRIAL.task);
     if(form && !AUDIBILITY[form]){ showAudibilityCheck(form, ()=>readyTrial(seq,c,justInstructed)); return; }
     if(form && audibilityBlocks(TRIAL.task)){ audibilityFailed(form); return; }
+    // PRACTICE COMES AFTER THE CHECK AND BEFORE THE FIRST TRIAL, which is the order the
+    // description gives. Never while a practice run is itself being set up -- that is what
+    // TRIAL.practice guards -- and never on an ad-hoc run, which is a parameter-tuning trial
+    // and not an administration.
+    if(!TRIAL.practice && !TRIAL.adhoc && practiceNeeded(c)){
+      startPractice(c, ()=>{ openTrial(false); }); return; }
   }
   $("hud").classList.remove("cue"); $("hud").classList.remove("big");
   $("hud").textContent = (TRIAL.lengthS===null && !c.audio) ? "" : (TRIAL.lengthS??"")+" s";
@@ -7507,7 +7780,9 @@ function readyTrial(seq,c,justInstructed){
   // not as a status message about the trial. The reminder line beside it stays what it was:
   // the examiner's own shorthand for what the trial is.
   {
-    const line=trialScript();
+    // Not during practice: the line to say was on the practice intro screen, and the test
+    // script names a trial position the participant is not at yet.
+    const line = TRIAL.practice ? null : trialScript();
     const el=$("saypre") || (()=>{ const d=document.createElement("div"); d.id="saypre";
       $("reminder").parentElement.insertBefore(d, $("reminder")); return d; })();
     el.innerHTML = line
@@ -8589,6 +8864,18 @@ function omissionStats(seq, att, outLat, windowMs){
 
 function finish(){
   const seq=RUN.seq, c=RUN.c, pts=STROKES.flat();
+  // A PRACTICE RUN ENDS HERE AND GOES NOWHERE NEAR THE RECORD. No trial id, no repeat
+  // number, no examiner entry, no save screen -- and that order matters: everything below
+  // writes into LAST, which is what the save path and the export read. A practice run that
+  // reached it would be exportable, and a short unsaved trial in the export is worse than
+  // no practice at all.
+  if(TRIAL.practice){
+    cancelAnimationFrame(RAF); drawScene();
+    $("hud").textContent=""; $("ctrl").innerHTML="";
+    $("reminder").innerHTML=`<span style="color:var(--warm)">practice — not saved</span>`;
+    if(RUN) RUN.saved=true;          // so okUnsaved never offers to discard a practice run
+    practiceResult(); return;
+  }
   const dur=pts.length>1?(pts[pts.length-1].t-pts[0].t):0;
   const rate=dur>0?(pts.length-1)/(dur/1000):0;
   let att=null; if(seq) att=attribute(seq,TAPS.map(t=>t.t),RUN.outLat);
@@ -9337,6 +9624,25 @@ function buildRecord(){
     // session. A trial record has to stand on its own: an analyst holding one row must be
     // able to see that the participant was established as able to hear the stimulus, without
     // having to find a session-level record that may not have been exported with it.
+    /* WHETHER THIS PARTICIPANT PRACTISED THIS TASK, on every trial of it. A practice run is
+       not saved and leaves no record of its own, so without this there is no way to tell a
+       participant who practised from one whose examiner skipped it -- and the first trial of
+       a task is exactly where that difference shows. "No practice is specified for this
+       condition" is a third state and is not the same as either. */
+    practice: {
+      specified: practicePlan(c).length>0,
+      ran: PRACTICE_DONE.has(c.id) || (!!c.finBlock && finBlockPractised()),
+      skipped: PRACTICE_SKIPPED.has(c.id),
+      hands: practicePlan(c),
+      template: c.spiral ? practiceTemplateName(geomPitch(c), TRIAL.drawHand) : null,
+      // A finger condition may be covered by the OTHER finger condition's practice, which
+      // the description asks for and which would otherwise read as practice having been
+      // skipped on this one.
+      covered_by_block: !!(c.finBlock && !PRACTICE_DONE.has(c.id) && finBlockPractised()),
+      stream_s: c.audio ? AV_PRACTICE.durS : null,
+      stream_targets: c.audio ? AV_PRACTICE.targets : null,
+      note:"a practice run is administered to the participant and is not saved as a trial. specified is whether the task description gives this condition a practice; ran and skipped are what happened in this session."
+    },
     audibility: c.audio ? (audibilityFor(c.id) || { outcome:"not_run", form:avKind(c.id),
         note:"the trial ran without the check having been recorded, which readyTrial should "+
              "make impossible; treat the trial as unverified for audibility." }) : null,
@@ -10279,6 +10585,7 @@ function saveState(){
       // an examiner who reloads mid-session must not be asked to run the check again, and
       // must not be able to get out of a failed one by reloading either.
       audibility:AUDIBILITY,
+      practiceDone:[...PRACTICE_DONE], practiceSkipped:[...PRACTICE_SKIPPED],
       series:SERIES, repeats:REPEATS, lastTask:LAST_TASK, lastHand:LAST_HAND,
       audio:AUDIO_DEFAULTS,
       // What the build that saved this session shipped. On the way back in it is the only
@@ -10309,6 +10616,10 @@ function restoreState(){
     // entirely if nothing in it resolves -- an order of ids this build does not have is a
     // saved session from a different battery, and administrationOrder() rebuilding it from
     // the catalogue is the right outcome.
+    if(Array.isArray(st.practiceDone))
+      PRACTICE_DONE=new Set(st.practiceDone.map(taskId).filter(id=>byId(id)));
+    if(Array.isArray(st.practiceSkipped))
+      PRACTICE_SKIPPED=new Set(st.practiceSkipped.map(taskId).filter(id=>byId(id)));
     if(st.audibility && typeof st.audibility==="object")
       AUDIBILITY={ tones:st.audibility.tones||null, digits:st.audibility.digits||null };
     if(Array.isArray(st.orderOverride)){
