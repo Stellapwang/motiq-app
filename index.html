@@ -6402,7 +6402,14 @@ function clearSpeech(){
    dispatch time is handed back so the record carries what happened rather than what was
    asked for. */
 function speakDigitAt(digit, whenMs, onSpoken){
-  const t=setTimeout(()=>{
+  /* IMMEDIATE MEANS IMMEDIATE, not setTimeout(0).
+
+     iOS will not speak unless the call descends from a user gesture, and a timer BREAKS
+     that chain however short it is. Everything here went through setTimeout, so a Play
+     button on the audibility check scheduled an utterance a few milliseconds out and iOS
+     silently dropped it -- the examiner pressed Play, heard nothing, and had nothing to
+     judge. Scheduled stimuli inside a trial still need the timer; a button press does not. */
+  const fire=()=>{
     try{
       // A LATE UTTERANCE IS CUT, NOT QUEUED. Queuing makes every later stimulus wait behind
       // it, which on a 60-stimulus trial is a slide rather than a slip.
@@ -6417,8 +6424,9 @@ function speakDigitAt(digit, whenMs, onSpoken){
       u.rate=1.25; u.volume=Math.max(0, Math.min(1, +$("lvl").value*2));
       window.speechSynthesis.speak(u);
     }catch(e){}
-  }, Math.max(0, whenMs));
-  SPEECH_TIMERS.push(t);
+  };
+  if(whenMs<=16){ fire(); return; }
+  SPEECH_TIMERS.push(setTimeout(fire, whenMs));
 }
 function setDigitStandin(mode){
   DIGIT_STANDIN.mode = mode==="speech" ? "speech" : "none";
@@ -6449,6 +6457,11 @@ function renderStandinNote(){
        speaking the numbers — the trials run and are marked DATA HELD, and they do <b>not</b>
        need the voice-recording consent tick, because nothing is recorded. See
        <code>DIGIT_SET</code> for what installing the real recordings requires.</div>`;
+}
+// One digit, spoken now. Called straight from a button so it stays inside the gesture.
+function demoDigit(d){
+  if(!speechAvailable()) return;
+  primeSpeech(); clearSpeech(); speakDigitAt(d, 0);
 }
 // Hear the stand-in without starting a trial.
 function demoDigits(){
@@ -7680,15 +7693,27 @@ function showInstructionScreen(seq,c,returnToReady){
   // Let the participant hear the tones before the trial, not for the first time inside it.
   // A stream with no targets has ONE tone, so there is no low and no high -- naming it "the
   // LOW beep" invites the participant to listen for a second one that never comes.
+  /* THE DEMO BUTTONS PLAY WHAT THIS TASK PLAYS. They offered "Play the LOW beep" and "Play
+     the HIGH beep" on every auditory condition, including the two that present spoken
+     numbers and no beeps at all -- so the screen before a digit trial invited the examiner
+     to demonstrate a stimulus the task does not contain. */
   const twoTones = !!(a && a.hasTargets);
-  const btn = (w,txt)=>`<button class="ghost" style="font-size:18px;padding:14px 26px;margin:4px"
-        onclick="demo('${w}')">${txt}</button>`;
+  // TRIAL.task, not taskId. There is a GLOBAL FUNCTION called taskId -- the alias resolver
+  // -- so avKind(taskId) handed a function to a lookup table, got undefined, fell back to
+  // "tones", and quietly chose the beep buttons on a spoken-digit condition. It did not
+  // throw, which is why the screen rendered and looked unchanged.
+  const digits = avKind(TRIAL.task)==="digits";
+  const btn = (fn,txt)=>`<button class="ghost" style="font-size:18px;padding:14px 26px;margin:4px"
+        onclick="${fn}">${txt}</button>`;
   const soundBtns = c.audio ? `<div style="margin-top:14px">` +
-      (twoTones
-        ? btn("std","Play the LOW beep") + btn("tgt","Play the HIGH beep")
-          + btn("alt","Count the high beep")
-        : btn("std","Play the beep")) +
-      `<div class="note" style="margin-top:6px">Play ${twoTones?"these":"this"} before
+      (digits
+        ? btn(`demoDigit(${DIGIT_SET.target})`,`Play the number ${DIGIT_WORD[DIGIT_SET.target]||DIGIT_SET.target}`)
+          + btn("demoDigits()","Play 1 to 5")
+        : twoTones
+        ? btn("demo('std')","Play the LOW beep") + btn("demo('tgt')","Play the HIGH beep")
+          + btn("demo('alt')","Count the high beep")
+        : btn("demo('std')","Play the beep")) +
+      `<div class="note" style="margin-top:6px">Play ${digits||twoTones?"these":"this"} before
         starting.</div></div>` : ``;
   /* WHY THIS CONDITION'S DATA IS HELD, on the screen the examiner reads immediately before
      running it. It used to be palm rejection only, named as a platform limit -- which was
@@ -8231,71 +8256,86 @@ const audibilityBlocks = taskId => { const o=audibilityFor(taskId);
    pass/fail verdict does not. */
 function showAudibilityCheck(kind, cont){
   const seq=AUDIBILITY_SEQ[kind];
-  const st={ i:0, marks:[], attempt:1, examinerHeard:false };
+  const st={ played:0, attempt:1, examinerHeard:false };
   const isTarget = k => kind==="tones" ? seq[k] : seq[k]===DIGIT_SET.target;
   const nameOf = k => kind==="tones" ? (seq[k]?"the HIGH beep":"the LOW beep") : String(seq[k]);
   const play = k => {
+    if(kind==="digits"){
+      // Straight through, inside the button press: see speakDigitAt. A timer here loses the
+      // gesture and iOS plays nothing.
+      primeSpeech(); clearSpeech(); speakDigitAt(seq[k], 0);
+      return;
+    }
     newMaster();
-    const at=audio().currentTime+0.08;
-    if(kind==="digits") playStimulus(at, isTarget(k), AUDIO_DEFAULTS[TRIAL.task]||{tone:100},
-                                     "digits", seq[k]);
-    else tone(at, isTarget(k)?+$("ftgt").value:+$("fstd").value, 100, +$("lvl").value);
+    tone(audio().currentTime+0.08, isTarget(k)?+$("ftgt").value:+$("fstd").value,
+         100, +$("lvl").value);
   };
   const script = kind==="tones"
     ? "I’ll play six beeps. After each one, tell me whether it was the low beep or the high beep."
     : "I’ll play six numbers. Tell me each number you hear.";
   const finish=outcome=>{
     AUDIBILITY[kind]={ outcome, form:kind, attempts:st.attempt,
-      sequence: seq.slice(), marks: st.marks.slice(),
+      sequence: seq.slice(), presented: st.played,
       examiner_could_hear: st.examinerHeard,
       level: +$("lvl").value, volume_step: $("volstep")?+$("volstep").value:null,
       route_declared: $("audioroute")?$("audioroute").value:null,
-      digit_set: kind==="digits" ? DIGIT_SET.id : null,
+      digit_set: kind==="digits" ? (digitStandin()? "standin/speech_synthesis" : DIGIT_SET.id) : null,
       at_iso: new Date().toISOString() };
     saveState();
     hideOverlay();
     if(AUDIBILITY_PASSES.includes(outcome)) cont();
     else audibilityFailed(kind);
   };
+  /* THE SPECIFICATION RECORDS ONE OUTCOME, NOT SIX JUDGEMENTS.
+
+     An earlier version marked every stimulus right or wrong, on the reasoning that a fail
+     would then say WHICH ones were missed. Nobody asked for that, the specification does
+     not have it, and it turned a three-outcome decision into twelve button presses with two
+     buttons -- Correct and Wrong -- that look like they are scoring the participant rather
+     than stepping through a check. It also made the screen impossible to leave for an
+     examiner who was not sure what the buttons meant.
+
+     What the specification says is: present six stimuli in a fixed order, ask the
+     participant to identify each one, and record pass, pass after repeat, or fail. So the
+     examiner plays them one at a time -- the screen names the right answer so they can
+     judge -- and then answers one question at the end. */
   const render=()=>{
-    const done=st.i>=seq.length;
-    const right=st.marks.filter(Boolean).length;
-    const body = done
-      ? `<h3>${right} of ${seq.length} identified correctly</h3>
-         <p style="font-size:18px">${st.marks.map((m,k)=>
-            `<span style="display:inline-block;margin:2px 7px;color:${m?"var(--ok)":"#8c2020"}">
-             ${k+1}. ${nameOf(k)} ${m?"✓":"✗"}</span>`).join("")}</p>
-         ${right===seq.length
-           ? `<p class="good" style="font-size:18px">${st.attempt===1?"Pass":"Pass after repeat"}.
-              This is recorded on the session and the check will not be presented again
-              for ${AUDIBILITY_FORM_LABEL[kind]}.</p>`
-           : st.attempt===1
-             ? `<p class="warn" style="font-size:18px">One repetition is allowed. All six have
-                to be correct on the second presentation for a pass after repeat.</p>`
-             : `<p class="bad" style="font-size:18px"><b>Fail.</b> Every condition using
-                ${kind==="tones"?"tones":"spoken numbers"} will be left out of this session,
-                and each one records the reason.</p>`}`
+    const all=st.played>=seq.length;
+    const cur=st.played-1;
+    const body = all
+      ? `<h3>All six presented${st.attempt>1?", second time":""}</h3>
+         <p style="font-size:21px;line-height:1.5">Did the participant identify
+         <b>all six</b> correctly?</p>
+         <p class="note" style="margin:0">In order, they were:
+         ${seq.map((_,k)=>nameOf(k)).join(", ")}.</p>`
       : `<h3>Audibility check — ${kind==="tones"?"tones":"spoken numbers"}</h3>
          <p style="font-size:19px">${script}</p>
-         <p style="font-size:17px;color:#5d6570">Stimulus <b>${st.i+1}</b> of ${seq.length}${
-            st.attempt>1?" · second presentation":""}</p>
-         <p style="font-size:16px;color:#5d6570">Play it, ask, then mark what they said.
-         The right answer for this one is <b>${nameOf(st.i)}</b>.</p>
+         ${st.played===0
+           ? `<p style="font-size:17px;color:#5d6570">Six stimuli${
+               st.attempt>1?", second presentation":""}. Play one, ask what it was, then play
+               the next.</p>`
+           : `<p style="font-size:17px;color:#5d6570">Just played
+              <b>${st.played} of ${seq.length}</b> — that one was
+              <b>${nameOf(cur)}</b>.</p>`}
          <label style="display:flex;align-items:center;gap:9px;justify-content:center;
-           font-size:16px;margin-top:10px">
+           font-size:16px;margin-top:10px;max-width:460px;margin-left:auto;margin-right:auto">
            <input type="checkbox" ${st.examinerHeard?"checked":""}
-             onchange="window.__audHeard(this.checked)">
-           I can hear it clearly from where I am sitting, at the volume that is set</label>`;
-    const btns = done
-      ? (right===seq.length
-          ? [{ label:"Continue", onClick:()=>finish(st.attempt===1?"pass":"pass_after_repeat") }]
-          : st.attempt===1
-            ? [{ label:"Present again", onClick:()=>{ st.attempt=2; st.i=0; st.marks=[]; render(); } },
-               { label:"Record a fail", ghost:true, onClick:()=>finish("fail") }]
-            : [{ label:"Record a fail", onClick:()=>finish("fail") }])
-      : [{ label:"Play", onClick:()=>play(st.i) },
-         { label:"Correct", onClick:()=>{ st.marks.push(true);  st.i++; render(); } },
-         { label:"Wrong", ghost:true, onClick:()=>{ st.marks.push(false); st.i++; render(); } },
+             style="width:auto;flex:0 0 auto" onchange="window.__audHeard(this.checked)">
+           <span style="text-align:left">I can hear it clearly from where I am sitting, at the
+           volume that is set</span></label>`;
+    const btns = all
+      ? [{ label:"Yes — all six", onClick:()=>finish(st.attempt===1?"pass":"pass_after_repeat") },
+         ...(st.attempt===1
+           ? [{ label:"No — present again", ghost:true, onClick:()=>{
+                 st.attempt=2; st.played=0; render(); } }]
+           : []),
+         { label:"No — record a fail", ghost:true, onClick:()=>finish("fail") },
+         { label:"Exit", ghost:true, onClick:()=>backToSession() }]
+      : [{ label:`Play ${st.played+1} of ${seq.length}`, onClick:()=>{
+             play(st.played); st.played++; render(); } },
+         ...(st.played>0
+           ? [{ label:"Play that one again", ghost:true, onClick:()=>play(cur) }]
+           : []),
          { label:"Exit", ghost:true, onClick:()=>backToSession() }];
     showOverlay(body, btns);
   };
