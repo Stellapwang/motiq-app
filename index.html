@@ -4860,8 +4860,13 @@ function streamGroups(){
   const g=new Map();
   Object.entries(AUDIO_DEFAULTS).forEach(([k,a])=>{
     const key = a.stream==="oddball" ? "oddball" : "every:"+a.respond;
-    if(!g.has(key)) g.set(key,{ key, first:k, a, tasks:[] });
+    if(!g.has(key)) g.set(key,{ key, first:k, a, tasks:[], kinds:new Set() });
     g.get(key).tasks.push(k);
+    // THE ROW GROUPS BY STREAM AND THE TARGET COUNTS ARE PER STIMULUS KIND, so an oddball
+    // row covers both the tone and the digit conditions and their count tables disagree on
+    // every dual trial by design. Collecting the kinds here is what lets the row print both
+    // instead of printing the first one it met and labeling it as the row's.
+    g.get(key).kinds.add(a.kind||avKind(k));
   });
   return [...g.values()];
 }
@@ -4874,7 +4879,13 @@ function streamSet(key,f,v){
 const STREAM_ROW_LABEL = {
   "every:tap":   ["Every tone · tap",    "A tap to every tone."],
   "every:voice": ["Every tone · spoken", "A spoken number to every tone."],
-  "oddball":     ["Oddball",             "A response only to the rare high tone. The low tones are not answered, so they are packed close: that is what makes the high one rare."]
+  // THE OLD NOTE SAID THE NON-TARGETS WERE "PACKED CLOSE", and under the two-stream design
+  // they were: the oddball ran a 650 ms mean against 1000 for the paced streams. There is
+  // one gap law now, so nothing is packed closer than anything else, and rarity comes from
+  // the fixed target COUNT -- about 12 targets among about 60 stimuli -- rather than from
+  // the spacing. Describing the old mechanism would send a reader looking for a mean that
+  // is no longer there.
+  "oddball":     ["Oddball",             "A response only to the rare target. The non-targets are not answered; rarity comes from the fixed number of targets in the trial, not from the spacing."]
 };
 function renderAudioTable(){
   let h=`<tr><th>Stream</th><th>Used by</th><th>Minimum (ms)</th><th>Mean (ms)</th>
@@ -4896,9 +4907,9 @@ function renderAudioTable(){
       <td class="num">${AV_GAP.minMs}</td>
       <td class="num">${AV_GAP.meanMs}</td>
       <td><span class="note" style="margin:0">${a.hasTargets
-          ? (AV_TARGET_COUNTS[a.kind]
-              ? "fixed: "+AV_TARGET_COUNTS[a.kind].dual.join(", ")
-              : "fixed")
+          ? [...g.kinds].map(kind=>{ const t=AV_TARGET_COUNTS[kind];
+              return t ? `${kind}: ${t.single.join(", ")} single, ${t.dual.join(", ")} dual`
+                       : `${kind}: fixed`; }).join("<br>")
           : "—"}</span></td>
       <td>${num("tone",30,200,10)}</td>
       <td class="num">${tones}</td>
