@@ -972,20 +972,26 @@
       </div>
     </fieldset>
 
-    <!-- THE DIGIT CONDITIONS CANNOT RUN WITHOUT THE RECORDINGS, and this is how they are
-         run anyway. It is a rehearsal switch, not a stimulus setting: it exists so the two
-         conditions can be walked through before a speaker has been recorded, and every
-         trial it produces is marked DATA HELD for the reason given. -->
+    <!-- THE DECLARED STIMULUS for the two digit conditions. The specification asks for five
+         recordings by one speaker; this study runs on the device's own speech instead, with
+         ONE VOICE NAMED. The naming is the whole of what makes it accountable: a voice that
+         is merely whatever the device offered changes with the device and with an iOS
+         update, and nothing in the data would say so. -->
     <fieldset>
-      <legend>Spoken digits <span style="font-weight:400;color:var(--muted)">— rehearsal only</span></legend>
+      <legend>Spoken digits <span style="font-weight:400;color:var(--muted)">— the stimulus for VOC_VDGT and PEN_VDGT</span></legend>
       <div id="standinNote"></div>
       <div class="r2" style="margin-top:10px">
-        <div><label for="digitstandin">Stimulus for VOC_VDGT and PEN_VDGT</label>
+        <div><label for="digitstandin">Source</label>
           <select id="digitstandin" onchange="setDigitStandin(this.value)">
-            <option value="speech" selected>The device announces 1, 2, 3, 4, 5 — rehearsal</option>
-            <option value="none">None — the conditions stay blocked</option>
+            <option value="speech" selected>This device speaks the numbers</option>
+            <option value="none">Off — the conditions stay blocked</option>
           </select></div>
-        <div style="align-self:end"><button class="ghost sm" onclick="demoDigits()">Play 1 to 5</button></div>
+        <div><label for="digitvoice">Voice <span class="note" style="margin:0">— named by the study</span></label>
+          <select id="digitvoice" onchange="setDigitVoice(this.value)"></select></div>
+      </div>
+      <div class="btnrow" style="margin-top:8px">
+        <button class="ghost sm" onclick="demoDigits()">Play 1 to 5</button>
+        <button class="ghost sm" onclick="demoDigit(DIGIT_SET.target)">Play the target</button>
       </div>
     </fieldset>
 
@@ -3999,9 +4005,13 @@ function dependencyNote(c){
    record, so a default of true is a record claiming consent nobody gave -- the same class of
    fault as implement_verified taking the examiner's selection as fact, which this app
    already refuses to do. Consent stays something a person does. */
-const rehearsalOnly = c => heldKeyFor(c)===DIGIT_STANDIN_HELD;
+/* RETIRED WITH THE REHEARSAL. While the digit conditions were held, nothing of the
+   participant was captured and consent to record had nothing to attach to. They are data
+   now: the participant's voice is recorded on them exactly as on the tone conditions, so
+   they are gated on consent exactly as the tone conditions are. */
+const rehearsalOnly = () => false;
 function taskBlocked(c){
-  if(c.voice && !voiceConsented() && !rehearsalOnly(c))
+  if(c.voice && !voiceConsented())
     return "voice recording consent not yet ticked";
   // THE DIGIT CONDITIONS REFUSE TO RUN WITHOUT THE RECORDINGS, rather than substituting
   // something that would play. A synthesized or stand-in stimulus would produce a complete
@@ -4028,12 +4038,16 @@ function taskBlocked(c){
    is a property of the platform and is written on the row; the digit stand-in is a property
    of this SESSION, switched on by the examiner, so it has to be asked for rather than read.
    Everything that showed a held badge or wrote data_held now goes through here. */
-const DIGIT_STANDIN_HELD="digit stand-in";
+/* THE DIGIT CONDITIONS ARE NO LONGER HELD. They were, while the device voice was a
+   rehearsal stand-in nobody had chosen; the study has now DECLARED that voice the stimulus,
+   so the trials are data. What makes that defensible is that the voice is named, checked for
+   on the device, and recorded -- not that it stopped being synthesized.
+   The departure from "recorded once by one speaker" is still in every record, under
+   sequence.speech_stimulus and in digit_set, which names the voice that spoke. */
+const DIGIT_STANDIN_HELD="digit stand-in";   // retired; older records report it
 const heldKeyFor = c => {
   if(!c) return null;
   if(c.dataHeld) return c.dataHeld;
-  if(avKind(c.id)==="digits" && digitStandin() && !DIGIT_SET.installed)
-    return DIGIT_STANDIN_HELD;
   return null;
 };
 const STANDIN_WARNING =
@@ -4121,12 +4135,12 @@ function renderPlan(){
                  button, tick the consent, comes back, and the row is still grey with the
                  same message. Each remedy is now derived from the state that caused the
                  block rather than from the row carrying a voice flag. */""}
-            ${c.voice && !voiceConsented() && !rehearsalOnly(c)
+            ${c.voice && !voiceConsented()
               ? `<button class="ghost sm" style="margin-left:6px"
                    onclick="goConsent()">Tick consent</button>` : ""}
-            ${avKind(c.id)==="digits" && !DIGIT_SET.installed && !digitStandin()
+            ${avKind(c.id)==="digits" && !DIGIT_SET.installed
               ? `<button class="ghost sm" style="margin-left:6px"
-                   onclick="goDigitStandin()">Use the rehearsal stand-in</button>` : ""}
+                   onclick="goDigitStandin()">Spoken digit settings</button>` : ""}
             ${audibilityBlocks(c.id)
               ? `<span class="note" style="margin:0 0 0 6px">The check cannot be retaken in
                  this session; it is recorded against the participant.</span>` : ""}
@@ -6366,19 +6380,51 @@ const digitSlotCeilingMs = () => AV_GAP.minMs-150;
    the measured dispatch drift, and names digit_set "standin/speech_synthesis". It switches
    itself off the moment real recordings are installed, because digitSetProblem() stops
    consulting it once DIGIT_SET.installed is true. */
+/* THE DEVICE VOICE IS THE STIMULUS FOR THIS STUDY, decided 2026-10-01, and it is therefore
+   DECLARED rather than whatever the device happens to offer.
+
+   The specification asks for the five digits "spoken by one speaker and recorded once". This
+   build does not have those recordings and the study has chosen to run on the device's own
+   speech instead. That choice is legitimate and it is a DEPARTURE, so what the departure
+   costs has to be controlled rather than left to chance: the hazard was never that the voice
+   is synthetic, it was that nothing named it. Without a named voice, a different iPad or an
+   iOS update changes the stimulus silently, and "did they detect the two" becomes partly a
+   fact about which device the participant sat at.
+
+   So: one voice is named, it is recorded on every trial, and a device that cannot provide it
+   REFUSES TO RUN the two conditions rather than quietly substituting another. A substitution
+   nobody notices is the whole failure this guards against.
+
+   It is still not the same guarantee a recording gives -- two devices offering a voice of
+   the same NAME can still differ in version -- so the record carries the voice, the user
+   agent and the measured onsets, and says in words that the stimulus is synthesized. */
+const DIGIT_VOICE={ name:"Samantha", lang:"en-US", rate:1.25,
+  declared_iso:"2026-10-01",
+  note:"the device's speech synthesis, with this voice named by the study, standing in for "+
+       "the five digits the specification asks to be recorded once by one speaker" };
 const DIGIT_STANDIN={ mode:"speech", voice:null, primed:false };
 const digitStandin = () => DIGIT_STANDIN.mode==="none" ? null : DIGIT_STANDIN.mode;
 const speechAvailable = () => typeof window!=="undefined" && !!window.speechSynthesis
                            && typeof SpeechSynthesisUtterance==="function";
-// Chosen once and recorded, because which voice spoke is part of what the stimulus was.
+/* THE NAMED VOICE OR NOTHING. This used to fall back -- en-US, then any English, then
+   whatever was first in the list -- which is exactly the silent substitution that makes a
+   synthesized stimulus unaccountable. A device without the declared voice now blocks the two
+   conditions and says which voice is missing. */
 function standinVoice(){
   if(!speechAvailable()) return null;
   if(DIGIT_STANDIN.voice) return DIGIT_STANDIN.voice;
   const vs=window.speechSynthesis.getVoices()||[];
-  DIGIT_STANDIN.voice = vs.find(v=>/^en[-_]US/i.test(v.lang))
-                     || vs.find(v=>/^en/i.test(v.lang)) || vs[0] || null;
+  DIGIT_STANDIN.voice = vs.find(v=>v.name===DIGIT_VOICE.name) || null;
   return DIGIT_STANDIN.voice;
 }
+// Every English voice this device offers, for the picker. The study names one; this is how
+// it gets named against a device rather than from memory.
+const availableVoices = () => !speechAvailable() ? []
+  : (window.speechSynthesis.getVoices()||[]).filter(v=>/^en/i.test(v.lang));
+// The stimulus identifier that goes into the record, naming the voice that spoke.
+const digitSetId = () => DIGIT_SET.installed ? DIGIT_SET.id
+  : (standinVoice() ? `device_speech/${standinVoice().name}@${standinVoice().lang}`
+                    : "device_speech/unavailable");
 if(speechAvailable()) try{
   // Voices load asynchronously; without this the first trial of a session picks nothing and
   // the platform default is used silently.
@@ -6428,6 +6474,13 @@ function speakDigitAt(digit, whenMs, onSpoken){
   if(whenMs<=16){ fire(); return; }
   SPEECH_TIMERS.push(setTimeout(fire, whenMs));
 }
+function setDigitVoice(name){
+  if(!name) return;
+  DIGIT_VOICE.name=name;
+  DIGIT_STANDIN.voice=null;            // re-resolve against the device
+  const v=standinVoice(); if(v) DIGIT_VOICE.lang=v.lang;
+  renderStandinNote(); renderPlan(); saveState();
+}
 function setDigitStandin(mode){
   DIGIT_STANDIN.mode = mode==="speech" ? "speech" : "none";
   if(DIGIT_STANDIN.mode==="speech"){ primeSpeech(); standinVoice(); }
@@ -6437,26 +6490,41 @@ function setDigitStandin(mode){
 }
 function renderStandinNote(){
   const el=$("standinNote"); if(!el) return;
+  // The picker is filled from the device, so the study names its voice against what this
+  // iPad actually has rather than from memory.
+  const sel=$("digitvoice");
+  if(sel){
+    const vs=availableVoices();
+    sel.innerHTML = vs.length
+      ? vs.map(v=>`<option value="${esc(v.name)}" ${v.name===DIGIT_VOICE.name?"selected":""}
+          >${esc(v.name)} (${esc(v.lang)})</option>`).join("")
+      : `<option value="">no English voice on this device</option>`;
+    if(!vs.some(v=>v.name===DIGIT_VOICE.name))
+      sel.insertAdjacentHTML("afterbegin",
+        `<option value="${esc(DIGIT_VOICE.name)}" selected>${esc(DIGIT_VOICE.name)} — not on this device</option>`);
+  }
   const v=standinVoice();
   el.innerHTML = !speechAvailable()
-    ? `<div class="warn">This device exposes no speech synthesis, so the rehearsal stand-in
-       is not available here. The two digit conditions stay blocked until the recordings are
-       installed.</div>`
-    : digitStandin()
-    ? `<div class="bad"><b>VOC_VDGT and PEN_VDGT are running on a rehearsal stand-in.</b>
-       The device speaks the numbers${v?` in <b>${esc(v.name)}</b> (${esc(v.lang)})`:""}, which is
-       not the specified stimulus: the voice belongs to this iPad's operating system rather
-       than to one speaker recorded once, and speech cannot be scheduled on the audio clock,
-       so the onsets drift from the schedule. <b>Every trial is marked DATA HELD</b> and
-       carries the measured drift. These two conditions do not need the voice-recording
-       consent tick while this is on, because the microphone is never opened — the record
-       says so rather than claiming a consent nobody gave.
-       Use it to walk through the conditions, not to collect.</div>`
-    : `<div class="note" style="margin:0">No recordings are installed, so VOC_VDGT and
-       PEN_VDGT cannot be planned. Switch this on to walk through them with the device
-       speaking the numbers — the trials run and are marked DATA HELD, and they do <b>not</b>
-       need the voice-recording consent tick, because nothing is recorded. See
-       <code>DIGIT_SET</code> for what installing the real recordings requires.</div>`;
+    ? `<div class="bad">This device has no speech synthesis, so VOC_VDGT and PEN_VDGT cannot
+       run on it. They are blocked rather than run on something else.</div>`
+    : !digitStandin()
+    ? `<div class="note" style="margin:0">Off. VOC_VDGT and PEN_VDGT cannot be planned while
+       no recordings are installed and no voice is set.</div>`
+    : !v
+    ? `<div class="bad"><b>The study voice “${esc(DIGIT_VOICE.name)}” is not installed on this
+       device</b>, so VOC_VDGT and PEN_VDGT are blocked. They are not run in a different
+       voice: a substitution nobody notices is the one failure naming a voice exists to
+       prevent. Install that voice on the iPad, or name one this device has — and if you
+       change it mid-study, trials either side of the change are on different stimuli.</div>`
+    : `<div class="note" style="margin:0"><b>The five numbers are spoken by this device, in
+       <span style="color:var(--ink)">${esc(v.name)} (${esc(v.lang)})</span>.</b>
+       That is this study's declared stimulus and it is recorded on every trial, in
+       <code>digit_set</code> and under <code>speech_stimulus</code>.
+       <br>It is a stated departure from the specification, which asks for five recordings by
+       one speaker: a named voice still varies with the operating system version in a way a
+       recording does not, so the user agent is recorded beside it. A device that cannot
+       provide this voice refuses to run these two conditions rather than substituting
+       another.</div>`;
 }
 // One digit, spoken now. Called straight from a button so it stays inside the gesture.
 function demoDigit(d){
@@ -6473,11 +6541,15 @@ function demoDigits(){
 // would put a variable delay between the schedule and the sound.
 const DIGIT_BUFFERS={};
 function digitSetProblem(){
-  // A REHEARSAL STAND-IN MAKES THE CONDITION RUNNABLE, NOT VALID. It stops being blocked and
-  // starts being DATA HELD, which is the honest state: the screens, the timing rules, the
-  // placement and the examiner entry are all exercised, and the stimulus is not the one the
-  // specification names.
-  if(!DIGIT_SET.installed && digitStandin()) return null;
+  // THE DEVICE VOICE IS THE STIMULUS, so what has to be true is that THIS device can produce
+  // the voice the study named. A device that cannot is refused rather than quietly speaking
+  // in a different one.
+  if(!DIGIT_SET.installed && digitStandin()){
+    if(!speechAvailable()) return "this device has no speech synthesis";
+    if(!standinVoice())
+      return `the study voice “${DIGIT_VOICE.name}” is not installed on this device`;
+    return null;
+  }
   if(!DIGIT_SET.installed) return "no digit recordings are installed in this build";
   const missing=DIGIT_SET.digits.filter(d=>!DIGIT_SET.samples[d]);
   if(missing.length) return `recordings are missing for ${missing.join(", ")}`;
@@ -7557,17 +7629,10 @@ function openTrial(showInstruction){
   const finishOpen=()=> showInstruction ? showInstructionScreen(seq,c) : readyTrial(seq,c);
   const afterMic =()=> c.verbal ? showVerbalSetup(c,finishOpen) : finishOpen();
 
-  // NEITHER PRACTICE NOR A REHEARSAL ASKS FOR THE MICROPHONE. For practice, asking would
-  // put the permission sheet in front of the examiner twice and leave a recording in the
-  // store with no trial record to belong to. For a stand-in rehearsal there is nothing worth
-  // capturing and, without consent, nothing that may be captured -- so the trial runs
-  // unrecorded and the record carries the reason rather than a permission prompt per trial.
-  if(c.voice && !TRIAL.practice && rehearsalOnly(c) && !voiceConsented()){
-    TRIAL.voiceFailure={ reason:"rehearsal_standin",
-      detail:"a rehearsal on the digit stand-in, run without recording consent. The "+
-             "microphone was not opened and nothing of the participant was captured." };
-  }
-  if(c.voice && !TRIAL.practice && !(rehearsalOnly(c) && !voiceConsented())){
+  // PRACTICE IS NOT RECORDED, so it does not ask for the microphone: asking would put the
+  // permission sheet in front of the examiner twice and leave a recording in the store with
+  // no trial record to belong to.
+  if(c.voice && !TRIAL.practice){
     if(!voiceConsented()){
       // Should be unreachable -- the plan blocks it -- but a queue built before consent
       // was withdrawn could still contain one, and it must not record silently.
@@ -10296,7 +10361,7 @@ function buildRecord(){
       /* THE DRIFT, SUMMARISED, so nobody has to compute it to find out whether the trial is
          usable even as a rehearsal. cut_count is utterances abandoned because the previous
          word was still speaking when the next was due. */
-      speech_standin: R.speechActual ? (()=>{
+      speech_stimulus: R.speechActual ? (()=>{
         /* DRIFT AGAINST THE SAME NUMBER THE REAL PATH REPORTS AS ITS ONSET, which is
            RUN.actualOnsets -- the expected trial-relative time, lead-in included. An earlier
            version rebuilt that expression here from toneT0Ms and the lead and got it wrong by
@@ -10312,10 +10377,32 @@ function buildRecord(){
           drift_mean_ms: d.length?+(d.reduce((a,b)=>a+b,0)/d.length).toFixed(1):null,
           drift_max_abs_ms: abs.length?+Math.max(...abs).toFixed(1):null,
           cut_count: R.speechCuts||0,
+          declared_voice: DIGIT_VOICE.name, declared_lang: DIGIT_VOICE.lang,
+          declared_iso: DIGIT_VOICE.declared_iso,
           voice: DIGIT_STANDIN.voice ? DIGIT_STANDIN.voice.name : null,
           voice_lang: DIGIT_STANDIN.voice ? DIGIT_STANDIN.voice.lang : null,
-          user_agent_note:"the voice is this device's, so user_agent is what identifies the stimulus set",
-          note:"a rehearsal stand-in for the unrecorded digits. The words are spoken by the device's speech synthesis and dispatched from timers, so onsets drift from the schedule and a late word is cut rather than queued. Not the specified stimulus and not data." };
+          // The trial cannot run unless these match -- a device without the declared voice
+          // is refused -- so a false here would be a defect, and it is recorded rather than
+          // assumed.
+          voice_matched: !!(DIGIT_STANDIN.voice && DIGIT_STANDIN.voice.name===DIGIT_VOICE.name),
+          rate: DIGIT_VOICE.rate,
+          /* WHETHER THE 2000 ms TARGET SEPARATION ACTUALLY HELD. AV_PLACE guarantees it in
+             the SCHEDULE, and a schedule is what the audio clock delivers for tones. Speech
+             is dispatched from timers, so the realized gaps are not the scheduled ones, and
+             a guarantee that is only true of the plan is not a guarantee. Computed from the
+             measured onsets and recorded beside the specified minimum, so a trial says for
+             itself whether its targets came closer together than the rule allows. */
+          realized_min_target_gap_ms: (()=>{
+            const t=[]; R.seq.positions.forEach(i=>{ const a=R.speechActual[i];
+              if(a!=null) t.push(a); });
+            t.sort((x,y)=>x-y);
+            if(t.length<2) return null;
+            return +Math.min(...t.slice(1).map((v,i)=>v-t[i])).toFixed(1);
+          })(),
+          min_target_gap_spec_ms: AV_PLACE.minTargetGapMs,
+          latency_note:"the specification measures response latency WITHIN the voice recording, between the stimulus as captured and the voice onset, so dispatch drift does not corrupt that measure -- the stimulus is found in the waveform rather than taken from the schedule. What drift does affect is the realized spacing, which is why realized_min_target_gap_ms is recorded against the specified minimum.",
+          user_agent_note:"the voice is this device's own, so user_agent identifies the stimulus as much as the voice name does: the same named voice can differ between operating system versions.",
+          note:"THIS STUDY'S DECLARED STIMULUS, and a stated departure from the specification, which asks for the five digits recorded once by one speaker. The words are spoken by the device's speech synthesis in the named voice, and dispatched from timers rather than scheduled on the audio clock -- so the actual onsets above are measured and are the ones to use. A device that cannot provide the declared voice refuses to run these conditions rather than substituting another." };
       })() : null,
       audio_clock_t0_s:R.toneClockT0??null,
       audio_base_latency_s:R.toneClockBase??null,
@@ -10330,8 +10417,9 @@ function buildRecord(){
       // NAMES THE STAND-IN WHEN ONE WAS USED, because this is the field an analyst filters
       // on. Reporting the placeholder id would say "no recordings" where the truth is "words
       // this device spoke", and those are different trials.
-      digit_set: R.seq.kind!=="digits" ? null
-        : (R.speechActual ? "standin/speech_synthesis" : DIGIT_SET.id),
+      // NAMES THE VOICE THAT SPOKE, because the device's speech is this study's declared
+      // stimulus and "which voice" is the whole of what makes that accountable.
+      digit_set: R.seq.kind!=="digits" ? null : digitSetId(),
       digit_slot_ms: R.seq.kind==="digits" ? DIGIT_SET.slotMs : null } : null,
     // THE AUDIBILITY CHECK, on every trial of an auditory condition rather than once on the
     // session. A trial record has to stand on its own: an analyst holding one row must be
@@ -11397,7 +11485,7 @@ function saveState(){
       // reload would leave the two conditions blocked again mid-session with no explanation,
       // and one that silently turned itself ON would be worse. It is shown in red wherever
       // it is in force.
-      digitStandin:DIGIT_STANDIN.mode,
+      digitStandin:DIGIT_STANDIN.mode, digitVoice:DIGIT_VOICE.name,
       series:SERIES, repeats:REPEATS, lastTask:LAST_TASK, lastHand:LAST_HAND,
       audio:AUDIO_DEFAULTS,
       // What the build that saved this session shipped. On the way back in it is the only
@@ -11431,6 +11519,9 @@ function restoreState(){
     if(typeof st.consentTouched==="boolean") CONSENT_TOUCHED=st.consentTouched;
     // Either value is restored now that the default is "speech": a session where the
     // examiner deliberately turned it OFF has to come back off.
+    if(typeof st.digitVoice==="string" && st.digitVoice){
+      DIGIT_VOICE.name=st.digitVoice; DIGIT_STANDIN.voice=null;
+    }
     if((st.digitStandin==="speech" || st.digitStandin==="none") && !DIGIT_SET.installed){
       DIGIT_STANDIN.mode=st.digitStandin;
       if($("digitstandin")) $("digitstandin").value=st.digitStandin;
