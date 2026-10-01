@@ -1437,40 +1437,22 @@ let ORPHANED_AUDIO=null;
 //            target rare. The response constraint applies to TARGET-to-target spacing, and
 //            is enforced where the targets are placed rather than by the floor.
 const STREAMS = {
-  // The mean follows the FLOOR at a fixed ratio rather than being a number of its own. Both
-  // have to move together: the gap between floor and mean IS the randomness -- a floor of 800
-  // under a mean of 1000 leaves 200 ms of spread, which is a metronome. Holding the ratio
-  // keeps the same feel on both channels and makes the count fall out correctly: a tap floor
-  // of 600 gives a 1000 ms mean, which is 50 responses in a 50 s trial and 100 across the two
-  // TAP_TONE trials -- the number ex-Gaussian fitting needs. A voice floor of 800 gives about
-  // 1340 ms, because a spoken number cannot be asked for every second.
-  every:   { meanOverFloor:1.67, ptg:0, tone:100, floorFrom:"response",
-             label:"Respond to every tone" },
-  // 650 / 0.20, from 500 / 0.25 in v12.50. TWO SEPARATE COMPLAINTS, two separate levers,
-  // and only changing both answers them.
-  //
-  // The MEAN sets how fast the stream sounds. At 500 it delivered two tones a second with a
-  // 438 ms median gap, which was reported as too fast; dropping the target probability
-  // alone would not have touched that, since the standards set the rate and there are more
-  // of them, not fewer. At 650 it is 1.5 a second, median gap 539 ms.
-  //
-  // The PROBABILITY sets how much counting there is, and 0.25 was high for an oddball where
-  // 0.10 to 0.20 is conventional -- rarity is the whole paradigm. 0.20 takes a 60 s trial
-  // from 31 numbers to say aloud WHILE DRAWING down to 18, and widens the median gap between
-  // targets from 1.9 s to 3.3 s.
-  //
-  // Not lower than 0.20: PEN_TODD taps to each target rather than counting them, so for that
-  // task the targets ARE the response events and 18 per trial is already thin for a reaction
-  // time distribution. It is exploratory and data-held for palm rejection, so the counting
-  // tasks decide the number, but it is the floor under it.
-  oddball: { meanMs:650,  ptg:0.20, tone:100, floorFrom:"separation", floorMs:300,
-             label:"Respond only to the high tone" }
+  // THE NUMBERS THAT USED TO LIVE HERE ARE GONE, and that is the point rather than a
+  // simplification. A mean of 650 ms with a target probability of 0.20 was a stream
+  // DESCRIBED by two tunable numbers, which meant the number of targets in a trial was a
+  // random variable and the spacing was whatever the mean produced. Both are now specified
+  // exactly: AV_GAP fixes the gap law for every stream in the battery, and
+  // AV_TARGET_COUNTS fixes how many targets each trial contains. What is left here is the
+  // one thing that genuinely differs between streams -- whether the participant answers
+  // every stimulus or only the rare one.
+  every:   { hasTargets:false, tone:100, label:"Respond to every stimulus" },
+  oddball: { hasTargets:true,  tone:100, label:"Respond only to the target" }
 };
-// The floor a response channel needs. Voice reads from the language registry, because how
-// long a number takes to say is a fact about the language.
-const RESPONSE_FLOOR = { tap:600, voice:null };   // voice resolved at read time
-const responseFloorMs = ch => ch==="voice" ? countFloorMs() : RESPONSE_FLOOR.tap;
-// Which stream a task uses, and how it answers. Two fields instead of a row of numbers.
+// The floor is 600 ms on every stream and no longer depends on the response channel; see
+// the AUDITORY-VERBAL LOAD ELEMENT block for why the constraint moved to target spacing.
+// The language registry keeps countFloorMs because it still records a real assumption --
+// how long a number takes to say is a fact about the language -- and the plan projection
+// reads it to warn when a stream asks for more counting than a language can deliver.
 const TASK_STREAM = {
   TAP_TONE:{ stream:"every",   respond:"tap"   },
   PEN_TONE:{ stream:"every",   respond:"tap"   },
@@ -1478,6 +1460,11 @@ const TASK_STREAM = {
   FIN_VCNT:{ stream:"every",   respond:"voice" },
   VOC_VODD:{ stream:"oddball", respond:"voice" },
   PEN_VODD:{ stream:"oddball", respond:"voice" },
+  // Digit detection is an oddball in shape -- one rare stimulus is answered and the rest
+  // are not -- and differs only in the MATERIALS. Which materials a task uses is AV_KIND's
+  // business, so these two rows say nothing about digits; the stream is the same stream.
+  VOC_VDGT:{ stream:"oddball", respond:"voice" },
+  PEN_VDGT:{ stream:"oddball", respond:"voice" },
   PEN_TODD:{ stream:"oddball", respond:"tap"   }
 };
 // Built from the two above. AUDIO_DEFAULTS keeps its shape so everything downstream -- the
@@ -1488,21 +1475,30 @@ function buildAudioDefaults(){
   Object.entries(TASK_STREAM).forEach(([id,cfg])=>{
     const st=STREAMS[cfg.stream], c=CATALOGUE.find(x=>x.id===id);
     const drawing=!!(c&&c.spiral);
-    const floor = st.floorFrom==="response" ? responseFloorMs(cfg.respond) : st.floorMs;
-    const mean  = st.meanOverFloor ? Math.round(floor*st.meanOverFloor/10)*10 : st.meanMs;
-    out[id]={ ...st, meanMs:mean,
-      floorMs: st.floorFrom==="response" ? responseFloorMs(cfg.respond) : st.floorMs,
+    out[id]={ ...st,
+      // ONE GAP LAW, EVERY STREAM. These are not editable starting points any more: the
+      // specification states them, and the 402.1 scale that makes the mean come out right
+      // is tied to this exact minimum, mean and discard rule. They are surfaced on the
+      // Parameters page as a statement of what is in force, not as three boxes to type in.
+      floorMs:AV_GAP.minMs, meanMs:AV_GAP.meanMs, maxMs:AV_GAP.maxMs,
       lead: drawing ? 1000 : 500,
       durS: c ? (c.lengthS ?? c.sustainedS ?? 60) : 60,
-      stream:cfg.stream, respond:cfg.respond,
+      stream:cfg.stream, respond:cfg.respond, kind:avKind(id),
+      hasTargets:st.hasTargets,
       stopMode: drawing ? "drawEnd" : "fixed",
       floorS: drawing ? 20 : undefined,
       tailS:  drawing ? 3 : undefined,
       selfPacedDurS: drawing ? 180 : undefined,
+      // The single-task baseline and its dual-task partner. They can no longer drift apart
+      // on timing, because neither owns any timing -- the pairing is kept because the
+      // record and the Parameters page still name it, and because the TARGET COUNTS are
+      // deliberately different between the pair's trials and somebody reading the export
+      // needs to know the two rows are meant to be compared.
       pairWith: cfg.stream==="every"
         ? (id==="TAP_TONE"?"PEN_TONE":id==="PEN_TONE"?"TAP_TONE":null)
-        : (id==="VOC_VODD"?"PEN_VODD":id==="PEN_VODD"?"VOC_VODD":null),
-      label: st.label + (drawing?" while drawing":" (tones only)")
+        : (id==="VOC_VODD"?"PEN_VODD":id==="PEN_VODD"?"VOC_VODD"
+          :id==="VOC_VDGT"?"PEN_VDGT":id==="PEN_VDGT"?"VOC_VDGT":null),
+      label: st.label + (drawing?" while drawing":" (no drawing)")
              + (cfg.respond==="voice"?" — out loud":"") };
   });
   return out;
@@ -1737,7 +1733,7 @@ function instructionFor(taskId, opts){
         lines.push("The low beeps are more common. Ignore them.");
       }
       lines.push("I will ask for your final number at the end.");
-    } else if(c.ptgTargets || (AUDIO_DEFAULTS[taskId]&&AUDIO_DEFAULTS[taskId].ptg>0)){
+    } else if(c.ptgTargets || (AUDIO_DEFAULTS[taskId]&&AUDIO_DEFAULTS[taskId].hasTargets)){
       // Named on the tone tasks too, not only the unpaced ones: the circle is offset to the
       // tapping side on every one-zone task now, so the instruction and the screen should
       // agree rather than one of them being the only place the hand is stated.
@@ -2756,7 +2752,8 @@ function tapPracticeStart(){
   if(TP.running) return;
   const a=AUDIO_DEFAULTS.TAP_TONE; if(!a) return;
   let seq;
-  try{ seq=makeSequence(TAP_PRACTICE_S, a.floorMs, a.meanMs, 0, TAP_PRACTICE_SEED, "tap"); }
+  try{ seq=makeSequence({ durationS:TAP_PRACTICE_S, targetCount:null,
+                          seed:TAP_PRACTICE_SEED, respond:"tap", kind:"tones" }); }
   catch(e){ $("tpresult").innerHTML=`<div class="bad">Cannot build the practice stream: ${esc(e.message)}</div>`; return; }
   TP.taps=[]; TP.kinds={}; TP.tones=seq.n; TP.running=true;
   if($("tpresult")) $("tpresult").innerHTML="";
@@ -3414,6 +3411,14 @@ function dependencyNote(c){
 function taskBlocked(c){
   if(c.voice && !voiceConsented())
     return "voice recording consent not yet ticked";
+  // THE DIGIT CONDITIONS REFUSE TO RUN WITHOUT THE RECORDINGS, rather than substituting
+  // something that would play. A synthesized or stand-in stimulus would produce a complete
+  // trial record naming a stimulus set that was never administered, and nothing downstream
+  // could tell those trials from real ones. See DIGIT_SET for what installing them means.
+  if(avKind(c.id)==="digits"){
+    const why=digitSetProblem();
+    if(why) return why;
+  }
   return null;
 }
 // A HELD task is not a blocked one. Blocked means it cannot run; held means it runs, and
@@ -3684,14 +3689,20 @@ function planSummary(){
               : (c.audio ? expectedStreamS(c,s) : selfPacedEstS());
     secs += n*(len+overheadFor(c.id));
     const a=AUDIO_DEFAULTS[c.id];
-    if(c.audio && a && a.ptg>0){
-      // Target count follows the duration the stream is EXPECTED to run, which for a
-      // self-paced trial is not its generated length. Reading s.lengthS alone here
-      // yields NaN once self-pacing is selectable, and the warning below then never
-      // fires -- on exactly the tasks where target count matters most.
-      const tones=Math.floor(expectedStreamS(c,s)*1000/a.meanMs), t=Math.round(tones*a.ptg);
-      if(s.hands==="each"||s.hands==="roles"){ targetsByHand.dominant+=t*s.repeats; targetsByHand.nondominant+=t*s.repeats; }
-      else targetsByHand[s.oneHand==="nondominant"?"nondominant":"dominant"]+=t*s.repeats;
+    if(c.audio && a && a.hasTargets){
+      // READ FROM THE TABLE, NOT FROM A RATE. The old projection multiplied an expected
+      // tone count by a target probability, which was the only way to answer the question
+      // while the count was a random variable. It is not one any more: each trial index has
+      // a stated number of targets, so the projection walks the trials this plan will emit
+      // and adds up what they ask for. It also no longer depends on the stream duration,
+      // which is what used to make it yield NaN on a self-paced trial.
+      const ords = (s.hands==="each"||s.hands==="roles") ? s.repeats*2 : s.repeats;
+      for(let o=1;o<=ords;o++){
+        const t=avTargetCount(c.id,o).count||0;
+        if(s.hands==="each"||s.hands==="roles")
+          targetsByHand[o%2===1?"dominant":"nondominant"]+=t;
+        else targetsByHand[s.oneHand==="nondominant"?"nondominant":"dominant"]+=t;
+      }
     }
   });
   const mins=Math.round(secs/60);
@@ -3994,8 +4005,11 @@ function renderNextUpParams(){
       applies to all of them.<br>Usable window
       <b>${Math.round(bindingLimitMs(c.id,AUDIO_DEFAULTS[c.id]))} ms</b> — the longest response
       that can still be attributed to the right tone. It follows from the floor.</div>
-    <div class="r4">${pAudio(c.id,"floorMs","Floor (ms)",50,150,4000)}${pAudio(c.id,"meanMs","Mean interval (ms)",50,200,6000)}
-      ${pAudio(c.id,"ptg","Target prob.",0.01,0,0.5)}${pAudio(c.id,"tone","Tone (ms)",10,30,200)}</div>
+    <div class="r4">${pAudio(c.id,"tone","Tone (ms)",10,30,200)}</div>
+    <div class="note" style="margin:4px 0 0">Gap law: ${AV_GAP.minMs} ms minimum,
+      ${AV_GAP.meanMs} ms mean, ${AV_GAP.maxMs} ms maximum. Fixed by the specification and
+      not editable — the scale constant that makes the mean come out right is tied to these
+      three numbers and to the discard rule. ${avTargetDescription(c.id)}</div>
     <div class="r4">${pNum("fstd","Standard (Hz)",50)}
       ${pNum("ftgt","Target (Hz)",50)}${pNum("lvl","Tone level (0–1)",0.05,0.05,1)}</div></div>`);
   if(!groups.length){ host.innerHTML=`<div class="note">This task uses no adjustable
@@ -4159,7 +4173,7 @@ function protocolDrift(){
   const out=fieldDrift();
   if(AUDIO_SHIPPED) streamGroups().forEach(g=>{
     const d=AUDIO_SHIPPED[g.first]; if(!d) return;
-    ["floorMs","meanMs","ptg","tone"].forEach(f=>{ if(g.a[f]!==d[f])
+    ["tone"].forEach(f=>{ if(g.a[f]!==d[f])
       out.push(`${(STREAM_ROW_LABEL[g.key]||[g.key])[0]} ${f}: ${g.a[f]} (build ships ${d[f]})`); });
   });
   const plan=defaultPlan();
@@ -4199,8 +4213,24 @@ function nextIds(pid,task,H){
 //
 // This is the number to set the floor and the mean by, which is why it is shown wherever
 // they are editable.
+// THE LONGEST RESPONSE STILL ATTRIBUTABLE TO ITS OWN STIMULUS, which is "how long until
+// the next thing that asks for a response". On a stream where every stimulus is answered
+// that is the interval floor. On an oddball it is the TARGET SEPARATION, not twice the
+// floor: the standards in between are not answered, so nothing they do can capture a
+// response, and the separation is a hard guarantee from AV_PLACE rather than a property of
+// the draw. At the specified values that is 2000 ms against the 1200 the old rule gave --
+// which was discarding slow but genuine responses as unattributable.
 function bindingLimitMs(taskId,a){
-  return (a.ptg>0 ? 2 : 1) * a.floorMs;
+  return (a && a.hasTargets) ? AV_PLACE.minTargetGapMs : AV_GAP.minMs;
+}
+// One sentence naming the fixed target counts a task's trials use, for the panels that
+// used to show an editable probability.
+function avTargetDescription(taskId){
+  const c=byId(taskId); if(!c || !c.audio) return "";
+  if(!avHasTargets(taskId)) return "Every stimulus is answered, so there are no targets.";
+  const kind=avKind(taskId), tbl=AV_TARGET_COUNTS[kind]; if(!tbl) return "";
+  const list=isDualTask(c)?tbl.dual:tbl.single;
+  return `Targets per trial, by trial index: ${list.join(", ")} — fixed, not sampled.`;
 }
 // ONE ROW PER STREAM, NOT PER TASK.
 //
@@ -4238,8 +4268,8 @@ const STREAM_ROW_LABEL = {
   "oddball":     ["Oddball",             "A response only to the rare high tone. The low tones are not answered, so they are packed close: that is what makes the high one rare."]
 };
 function renderAudioTable(){
-  let h=`<tr><th>Stream</th><th>Used by</th><th>Floor (ms)</th><th>Mean interval (ms)</th>
-         <th>Target prob.</th><th>Tone (ms)</th>
+  let h=`<tr><th>Stream</th><th>Used by</th><th>Minimum (ms)</th><th>Mean (ms)</th>
+         <th>Targets per trial</th><th>Tone (ms)</th>
          <th class="num">Tones</th><th style="color:var(--ink)">Usable window</th></tr>`;
   streamGroups().forEach(g=>{
     const a=g.a, k=g.key, limit=bindingLimitMs(g.first,a);
@@ -4254,9 +4284,13 @@ function renderAudioTable(){
       step="${step}" onchange="streamSet('${k}','${f}',+this.value)">`;
     h+=`<tr><td><b>${lab[0]}</b><br><span class="note" style="margin:0">${lab[1]}</span></td>
       <td><span class="note" style="margin:0">${g.tasks.join("<br>")}</span></td>
-      <td>${num("floorMs",150,4000,50)}</td>
-      <td>${num("meanMs",200,6000,50)}</td>
-      <td>${a.ptg>0?num("ptg",0,0.5,0.01):`<span class="note" style="margin:0">—</span>`}</td>
+      <td class="num">${AV_GAP.minMs}</td>
+      <td class="num">${AV_GAP.meanMs}</td>
+      <td><span class="note" style="margin:0">${a.hasTargets
+          ? (AV_TARGET_COUNTS[a.kind]
+              ? "fixed: "+AV_TARGET_COUNTS[a.kind].dual.join(", ")
+              : "fixed")
+          : "—"}</span></td>
       <td>${num("tone",30,200,10)}</td>
       <td class="num">${tones}</td>
       <td class="num"><b style="font-size:15px">${Math.round(limit)} ms</b></td></tr>`;
@@ -4275,43 +4309,47 @@ function renderAudioTable(){
     anticipated.
     <table style="margin-top:8px">
       <tr><th>Column</th><th>What it is</th><th>Range</th></tr>
-      <tr><td><b>Floor</b></td>
-          <td>The shortest gap the stream will ever produce. It exists so one response can
-              finish before the next tone lands, so it is a property of the RESPONSE: a tap
-              needs about 600 ms, a spoken number about 800. Raising it makes the stream
-              slower and more forgiving and widens the usable window; lowering it packs the
-              tones together and starts losing slow responses.</td>
-          <td>150 ms minimum.<br>Tap 500–700, spoken 700–900.</td></tr>
-      <tr><td><b>Mean interval</b></td>
-          <td>The average gap. <b>The gap between floor and mean IS the randomness</b> — a
-              mean only a little above the floor is a metronome, a mean far above it is
-              sparse and slow. Must be greater than the floor or the stream cannot be built.
-              It also sets how many tones a trial contains: tones ≈ length ÷ mean.</td>
-          <td>Above the floor, always.<br>1.5–2× the floor.</td></tr>
-      <tr><td><b>Target prob.</b></td>
-          <td>The share of tones that are HIGH, on an oddball. Rarity is what makes a target
-              a target, so this stays low; raising it turns vigilance into discrimination.
-              Blank on a stream where every tone is answered.</td>
-          <td>0.15–0.30.<br>Above 0.35 it stops being an oddball.</td></tr>
+      <tr><td><b>Minimum</b></td>
+          <td>Read-only. The shortest gap the stream will ever produce, 600 ms on every
+              stream in the battery. It used to be a property of the response channel — a
+              tap needs about 600 ms, a spoken number about 800 — and it is not any more.
+              Only the targets are answered, so the gap a response needs is enforced between
+              TARGETS, at 2000 ms, and widening the gap between unanswered standards would
+              only thin them out, which is what makes a target rare.</td>
+          <td>Fixed at 600 ms.</td></tr>
+      <tr><td><b>Mean</b></td>
+          <td>Read-only. The average gap, 1000 ms, which works out at roughly 60 stimuli in
+              a 60-second trial. Fixed together with the minimum and the 3500 ms maximum:
+              the scale constant that makes the average come out at 1000 is derived from all
+              three and from the discard rule, so no one of them can be moved on its own.</td>
+          <td>Fixed at 1000 ms.</td></tr>
+      <tr><td><b>Targets per trial</b></td>
+          <td>Read-only. <b>How many targets each trial contains, stated per trial index
+              rather than sampled.</b> It used to be a probability, which made the count a
+              random variable: two participants on the same trial answered a different
+              number of times, and a participant who noticed that the count was always about
+              the same number stopped counting and reported it from memory. The counts now
+              differ deliberately between trials, no trial uses 10, and the two stimulus
+              kinds disagree on every dual trial so a count cannot carry over.</td>
+          <td>Fixed. 9–14 per trial.</td></tr>
       <tr><td><b>Tone (ms)</b></td>
           <td>How long each beep sounds. Long enough to be clearly heard and pitched, short
               enough not to overlap the response to it. Does not change the timing of the
               stream, only the sound.</td>
           <td>30–200 ms.<br>80–120 is the useful range.</td></tr>
       <tr><td><b>Tones</b></td>
-          <td>Read-only. How many tones the whole stream contains — <i>every</i> tone, not
-              only the high ones. On an oddball the number of HIGH tones is roughly Tones ×
-              Target prob., jittered per trial so the answer cannot be learned. A range means
-              the tasks in that row run for different lengths.</td>
-          <td>Follows from length and mean.</td></tr>
+          <td>Read-only. How many stimuli the whole stream contains — <i>every</i> stimulus,
+              not only the targets. Roughly length ÷ 1000 ms, so about 60 in a 60-second
+              trial. A range means the tasks in that row run for different lengths.</td>
+          <td>Follows from length.</td></tr>
       <tr><td><b>Usable window</b></td>
           <td>Read-only. How long a participant has to answer a tone before their answer stops
               being attributable to it. Answer within the window and it is scored as a
               response with a reaction time. Answer later and there is no way to tell it apart
               from an early answer to the <i>next</i> tone, so it is scored as a miss. The
-              window is the floor where every tone is answered, and twice the floor on an
-              oddball, because no two high tones are ever adjacent. <b>Longer floor, longer
-              window, more of the slow answers kept.</b></td>
+              window is the 600 ms minimum where every stimulus is answered. On an oddball it
+              is the <b>target separation</b>, 2000 ms: the standards in between are never
+              answered, so nothing they do can capture a response.</td>
           <td>Follows from the floor.</td></tr>
     </table>
     <b>Length and lead-in are not set here.</b> Length belongs to the trial and is in the plan
@@ -4326,11 +4364,11 @@ function renderAudioTable(){
   // REPORTED PER ROW, not per task per field. The same three edits across seven tasks
   // printed as twenty-two lines, which reads as twenty-two problems and buries what was
   // actually changed. One line per stream row says the same thing.
-  const FIELD_LABEL={floorMs:"floor",meanMs:"mean",ptg:"target prob.",tone:"tone",lead:"lead-in",durS:"length"};
+  const FIELD_LABEL={floorMs:"floor",meanMs:"mean",tone:"tone",lead:"lead-in",durS:"length"};
   const drifted=[];
   if(AUDIO_SHIPPED) streamGroups().forEach(g=>{
     const d=AUDIO_SHIPPED[g.first]; if(!d) return;
-    const bits=["floorMs","meanMs","ptg","tone"].filter(f=>g.a[f]!==d[f])
+    const bits=["tone"].filter(f=>g.a[f]!==d[f])
       .map(f=>`${FIELD_LABEL[f]} ${g.a[f]} (ships ${d[f]})`);
     if(bits.length) drifted.push(`<b>${(STREAM_ROW_LABEL[g.key]||[g.key])[0]}</b> — ${bits.join(", ")}`);
   });
@@ -4374,11 +4412,14 @@ function renderAudioTable(){
   Object.entries(AUDIO_DEFAULTS).forEach(([k,a])=>{
     const pair=a.pairWith && AUDIO_DEFAULTS[a.pairWith];
     if(!pair) return;
-    const mismatched = pair.floorMs!==a.floorMs || pair.meanMs!==a.meanMs || pair.ptg!==a.ptg;
+    // THE PAIR CAN NO LONGER DRIFT ON TIMING, because neither half owns any timing: the
+    // gap law is global and the target counts come from a table. Stimulus duration is the
+    // one thing left that a person can type in, so it is the one thing left to check.
+    const mismatched = pair.tone!==a.tone;
     // Informs, never enforces: the pair can be broken, but not without saying so.
     if(mismatched) notes+=`<div class="bad"><b>${k} and ${a.pairWith} do not match</b> —
-      ${k} is ${a.floorMs}/${a.meanMs}/p${a.ptg}, ${a.pairWith} is
-      ${pair.floorMs}/${pair.meanMs}/p${pair.ptg}. They are a single-task and dual-task pair,
+      ${k} plays a ${a.tone} ms stimulus, ${a.pairWith} plays ${pair.tone} ms.
+      They are a single-task and dual-task pair,
       so unequal streams add a stream difference to the dual-task cost.
       <button class="ghost sm" onclick="matchStreamPair('${k}','${a.pairWith}')">Match ${a.pairWith} to ${k}</button></div>`;
   });
@@ -4420,7 +4461,7 @@ function audioSet(k,f,v){ AUDIO_DEFAULTS[k][f]=v; renderAudioTable(); planSummar
 // onto the other so the single-vs-dual comparison is restored in one click.
 function matchStreamPair(from,to){
   if(!AUDIO_DEFAULTS[from]||!AUDIO_DEFAULTS[to]) return;
-  ["floorMs","meanMs","ptg","tone"].forEach(f=>{ AUDIO_DEFAULTS[to][f]=AUDIO_DEFAULTS[from][f]; });
+  ["tone"].forEach(f=>{ AUDIO_DEFAULTS[to][f]=AUDIO_DEFAULTS[from][f]; });
   renderAudioTable(); planSummary(); renderNextUpParams(); saveState();
 }
 
@@ -5026,177 +5067,351 @@ updateGeo();
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
   t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
 let LAST_SEED=null;
-// SEQUENCE SEEDING. Three modes, and the default is the one that removes stimulus variance
-// from the between-group comparison.
-//
-// "matched"  the seed is derived from the TASK and the REPEAT NUMBER, and from nothing else.
-//            So every participant hears the identical stream on TAP_TONE repeat 1, and a
-//            different identical stream on repeat 2 -- but no two TASKS ever share a stream.
-//            This is what makes a group difference a difference in the participants rather
-//            than partly a difference in the tones they happened to get. Repeat number is in
-//            the seed because two repeats of one task should not be the same stream: the
-//            second would be partly a memory test.
-// "random"   a new stream every trial. Fine for piloting, wrong for a group comparison --
-//            stimulus variance goes straight into the between-subject variance.
-// "fixed"    seed 1 for everything. NOT the same as matched: every task gets the same
-//            stream as every other task, so TAP_TONE and PEN_VODD become the same sequence
-//            and any comparison between them is confounded with having heard it twice.
+/* ============================================================================
+   THE AUDITORY-VERBAL LOAD ELEMENT
+   Specified in MotiQ_auditory_verbal_element_spec_rev.docx and referenced by
+   VOC_VODD, VOC_VDGT, PEN_VODD and PEN_VDGT. TAP_TONE uses the same gap law,
+   per the stimulus timing paragraph of the task description.
+
+   WHAT CHANGED, AND WHY THE OLD DESIGN IS GONE
+
+   Until v13 the stream was described by a MEAN and a TARGET PROBABILITY, and the
+   number of targets in a trial fell out of them: round(n * p), jittered. Two
+   properties of that are now specified away rather than tuned.
+
+     The count is no longer sampled.   Each trial has a FIXED number of targets,
+     read from AV_TARGET_COUNTS by trial index. A probability makes the count a
+     random variable, so two participants on the same trial answer a different
+     number of times and the counts are not comparable without a covariate.
+
+     The gap is no longer rescaled.    The old generator drew n intervals and then
+     scaled the whole set to fill the requested duration, which bent every
+     interval by a few percent to make the arithmetic land. The gap law below is
+     exact per gap and the stream simply stops when the window is full.
+
+   The floor also stopped depending on the response channel. It used to: a tap was
+   given 600 ms and a spoken number 800, on the reasoning that one response must
+   finish before the next stimulus lands. That reasoning still holds, but it is
+   not the floor's job any more -- the constraint belongs to the stimuli that
+   ACTUALLY ask for a response, and those are the targets, which AV_PLACE spaces
+   at 2000 ms. Standards are not answered at all, so nothing is protected by
+   widening their spacing, and widening it thins the standards, which is what
+   makes a target rare. One floor, 600 ms, for every stream.
+   ============================================================================ */
+
+/* THE GAP LAW. Onset to onset: at least 600 ms, averaging 1000, never past 3500.
+
+     draw  X = -402.1 * ln(1 - U),   U ~ Uniform(0,1), in ms
+     if X > 2900, discard it and draw again
+     gap = 600 + X
+
+   AN OVERSIZED DRAW IS DISCARDED AND REPLACED, NOT CLAMPED. Clamping to 2900
+   would put roughly 7 gaps in every 10,000 on exactly 3500 ms, which is a cluster
+   of identical gaps sitting at the maximum -- audible as a repeated pause of the
+   same length, and a tell. A redraw is needed on about 0.07% of draws.
+
+   EXPONENTIAL, NOT UNIFORM. An exponential above a floor has a flat hazard:
+   having waited tells the participant nothing about when the next sound is due.
+   Uniform jitter has a rising hazard, so the participant learns roughly when the
+   next sound is coming and stops having to listen for it -- which turns a
+   vigilance task into a synchronization task.
+
+   WHY 402.1 AND NOT 400. 400 is what subtracting the floor from the mean
+   suggests, and it is wrong, because of the discard rule: only oversized draws
+   are ever thrown away, never undersized ones, so the surviving gaps are missing
+   their largest members and their average comes out low. At 400 the finished gaps
+   average 998 ms. 402.1 puts back what the discarding removes. DO NOT ROUND IT.
+   If the minimum, the mean, the maximum or the discard rule is ever changed, this
+   constant has to be recalculated, or the stream quietly stops averaging what the
+   specification says it averages. */
+const AV_GAP = { minMs:600, meanMs:1000, maxMs:3500, scaleMs:402.1, maxDrawMs:2900 };
+/* About the 3500 ms maximum. The exponential has no natural upper limit, so
+   without a maximum an occasional gap runs past four seconds, which does not
+   sound like a long gap -- it sounds like the iPad has stopped working. The
+   examiner is listening for exactly that and would stop a good trial. The trade
+   is that a participant who has waited the full 3500 ms knows the next sound must
+   come immediately, so that one moment IS predictable; it happens on roughly 1
+   stimulus in 1400, which is rare enough to disregard. */
+
+/* FIXED TARGET COUNTS BY TRIAL INDEX, from the specification's table.
+   Position 0 is the single-task trial; positions 1 to 4 are dual-task trials 1
+   to 4, which alternate hands dominant, non-dominant, dominant, non-dominant.
+
+   The two stimulus kinds deliberately DISAGREE on every dual trial: a participant
+   who has just counted 9 high tones on dual trial 1 is asked for 14 "yes"es on
+   the digit task's dual trial 1. Matching them would let the count carry over.
+
+   NO TRIAL USES A COUNT OF 10, which is the number a participant guesses when
+   they have lost the thread, so a report of 10 is never a plausible hit. The
+   assertion below is what keeps that true if the table is ever edited. */
+const AV_TARGET_COUNTS = {
+  tones:  { single:[12], dual:[ 9,13,14,11] },
+  digits: { single:[12], dual:[14,11, 9,13] }
+};
+(()=>{ const bad=[];
+  Object.entries(AV_TARGET_COUNTS).forEach(([k,v])=>
+    [...v.single,...v.dual].forEach(n=>{ if(n===10) bad.push(k+":"+n); }));
+  if(bad.length) throw new Error("AV_TARGET_COUNTS uses a count of 10 ("+bad.join(", ")+
+    "); 10 is the number a participant guesses, so no trial may use it.");
+})();
+// Practice is 20 s with three targets, for every auditory condition. Short enough
+// not to be a trial, long enough to contain the thing being practised.
+const AV_PRACTICE = { durS:20, targets:3 };
+
+/* TARGET PLACEMENT. Applied when the sequence is generated, never during it.
+   The 2000 ms separation is the response constraint: it is the gap a spoken
+   response needs, and it is enforced here rather than by the interval floor
+   because only the targets are answered. The two 2000 ms dead zones keep a target
+   off both edges of the window -- one at the start lands before the participant
+   has settled into the task, and one at the end leaves no room for the response
+   and can have its own tone clipped by the window closing. */
+const AV_PLACE = { minTargetGapMs:2000, noTargetFirstMs:2000, noTargetLastMs:2000,
+                   maxAttempts:200 };
+
+/* PREDEFINED SEEDS, written down rather than derived.
+
+   The specification asks that a given trial index present the same sequence to
+   every participant, so stimulus variance is out of the between-group comparison,
+   and that different trial indices differ, so a second trial of a task is not
+   partly a memory test. A literal table is the plainest way to be able to say
+   that: these numbers were drawn once and MUST NOT BE CHANGED. Changing one
+   changes the stimulus sequence every participant hears on that trial, and
+   records collected either side of the change are then not on the same stimuli
+   while naming the same trial index.
+
+   Position 0 is the single-task trial; 1 to 4 are the dual trials. A task not
+   listed here falls back to the derived seed in drawSeed(), which is matched
+   across participants in the same way but is not written down. */
+const AV_SEEDS = {
+  VOC_VODD:[1740318527,  829441063, 1455207819,  603918244, 1982006371],
+  PEN_VODD:[ 711204839, 1366950271,  248873615, 1899431052,  934718306],
+  VOC_VDGT:[2014773359,  458102947, 1127634088, 1670255413,  306849172],
+  PEN_VDGT:[1283066941, 1941207358,  672419085,  129573640, 1518904227],
+  TAP_TONE:[ 905613274, 1703948165,  371028593, 1264770318, 2096185447]
+};
+// Which stimulus materials a task uses. A task absent from here has no auditory
+// stream; a task present but with no target count responds to every stimulus.
+const AV_KIND = { VOC_VODD:"tones", PEN_VODD:"tones",
+                  VOC_VDGT:"digits", PEN_VDGT:"digits",
+                  TAP_TONE:"tones", PEN_TONE:"tones", PEN_TODD:"tones",
+                  PEN_VCNT:"tones", FIN_VCNT:"tones" };
+const avKind = task => AV_KIND[task] || "tones";
+// Does this task distinguish target from non-target at all? PEN_VCNT and
+// FIN_VCNT count EVERY tone, and TAP_TONE taps to every tone, so for those
+// three there is one stimulus type and no placement to do.
+const avHasTargets = task =>
+  !!(TASK_STREAM[task] && TASK_STREAM[task].stream==="oddball") ||
+  avKind(task)==="digits";
+
+/* Which trial of its own task this is, counting from 1. The target count and the
+   seed are both read from it, so it has to be the position in the TASK rather
+   than in the queue: a session that runs PEN_VODD after two other tasks still
+   starts PEN_VODD at trial 1. Computed from the queue rather than from the saved
+   repeat counters, because the counters are per hand and this is not. */
+function taskTrialOrdinal(){
+  if(!TRIAL) return 1;
+  if(TRIAL.adhoc || TRIAL.index==null) return 1;
+  let k=0;
+  for(let i=0;i<=TRIAL.index && i<QUEUE.length;i++) if(QUEUE[i].task===TRIAL.task) k++;
+  return Math.max(1,k);
+}
+// The count this trial asks for, and where the number came from. A repeat beyond
+// the specified set CYCLES the table rather than inventing a number, and the
+// record says so -- an examiner who adds a fifth dual trial gets a defined
+// stimulus sequence and a field that admits it was not one of the four.
+function avTargetCount(task, ordinal){
+  if(!avHasTargets(task)) return { count:null, source:"every_stimulus" };
+  const kind=avKind(task), tbl=AV_TARGET_COUNTS[kind];
+  if(!tbl) return { count:null, source:"no_table" };
+  const c=byId(task), dual=isDualTask(c);
+  const list=dual?tbl.dual:tbl.single;
+  const i=(ordinal-1)%list.length;
+  return { count:list[i], source:(ordinal-1)<list.length?"specified":"cycled",
+           table:dual?"dual":"single", table_index:i+1 };
+}
+/* SEQUENCE SEEDING. Three modes, and the default is the one that removes stimulus
+   variance from the between-group comparison.
+
+   "matched"  the predefined seed for this task and trial index, from AV_SEEDS.
+              Every participant hears the identical stream on a given trial, and
+              no two trial indices share one. Participant id is deliberately NOT
+              in it -- that is the whole point. A task absent from AV_SEEDS falls
+              back to a seed derived from task, hand and repeat, which is matched
+              across participants in the same way.
+   "random"   a new stream every trial. Fine for piloting, wrong for a group
+              comparison -- stimulus variance goes into between-subject variance.
+   "fixed"    seed 1 for everything. NOT the same as matched: every task gets the
+              same stream as every other task, so TAP_TONE and PEN_VODD become the
+              same sequence and any comparison between them is confounded with
+              having heard it twice. */
+let LAST_SEED_SOURCE=null;
 function drawSeed(){
   const mode=$("seedmode").value;
-  if(mode==="fixed"){ LAST_SEED=1; return LAST_SEED; }
-  if(mode==="random"){ LAST_SEED=Math.floor(Math.random()*2147483647)+1; return LAST_SEED; }
-  // Matched. The repeat is the one this trial is ABOUT to become, read the same way
-  // nextIds() will assign it at save time, so the seed matches the repeat it is filed under.
+  if(mode==="fixed"){ LAST_SEED=1; LAST_SEED_SOURCE="fixed"; return LAST_SEED; }
+  if(mode==="random"){ LAST_SEED=Math.floor(Math.random()*2147483647)+1;
+    LAST_SEED_SOURCE="random"; return LAST_SEED; }
+  const ord=taskTrialOrdinal(), tbl=AV_SEEDS[TRIAL.task];
+  if(tbl){
+    LAST_SEED=tbl[(ord-1)%tbl.length];
+    LAST_SEED_SOURCE=(ord-1)<tbl.length?"predefined":"predefined_cycled";
+    return LAST_SEED;
+  }
+  // Derived fallback, for a task with no row in AV_SEEDS. The repeat is the one
+  // this trial is ABOUT to become, read the same way nextIds() will assign it at
+  // save time, so the seed matches the repeat it is filed under.
   const pid=$("pid").value||"unnamed";
   const H = TRIAL.hand==="both" ? "B" : (TRIAL.drawHand||TRIAL.tapHand)==="left" ? "L" : "R";
   const nextRepeat=(REPEATS[`${pid}|${TRIAL.task}|${H}`]||0)+1;
-  // Participant id is deliberately NOT in the hash -- that is the whole point.
   LAST_SEED = (hash32(`${TRIAL.task}#${H}#${nextRepeat}`) % 2147483646) + 1;
+  LAST_SEED_SOURCE="derived";
   return LAST_SEED;
 }
-// djb2, returned as a 32-bit unsigned integer. Same string, same number, on every device and
-// every run -- which is what "matched across participants" depends on.
+// djb2, returned as a 32-bit unsigned integer. Same string, same number, on every
+// device and every run -- which is what "matched across participants" depends on.
 function hash32(str){ let h=5381; for(let i=0;i<str.length;i++) h=((h<<5)+h+str.charCodeAt(i))>>>0; return h>>>0; }
-/* ---------------------------------------------------------------------------
-   Interval timing: a floor plus an exponential tail, not uniform jitter.
 
-   Uniform jitter has a RISING HAZARD. As the window elapses without a tone, the
-   participant becomes progressively more certain one is imminent, so they start to
-   anticipate and respond predictively rather than reactively -- which quietly turns
-   a reaction-time measure into a synchronization measure. Symmetric jitter has a
-   second problem: minimum and maximum move together, so buying unpredictability by
-   widening the jitter drags the shortest interval below a physically possible
-   response time.
-
-   An exponential above a floor has a FLAT hazard -- having waited is no evidence
-   the tone is due -- so no moment is more predictable than any other. The floor is
-   a hard guarantee that every interval leaves room to respond, and it is set
-   independently of how unpredictable the stream is.
-
-     interval = floor - m * ln(1 - u),  m = mean - floor,  u uniform on [0,1)
-
-   Intervals beyond 4x the mean are redrawn: the exponential tail is unbounded and a
-   single 20-second gap inside a 45-second stream is not a stream.
-   --------------------------------------------------------------------------- */
-function makeSequence(durationS,floorMs,meanMs,pTarget,seed,respond){
-  const det = pTarget<=0;
-  const rng=mulberry32(seed>>>0), durMs=durationS*1000;
-  if(!(meanMs>floorMs)) throw new Error(
-    `Mean interval (${meanMs} ms) must be longer than the floor (${floorMs} ms).`);
-  const n=Math.floor(durMs/meanMs), t=det?0:Math.round(n*pTarget);
-  const m=meanMs-floorMs, cap=4*meanMs;
-  if(n<4) throw new Error(`Only ${n} tones at this mean interval — lengthen the stream.`);
-  if(!det&&t<1) throw new Error("Target probability yields no targets.");
-  const ceiling=Math.ceil((n-2)/2);
-  if(!det&&t>ceiling) throw new Error(`Cannot place ${t} non-adjacent targets in ${n} tones.`);
-  const drawOne=()=>{
-    for(let k=0;k<200;k++){
-      const v=floorMs - m*Math.log(1-rng());
-      if(v<=cap) return v;
-    }
-    return cap;
-  };
-  let iv=null;
-  for(let k=0;k<5000;k++){
-    const c=Array.from({length:n},drawOne);
-    const sc=durMs/c.reduce((a,b)=>a+b,0), scaled=c.map(v=>v*sc);
-    // Rescaling to fill the requested duration must not push an interval under the
-    // floor, since the floor is what guarantees a minimum response time.
-    if(Math.abs(sc-1)<=0.05 && Math.min(...scaled)>=floorMs*0.98){ iv=scaled; break; }
+// One gap, drawn and redrawn until it is inside the law. The loop bound is a
+// runaway guard and nothing more: at these settings a draw survives 99.93% of the
+// time, so reaching even ten iterations is not something the distribution does.
+function avGapMs(rng, stats){
+  for(let k=0;k<4096;k++){
+    const x = -AV_GAP.scaleMs*Math.log(1-rng());
+    if(x<=AV_GAP.maxDrawMs) return AV_GAP.minMs+x;
+    if(stats) stats.redraws++;
   }
-  if(!iv) throw new Error("Could not generate intervals — loosen the parameters.");
-  const onsets0=[0]; for(let i=0;i<n-1;i++) onsets0.push(onsets0[i]+iv[i]);
+  throw new Error("The gap draw did not converge — check AV_GAP.");
+}
 
-  // ---- TARGET PLACEMENT -------------------------------------------------------------
-  // Three constraints the earlier version did not have, each from a way the task broke in
-  // use rather than from theory.
-  //
-  // 1. THE COUNT MUST NOT BE PREDICTABLE. With n and p fixed, the number of targets was
-  //    round(n*p) EVERY time -- 30 in a 60 s stream, on all five oddball trials in a
-  //    session. A participant who notices that stops counting and reports the number they
-  //    remember, which looks like a perfect score and measures nothing. The count is now
-  //    jittered around n*p, deterministically from the seed, so it differs between trials
-  //    while still being identical across participants for a given task and repeat.
-  //
-  // 2. THE GAP MUST GROW WITH THE COUNT. Saying "twenty-seven" takes longer than saying
-  //    "seven", so a spacing that is comfortable at the start of a trial is not comfortable
-  //    at the end. The required gap steps up once the running count reaches double digits.
-  //
-  // 3. NOTHING MAY LAND AT THE VERY END. A target in the last moments leaves no room for
-  //    the response, and the beep itself can be clipped by the window closing. The last
-  //    target is held back from the end by a full response time.
-  // The gap a target needs is the time its RESPONSE takes, and that depends on the channel:
-  // a tap is over in a few hundred milliseconds, a spoken number is not -- and a spoken
-  // number gets longer once the count reaches two digits.
-  const voiceAnswer = respond!=="tap";
-  const SAY_1_DIGIT_MS = voiceAnswer ? 800  : 550;
-  const SAY_2_DIGIT_MS = voiceAnswer ? 1150 : 550;
-  const TAIL_GUARD_MS  = voiceAnswer ? 1400 : 900;
-  const gapNeededFor = k => (k>=10 ? SAY_2_DIGIT_MS : SAY_1_DIGIT_MS);
+/* Place `want` targets among the stimuli, honoring the separation and both dead
+   zones. Returns stimulus indices in time order, or null if this particular
+   stream cannot hold that many -- in which case the caller regenerates it, which
+   is what the specification asks for.
 
-  let pos=[], targetPlan=null;
-  if(!det){
-    // Jitter the count by up to +/-20%, seeded, and never below 4 -- too few and omission
-    // rate has no resolution.
-    const jitter = 1 + (rng()*0.4 - 0.2);
-    const wanted = Math.max(4, Math.round(t*jitter));
-    const lastAllowed = durMs - TAIL_GUARD_MS;
-    // PLACED IN TIME ORDER, which is the only order in which the constraint can be checked.
-    // The gap a target needs depends on how many have come BEFORE it -- the tenth target
-    // needs longer than the second, because the spoken count has two digits by then -- so a
-    // shuffled greedy pass cannot evaluate its own rule: it does not yet know the ordinal.
-    // An earlier version did exactly that and left one to three violations in every stream.
-    //
-    // Walking forward, the ordinal is simply how many have been placed. Targets are spread
-    // across the usable span with seeded jitter, and the required gap is a floor beneath
-    // that spacing rather than something the spacing has to be checked against afterwards.
-    const cand=[]; for(let i=1;i<n-1;i++) if(onsets0[i]<=lastAllowed) cand.push(i);
-    const span = onsets0[cand[cand.length-1]] - onsets0[cand[0]];
-    const chosen=[];
-    let lastT=-Infinity, lastIdx=-99;
-    for(const i of cand){
-      if(chosen.length>=wanted) break;
-      const need = gapNeededFor(chosen.length+1);
-      // Even spread as the baseline, jittered, but never closer than the count allows.
-      const remaining = wanted-chosen.length;
-      const ideal = remaining>0 ? span/wanted : need;
-      const want = Math.max(need, ideal*(0.65+rng()*0.7));
-      if(i-lastIdx<2) continue;                       // non-adjacent in tones
-      if(onsets0[i]-lastT < want) continue;           // and far enough in time
-      chosen.push(i); lastT=onsets0[i]; lastIdx=i;
-    }
-    // A second pass fills any shortfall using only the hard floor, so a jittered spread that
-    // ran out of room still reaches a usable number of targets.
-    if(chosen.length<wanted){
-      for(const i of cand){
-        if(chosen.length>=wanted) break;
-        if(chosen.includes(i)) continue;
-        const sorted=[...chosen,i].sort((a,b)=>a-b);
-        const k=sorted.indexOf(i);
-        const okTones = sorted.every((v,j)=>j===0||v-sorted[j-1]>=2);
-        const okTime = sorted.every((v,j)=>j===0
-          || onsets0[v]-onsets0[sorted[j-1]] >= gapNeededFor(j+1));
-        if(okTones && okTime) chosen.push(i);
-      }
-    }
-    pos=chosen.sort((a,b)=>a-b);
-    targetPlan={ wanted, placed:pos.length, jitter:+jitter.toFixed(3),
-                 tail_guard_ms:TAIL_GUARD_MS,
-                 say_1_digit_ms:SAY_1_DIGIT_MS, say_2_digit_ms:SAY_2_DIGIT_MS };
+   HOW IT CANNOT FAIL WHEN THE STREAM IS FEASIBLE. Two greedy passes bracket each
+   target: `earliest` is the earliest-first placement, `latest` the latest-first,
+   and target s may legally sit anywhere between earliest[s] and latest[s]. Picking
+   inside that bracket, seeded, gives a spread stream rather than targets bunched
+   at the front -- and the bracket is never empty, because latest[s] is always at
+   least minTargetGapMs past wherever target s-1 was picked. An earlier version
+   jittered a spread directly and then pushed forward to satisfy the gap, which
+   ran off the end of the stream on the last target perhaps one time in thirty and
+   regenerated a stream that was perfectly usable. */
+function avPlaceTargets(onsets, durMs, want, rng){
+  const GAP=AV_PLACE.minTargetGapMs;
+  const lo=AV_PLACE.noTargetFirstMs, hi=durMs-AV_PLACE.noTargetLastMs;
+  const cand=[]; for(let i=0;i<onsets.length;i++)
+    if(onsets[i]>=lo && onsets[i]<=hi) cand.push(i);
+  if(cand.length<want) return null;
+  const earliest=[]; let last=-Infinity;
+  for(const i of cand) if(onsets[i]-last>=GAP){ earliest.push(i); last=onsets[i]; }
+  if(earliest.length<want) return null;
+  const latest=[]; last=Infinity;
+  for(let k=cand.length-1;k>=0;k--){ const i=cand[k];
+    if(last-onsets[i]>=GAP){ latest.push(i); last=onsets[i]; } }
+  latest.reverse();
+  if(latest.length<want) return null;
+  // Both lists may be longer than `want`; the usable brackets are the first
+  // `want` of earliest and the LAST `want` of latest.
+  const eb=earliest.slice(0,want), lb=latest.slice(latest.length-want);
+  // AN EVEN SPREAD INSIDE THE BRACKET, not a free choice within it. The bracket is wide
+  // when the targets are few -- with 9 targets in a 60 s window it spans most of the trial
+  // -- and picking uniformly inside it put the first target 30 seconds in on one of the
+  // specified trials, which leaves half of a vigilance task with nothing to be vigilant
+  // about. The separation rule cannot catch that: it is a floor on how CLOSE two targets
+  // may be and says nothing about how late they may all arrive.
+  //
+  // So each target gets a slot of its own -- the usable span divided by the count -- and is
+  // placed inside that slot. The slot is intersected with the feasibility bracket, and when
+  // the intersection is empty the bracket wins, which is what keeps the placement
+  // guaranteed rather than merely likely.
+  const spanLo=onsets[cand[0]], spanHi=onsets[cand[cand.length-1]];
+  const slot=(spanHi-spanLo)/want;
+  const chosen=[]; last=-Infinity;
+  for(let s=0;s<want;s++){
+    const loT=Math.max(onsets[eb[s]], last+GAP), hiT=onsets[lb[s]];
+    const bracket=cand.filter(i=>onsets[i]>=loT && onsets[i]<=hiT);
+    if(!bracket.length) return null;
+    // The slot, widened by a quarter of itself at each end so neighbouring slots overlap a
+    // little and the stream does not read as evenly spaced.
+    const sLo=spanLo+slot*(s-0.25), sHi=spanLo+slot*(s+1.25);
+    const inSlot=bracket.filter(i=>onsets[i]>=sLo && onsets[i]<=sHi);
+    const pool=inSlot.length?inSlot:bracket;
+    const pick=pool[Math.floor(rng()*pool.length)];
+    chosen.push(pick); last=onsets[pick];
   }
-  const onsets=onsets0;
+  return chosen;
+}
+
+/* THE SEQUENCE IS GENERATED IN FULL BEFORE THE TRIAL BEGINS, never sampled during
+   it. Everything the record needs about what was scheduled therefore exists
+   before the first sound is played, and a trial that cannot be built is refused
+   at the ready screen rather than failing halfway through.
+
+   opts: durationS   window length in seconds
+         targetCount integer, or null for a stream where every stimulus is answered
+         seed        from drawSeed()
+         respond     "tap" or "voice"; recorded, and no longer sets the floor
+         kind        "tones" or "digits"; selects the stimulus materials */
+function makeSequence(opts){
+  const durationS=opts.durationS, want=opts.targetCount, seed=opts.seed>>>0;
+  const respond=opts.respond||"tap", kind=opts.kind||"tones";
+  const det = want==null;
+  const durMs=durationS*1000;
+  if(durMs < AV_GAP.minMs*4)
+    throw new Error(`A ${durationS} s window is too short for this stream.`);
+  if(!det && want<1) throw new Error("A target count below 1 is not a stream.");
+
+  const stats={ redraws:0, regenerations:0 };
+  let onsets=null, gaps=null, pos=null;
+  const rng=mulberry32(seed);
+  for(let attempt=0; attempt<AV_PLACE.maxAttempts; attempt++){
+    const on=[0], gp=[];
+    for(;;){ const g=avGapMs(rng,stats), nxt=on[on.length-1]+g;
+      if(nxt>durMs) break; gp.push(g); on.push(nxt); }
+    if(on.length<4){ stats.regenerations++; continue; }
+    if(det){ onsets=on; gaps=gp; pos=[]; break; }
+    const p=avPlaceTargets(on,durMs,want,rng);
+    if(p){ onsets=on; gaps=gp; pos=p; break; }
+    stats.regenerations++;
+  }
+  if(!onsets) throw new Error(
+    `Could not place ${want} targets in a ${durationS} s window after `+
+    `${AV_PLACE.maxAttempts} attempts — check AV_TARGET_COUNTS against the window length.`);
+
+  const n=onsets.length;
   const isTarget=Array(n).fill(false); pos.forEach(p=>isTarget[p]=true);
-  // Adjacency is disallowed BY CONSTRUCTION above: the positions are drawn from a pool of
-  // n-2-t+1 slots and then spread by their own index, which makes two targets touching
-  // impossible rather than merely unlikely. It was never recorded, so the export carried an
-  // empty column where a guarantee belonged.
-  const minTargetGap = pos.length>1
+  // THE GENERATED STIMULUS LIST, which the record carries verbatim: index, type,
+  // scheduled onset. It is the only statement of what the trial was SUPPOSED to
+  // present, and the actual onsets are logged against it as the trial runs.
+  const stimuli=onsets.map((t,i)=>({ i:i+1, type:isTarget[i]?"target":"non_target",
+                                     onset_ms:+t.toFixed(1) }));
+  const tgtOnsets=pos.map(i=>onsets[i]);
+  const minTargetGapMs = tgtOnsets.length>1
+    ? Math.min(...tgtOnsets.slice(1).map((v,i)=>v-tgtOnsets[i])) : null;
+  const minTargetGapTones = pos.length>1
     ? Math.min(...pos.slice(1).map((v,i)=>v-pos[i])) : null;
-  return {n,t:pos.length||t,onsets,intervals:iv,isTarget,positions:pos,det,
-          targetPlan,
-          distribution:"floor + exponential", floorMs, meanMs,
-          adjacentTargetsAllowed:false, minTargetGapTones:minTargetGap,
-          minISI:Math.min(...iv),maxISI:Math.max(...iv),durationMs:durMs,seed};
+  return { n, t:pos.length, onsets, intervals:gaps, isTarget, positions:pos, det,
+    stimuli, kind, respond,
+    // Kept under its old name because the record, the CSV and the end-of-trial
+    // panel all read it. It is no longer a parameter the stream was built from:
+    // the count is fixed and this is what the count worked out to.
+    targetPlan: det ? null : { wanted:want, placed:pos.length,
+      count_source:opts.countSource||null, trial_index:opts.ordinal||null,
+      redraws:stats.redraws, regenerations:stats.regenerations,
+      min_target_gap_ms:minTargetGapMs==null?null:+minTargetGapMs.toFixed(1),
+      no_target_first_ms:AV_PLACE.noTargetFirstMs,
+      no_target_last_ms:AV_PLACE.noTargetLastMs,
+      min_target_gap_spec_ms:AV_PLACE.minTargetGapMs },
+    gapLaw:{ min_ms:AV_GAP.minMs, mean_ms:AV_GAP.meanMs, max_ms:AV_GAP.maxMs,
+             scale_ms:AV_GAP.scaleMs, discard_above_ms:AV_GAP.maxDrawMs,
+             redraws:stats.redraws, rescaled:false },
+    distribution:"floor + exponential, discard and redraw above the maximum",
+    floorMs:AV_GAP.minMs, meanMs:AV_GAP.meanMs,
+    adjacentTargetsAllowed:false, minTargetGapTones,
+    minISI:gaps.length?Math.min(...gaps):null,
+    maxISI:gaps.length?Math.max(...gaps):null,
+    meanISI:gaps.length?+(gaps.reduce((a,b)=>a+b,0)/gaps.length).toFixed(1):null,
+    durationMs:durMs, seed, seedSource:LAST_SEED_SOURCE };
 }
 
 /* ------------------------------------------------------- audio */
@@ -5218,6 +5433,116 @@ function tone(at,freq,durMs,level){
   g.gain.setValueAtTime(level,at+d-ramp); g.gain.linearRampToValueAtTime(0,at+d);
   o.connect(g); g.connect(MASTER||c.destination); o.start(at); o.stop(at+d+.02); OSCS.push(o);
 }
+/* ===========================================================================
+   STIMULUS MATERIALS
+
+   Two kinds, selected per task by AV_KIND. The STREAM is the same either way --
+   the gap law, the target counts and the placement rules do not know or care what
+   is being played -- so everything that differs between tones and digits is here
+   and nowhere else.
+   =========================================================================== */
+
+/* SPOKEN DIGITS (VOC_VDGT, PEN_VDGT).
+
+   The digits 1 to 5, spoken by one speaker and recorded ONCE, with 2 as the
+   target. Recorded once, and not synthesized, because the stimulus has to be the
+   same physical sound for every participant on every device: a speech synthesizer
+   is a property of the operating system, so two iPads on different iOS versions
+   would present different stimuli while the record claimed one set.
+
+   HOW THE RECORDINGS ARE PREPARED, which is a timing requirement rather than an
+   audio-engineering preference:
+
+     All five go into a single fixed SLOT. The slot clears the longest of the five
+     words. Each word begins at the start of its slot and short words are padded
+     with silence at the end -- never time-stretched, which changes the sound of
+     the word as well as its length.
+
+     The silence between consecutive words is the minimum interval minus the slot
+     length, and must be at least 150 ms, or two digits run into each other and
+     stop being two events. At the 600 ms minimum interval the slot must therefore
+     be 450 ms or less, so the recordings have to be MEASURED BEFORE the minimum
+     interval is fixed, not after.
+
+     All five are loudness-matched on RMS with peaks limited, so the target digit
+     is not detectable by being louder than the others.
+
+   THIS BUILD SHIPS NO RECORDINGS. The app is one self-contained file with no
+   external assets, so the audio has to be embedded here as base64 and there is
+   nothing to embed yet. Rather than substitute something that would run and
+   produce data, the two digit conditions are BLOCKED: taskBlocked() refuses to
+   plan them and says why. Installing the recordings is an edit to this one
+   object -- set `installed`, give the set an id, fill `samples` with one data URI
+   per digit, and state the measured slot length. Nothing else changes.
+
+   The set id is written into every trial record alongside the slot length,
+   because a second recording session by a different speaker is a different
+   stimulus and records collected on each must be separable afterwards. */
+const DIGIT_SET = {
+  id:"none/placeholder",
+  installed:false,
+  speaker:null,
+  recorded_iso:null,
+  // The measured slot length, in ms. Must be <= minimum interval - 150. Stated
+  // here as the ceiling the recordings have to fit, and replaced by the measured
+  // value when they are installed.
+  slotMs:AV_GAP.minMs-150,
+  digits:[1,2,3,4,5],
+  target:2,
+  rms_matched:null,
+  // digit -> data URI. Empty until recordings are installed.
+  samples:{}
+};
+const digitSlotCeilingMs = () => AV_GAP.minMs-150;
+// Decoded once per digit and held, because decoding inside the scheduling loop
+// would put a variable delay between the schedule and the sound.
+const DIGIT_BUFFERS={};
+function digitSetProblem(){
+  if(!DIGIT_SET.installed) return "no digit recordings are installed in this build";
+  const missing=DIGIT_SET.digits.filter(d=>!DIGIT_SET.samples[d]);
+  if(missing.length) return `recordings are missing for ${missing.join(", ")}`;
+  if(!(DIGIT_SET.slotMs>0)) return "the digit slot length has not been measured";
+  if(DIGIT_SET.slotMs>digitSlotCeilingMs())
+    return `the digit slot is ${DIGIT_SET.slotMs} ms, which leaves under 150 ms of `+
+           `silence at the ${AV_GAP.minMs} ms minimum interval`;
+  return null;
+}
+function digitBuffersReady(){
+  if(digitSetProblem()) return Promise.reject(new Error(digitSetProblem()));
+  const c=audio();
+  return Promise.all(DIGIT_SET.digits.map(d=>{
+    if(DIGIT_BUFFERS[d]) return Promise.resolve();
+    return fetch(DIGIT_SET.samples[d]).then(r=>r.arrayBuffer())
+      .then(b=>new Promise((res,rej)=>c.decodeAudioData(b,buf=>{DIGIT_BUFFERS[d]=buf;res();},rej)));
+  }));
+}
+// A NON-TARGET DIGIT IS DRAWN FROM THE FOUR THAT ARE NOT THE TARGET, seeded from
+// the sequence so the same trial index presents the same words to every
+// participant. Which non-target is played is recorded per stimulus: "the
+// participant said yes to a 3" is a different error from "the participant said
+// yes to a 2 they heard late".
+function assignDigits(seq, seed){
+  if(seq.kind!=="digits") return null;
+  const rng=mulberry32((seed>>>0)^0x5bf03635);
+  const others=DIGIT_SET.digits.filter(d=>d!==DIGIT_SET.target);
+  return seq.isTarget.map(t=>t?DIGIT_SET.target:others[Math.floor(rng()*others.length)]);
+}
+// One stimulus, scheduled at an absolute AudioContext time. Returns the duration
+// it occupies, which is the tone length or the digit slot.
+function playStimulus(at, isTarget, cfg, kind, digit){
+  if(kind==="digits"){
+    const buf=DIGIT_BUFFERS[digit];
+    if(!buf) return DIGIT_SET.slotMs;
+    const c=audio(), src=c.createBufferSource(), g=c.createGain();
+    src.buffer=buf; g.gain.value=+$("lvl").value;
+    src.connect(g); g.connect(MASTER||c.destination); src.start(at);
+    OSCS.push(src);
+    return DIGIT_SET.slotMs;
+  }
+  tone(at, isTarget?+$("ftgt").value:+$("fstd").value, cfg.tone, +$("lvl").value);
+  return cfg.tone;
+}
+
 // The oddball rehearsal PLAYED SIX STRICTLY ALTERNATING TONES, which is not an oddball --
 // it is a two-tone metronome, and a participant who counts it correctly has learned that
 // every second beep is high. The real stream has runs of lows and the high one arrives
@@ -6108,7 +6433,15 @@ function openTrial(showInstruction){
   let seq=null;
   const cfg=audioCfgFor(TRIAL.task);
   if(cfg){
-    try{ seq=makeSequence(cfg.durS,cfg.floorMs,cfg.meanMs,cfg.ptg,drawSeed(),cfg.respond); }
+    // The target count and the seed both come from WHICH TRIAL OF THIS TASK this is,
+    // not from a probability and not from the participant. See AV_TARGET_COUNTS.
+    const ord=taskTrialOrdinal(), tc=avTargetCount(TRIAL.task, ord);
+    try{ seq=makeSequence({ durationS:cfg.durS, targetCount:tc.count, seed:drawSeed(),
+                            respond:cfg.respond, kind:avKind(TRIAL.task),
+                            countSource:tc.source, ordinal:ord });
+         // Which word each non-target slot plays. Seeded from the sequence seed, so the
+         // same trial index presents the same words to every participant.
+         seq.digits=assignDigits(seq, seq.seed); }
     catch(e){ alert("Cannot build the stream for this trial:\n\n"+e.message); return; }
     audio();
   }
@@ -6246,7 +6579,7 @@ function showInstructionScreen(seq,c,returnToReady){
   // Let the participant hear the tones before the trial, not for the first time inside it.
   // A stream with no targets has ONE tone, so there is no low and no high -- naming it "the
   // LOW beep" invites the participant to listen for a second one that never comes.
-  const twoTones = !!(a && a.ptg>0);
+  const twoTones = !!(a && a.hasTargets);
   const btn = (w,txt)=>`<button class="ghost" style="font-size:18px;padding:14px 26px;margin:4px"
         onclick="demo('${w}')">${txt}</button>`;
   const soundBtns = c.audio ? `<div style="margin-top:14px">` +
@@ -6316,7 +6649,7 @@ function reminderText(){
   if(c.count) bits.push(c.countMode==="aloud"
     ? (c.countOf==="all" ? "count every tone aloud" : "count high tones aloud")
     : "silent count, no tapping");
-  else if(cfg) bits.push(cfg.ptg>0?"high tones only":"every tone");
+  else if(cfg) bits.push(cfg.hasTargets?"targets only":"every stimulus");
   if(c.verbal && TRIAL.verbal) bits.push(TRIAL.verbal.prompt_type_label.toLowerCase() +
     (TRIAL.verbal.prompt_text?` — “${esc(TRIAL.verbal.prompt_text)}”`:""));
   const pos = TRIAL.adhoc ? "run now" : `${TRIAL.index+1}/${QUEUE.length}`;
@@ -6430,10 +6763,28 @@ function runTrial(seq,c){
     RUN.tonesStarted=true;
     newMaster();
     const t0=a.currentTime+leadMs/1000;
-    seq.onsets.forEach((on,i)=>tone(t0+on/1000,
-      seq.isTarget[i]?+$("ftgt").value:+$("fstd").value,
-      cfgL.tone, +$("lvl").value));
+    // THE WHOLE STREAM IS HANDED TO THE AUDIO CLOCK AT ONCE, at absolute times. The Web
+    // Audio clock is sample-accurate and runs independently of the main thread, so a
+    // stimulus scheduled here plays when it was scheduled even if a frame is dropped --
+    // which is why nothing re-reads the schedule during the trial.
+    //
+    // ACTUAL ONSETS, which the specification asks for separately from scheduled ones.
+    // Because every stimulus is committed to the audio clock up front, the actual onset of
+    // stimulus i IS t0 + onset[i] on that clock; there is no per-stimulus dispatch that
+    // could slip. What is worth recording, and is recorded, is the mapping between the two
+    // clocks at the moment the stream started -- the AudioContext time and the trial time
+    // -- so every actual onset is reconstructible to sample accuracy rather than asserted.
+    seq.onsets.forEach((on,i)=>playStimulus(t0+on/1000, seq.isTarget[i], cfgL,
+      seq.kind, seq.digits?seq.digits[i]:null));
     RUN.toneT0Ms=+(performance.now()-perf0).toFixed(1);
+    RUN.toneClockT0=+t0.toFixed(6);
+    RUN.toneClockBase=a.baseLatency||0;
+    RUN.toneClockOut=a.outputLatency||0;
+    // Trial-relative actual onsets, in the same frame as every other timestamp in the
+    // record. The output latency is NOT folded in: it is recorded alongside, because
+    // whether to subtract it is an analysis decision and folding it in makes that
+    // decision unrecoverable.
+    RUN.actualOnsets=seq.onsets.map(on=>+(RUN.toneT0Ms+leadMs+on).toFixed(1));
   };
 
   // Drawing is never on the clock. Any task with a spiral stays open until END,
@@ -6495,7 +6846,8 @@ function runTrial(seq,c){
         lastContact:null,saved:false,c,voice:null,voicePending:null,fluencyCueMs:null,
         responseLocked, penAnchored, anchored, sustained, sustainedMs,
         windowStart, noResponseCeiling:false, ceilTimer:null, ended:false,
-        tonesStarted:false, toneT0Ms:null,
+        tonesStarted:false, toneT0Ms:null, toneClockT0:null, toneClockBase:null,
+        toneClockOut:null, actualOnsets:null,
         // Sustained trials present one template per PASS. Passes are not trials: one window
         // is one record and one save, and every sample carries the pass it belongs to.
         pass:1, passes:[], angle:null, netAngleTotal:0, endZoneSince:null, passStartedAt:null,
@@ -7415,7 +7767,7 @@ function finish(){
   let om=null;
   if(seq && c.tap && att){
     om=omissionStats(seq, att, RUN.outLat,
-      bindingLimitMs(RUN.task, RUN.cfg||AUDIO_DEFAULTS[RUN.task]||{floorMs:600,ptg:0}));
+      bindingLimitMs(RUN.task, RUN.cfg||AUDIO_DEFAULTS[RUN.task]||{floorMs:AV_GAP.minMs,hasTargets:false}));
   }
   RUN.omissions=om;
   let tp=null;
@@ -7666,7 +8018,7 @@ function renderResult(seq,c,pts,rate,att,tp){
     const wants = i => everyTone ? true : seq.isTarget[i];
     const nResp = everyTone ? seq.n : seq.t;
     const cls   = everyTone ? "tones" : "high tones";
-    const limit = bindingLimitMs(RUN.task, RUN.cfg||AUDIO_DEFAULTS[RUN.task]||{floorMs:600,ptg:0});
+    const limit = bindingLimitMs(RUN.task, RUN.cfg||AUDIO_DEFAULTS[RUN.task]||{floorMs:AV_GAP.minMs,hasTargets:false});
     const cands=[500,600,700,800,900,1000,1200,1500,2000].filter(w=>w<=limit);
     let h=`<h2>Response window</h2><table><tr><th class="num">Window (ms)</th>
            <th class="num">${cls} caught</th><th class="num">%</th><th class="num">False alarms</th></tr>`;
