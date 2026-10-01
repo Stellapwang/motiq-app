@@ -4095,6 +4095,14 @@ function renderPlan(){
         <td>${lengthCell(c,s2,blocked)}</td>
         <td class="note" style="padding-top:10px">${heldKeyFor(c)?`<div style="color:#8c2020;font-weight:600;margin-bottom:3px">DATA HELD — ${esc(HELD_SHORT[heldKeyFor(c)]||heldKeyFor(c))}</div>`:""}${[c.spiral?"drawing":null,c.tap?"tapping":null,
             c.audio?`<b>${avKind(c.id)==="digits"?"spoken digits":"tones"}</b>`:null,
+            // PRACTICE, ON THE TABLE WHERE THE TASK IS CHOSEN. The plan table is the first
+            // and biggest thing on the session page and it said nothing about practice --
+            // so "does this task have a practice" was a question the one screen built for
+            // choosing tasks could not answer.
+            practicePlan(c).length
+              ? `practice ×${practicePlan(c).length}${c.finBlock?" (once for the finger block)":""}${
+                  practiceSkippable(c)?"":", no skip"}`
+              : (c.spiral||c.tap||c.pent ? "no practice" : null),
             c.count?"count aloud":null,
             c.verbal?"spoken task":null, c.voice?"<b>voice</b>":null].filter(Boolean).join(" · ")}</td>
         <td>${adhocCell(c,s2,blocked)}${c.tier==="expl"
@@ -4148,13 +4156,17 @@ function renderOrderPanel(){
   sel.forEach((c,i)=>{
     const st=PLAN[c.id];
     const n=(st.hands==="each"||st.hands==="roles") ? st.repeats*2 : st.repeats;
-    // Stated beside the trial count, because the practice is part of what the task costs and
-    // is the half of it an examiner cannot otherwise see. Before the list is built this is
-    // what the task WILL get; after it, it is what the list holds.
+    /* WHAT THE TASK SHOULD GET, AND WHAT THE LIST ACTUALLY HOLDS, as two numbers rather
+       than one. This reported the BUILT rows alone, so a list carried over from before
+       practice was in the list showed "2" with no mention of practice -- the same silence
+       as the list itself, in the one panel whose whole job is saying what the session is.
+       Now the panel states the planned practice either way and says when the list disagrees. */
+    const prWanted = (practicePlan(c).length && (!c.finBlock || finPracticeFirst()===c.id))
+      ? practicePlan(c).length : 0;
     const prBuilt = QUEUE.length ? practiceRowsOf(c.id).length : null;
-    const pr = prBuilt!=null ? prBuilt
-             : (practicePlan(c).length && (!c.finBlock || finPracticeFirst()===c.id)
-                 ? practicePlan(c).length : 0);
+    const prStale = prBuilt!=null && prBuilt<prWanted
+                 && !PRACTICE_SKIPPED.has(c.id) && !PRACTICE_DONE.has(c.id);
+    const pr = prWanted;
     // The arrows move within the WHOLE order, not within this filtered list, so a selected
     // task can be moved past an unselected one and the position is honored if that task is
     // selected later. Moving the first or last selected task off the end does nothing.
@@ -4162,7 +4174,9 @@ function renderOrderPanel(){
         <td><b>${c.id}</b> <span class="note" style="margin:0">${esc(c.label)}</span>
           ${c.finBlock?`<span class="note" style="margin:0;color:var(--warm)">
              · ${FIN_LABEL[c.id]||""}, order set by participant id</span>`:""}</td>
-        <td class="num">${pr?`<span class="note" style="margin:0">${pr} practice +</span> `:""}${n}</td>
+        <td class="num">${pr?`<span class="note" style="margin:0">${pr} practice +</span> `:""}${n}${
+          prStale?`<br><span class="note" style="margin:0;color:#8c2020">not in the built
+          list — rebuild</span>`:""}</td>
         <td>${i>0?`<button class="ghost sm" onclick="moveTask('${c.id}',-1)">↑</button>`:""}
             ${i<sel.length-1?`<button class="ghost sm" onclick="moveTask('${c.id}',1)">↓</button>`:""}
         </td></tr>`;
