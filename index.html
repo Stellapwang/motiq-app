@@ -6784,7 +6784,75 @@ function runCurrent(){
     implement: c.implement || "pen" };
   // The instruction page appears only when the task changes. A hand swap inside a
   // task is not a change of task; it is called out on the ready screen instead.
-  openTrial(TRIAL.task !== LAST_TASK);
+  const newTask = TRIAL.task !== LAST_TASK;
+  if(newTask) showTaskStartScreen(()=>openTrial(true));
+  else openTrial(false);
+}
+
+/* THE START SCREEN. The task description gives every task one: the name of the task, NEXT
+   to go on, BACK to return to the session without starting it.
+
+   IT IS NOT THE INSTRUCTION SCREEN AND IT IS NOT REDUNDANT WITH IT. The instruction screen
+   is written for the participant and the examiner reads it aloud; this one is for the
+   examiner, before any of that, and it is the point at which a task can be declined without
+   having begun. Until now the only way out of a task about to start was to read the
+   instruction screen to the participant and then press Exit, which announces a task and
+   then withdraws it.
+
+   It also states what the task is about to cost -- how many trials, which hands -- which is
+   the information an examiner needs in order to decide to skip it, and which exists nowhere
+   on the screens that follow. */
+function showTaskStartScreen(cont){
+  const c=byId(TRIAL.task);
+  const { total } = taskTrialSpan();
+  const hands=[...new Set(QUEUE.filter(q=>q.task===TRIAL.task).map(q=>q.hand))];
+  const handWords = hands.length>1 ? "alternating hands, starting with the dominant"
+    : hands[0]==="both" ? "both hands together"
+    : hands[0]==="none" ? "no hand — listening and speaking only"
+    : handWord(hands[0]||"dominant");
+  const len = c.sustainedS ? `${c.sustainedS} s each`
+            : c.lengthS!=null ? `${c.lengthS} s each` : "self-paced";
+  const fin = c.finBlock ? (()=>{ const F=finTemplateOrder();
+      return `<p style="font-size:17px;color:#5d6570">Template:
+        <b>${FIN_LABEL[TRIAL.task]}</b> — this participant takes
+        ${F.order.map(id=>FIN_LABEL[id]).join(" then ")}, assigned from
+        ${F.parity===null?"an id with no digit in it, so the default order":
+          "the "+F.parity+" last digit of the participant id"}.</p>`; })() : "";
+  showOverlay(`<h3 style="font-size:34px;line-height:1.25">${esc(c.label)}</h3>
+    <p style="font-size:15px;color:#8a9099;font-weight:600;letter-spacing:.04em;margin:0">
+      ${TRIAL.task}</p>
+    <p style="font-size:19px;margin-top:18px">${total} trial${total===1?"":"s"} ·
+      ${handWords} · ${len}</p>
+    ${fin}
+    ${templateNameFor(c, TRIAL.drawHand||TRIAL.tapHand)
+      ? `<p style="font-size:17px;color:#5d6570">${c.finBlock?"Code":"Template"}
+         <code>${templateNameFor(c, TRIAL.drawHand||TRIAL.tapHand)}</code>${
+         c.spiral?` · practice on <code>${practiceTemplateName(geomPitch(c), TRIAL.drawHand)}</code>`:""}</p>` : ""}`,
+    [{ label:"Next", onClick:()=>{ hideOverlay(); cont(); } },
+     { label:"Back", ghost:true, onClick:()=>backToSession() }]);
+}
+
+/* THE END-OF-TASK SCREEN. NEXT goes to the next task in the session, EXIT returns to the
+   session list. It appears once a task's last trial has been saved, and not between trials
+   of the same task -- which is the distinction that makes it worth having: an examiner
+   working through six spirals needs to know when the sixth was the last one, and the only
+   signal until now was the next trial's reminder line naming a different task. */
+function showTaskEndScreen(taskId){
+  const c=byId(taskId);
+  const done=QUEUE.filter(q=>q.task===taskId && q.status==="done").length;
+  const skipped=QUEUE.filter(q=>q.task===taskId && q.status==="skipped").length;
+  const nextTask=(()=>{ for(let i=QPOS;i<QUEUE.length;i++)
+      if(QUEUE[i].status==="pending") return QUEUE[i].task; return null; })();
+  showOverlay(`<h3 style="font-size:32px">${esc(c?c.label:taskId)} — finished</h3>
+    <p style="font-size:20px">${done} trial${done===1?"":"s"} saved${
+      skipped?`, ${skipped} skipped`:""}.</p>
+    <p style="font-size:19px;color:#5d6570">${nextTask
+      ? `Next in the session: <b>${nextTask}</b> — ${esc((byId(nextTask)||{}).label||"")}`
+      : "That is the last task in the session."}</p>`,
+    [ nextTask
+        ? { label:"Next", onClick:()=>{ hideOverlay(); runCurrent(); } }
+        : { label:"Finish", onClick:()=>{ hideOverlay(); sessionComplete(); } },
+      { label:"Exit", ghost:true, onClick:()=>backToSession() }]);
 }
 
 // Every overlay goes through here: body scrolls, buttons stay pinned.
@@ -7101,6 +7169,120 @@ function setTaskCue(id){
   el.textContent=txt;
   el.classList.toggle("on", !!txt);
 }
+/* ===========================================================================
+   WHAT THE EXAMINER SAYS BEFORE EACH TRIAL
+
+   The task description scripts these sentence by sentence -- "Now use your right hand",
+   "Let's do a second spiral with your left hand", "Last one, let's come back to your right
+   hand" -- and they are not decoration. Six trials of the same task differ only in which
+   hand and which repeat, so the sentence is the only thing that tells the participant where
+   they are in the task, and an examiner improvising it says something slightly different
+   every time, to every participant.
+
+   Generated from the trial's position rather than stored as a list per task, because the
+   number of trials is a plan setting: a task cut from three repeats per hand to two must not
+   leave the third sentence stranded, and the scripts in the description are consistent
+   enough to be a rule. The rule is the one the description uses -- name the hand on the
+   first of a pair and say "now your other hand" on the second, mark the second pair as the
+   second one, and mark the last pair as the last.
+   =========================================================================== */
+// How many trials of this task the plan holds, and which one this is.
+function taskTrialSpan(){
+  if(!TRIAL || TRIAL.adhoc || TRIAL.index==null) return { ord:1, total:1 };
+  let ord=0, total=0;
+  QUEUE.forEach((q,i)=>{ if(q.task!==TRIAL.task) return; total++; if(i<=TRIAL.index) ord++; });
+  return { ord:Math.max(1,ord), total:Math.max(1,total) };
+}
+/* THE SCRIPTS, TAKEN FROM THE TASK DESCRIPTION WORD FOR WORD rather than generated.
+
+   An earlier version generated them from the trial's position with a rule read off the
+   description -- name the hand on the first of a pair, "now your other hand" on the second,
+   mark the second pair and mark the last. The rule is very nearly right and produced lines
+   that were nearly the description's, which is the worst outcome available: PEN_VODD's
+   second pair is also its last, so the rule said "last one, let's come back to" where the
+   description says "let's do a second one"; TAP_TONE says "let's do it one more time" and
+   "last one with your" where the generated rule said neither; PEN_SPR1 says "a second
+   SPIRAL" and the rule said "a second one".
+
+   These sentences are read aloud verbatim and were written by the study lead, so a line
+   that is nearly the right line is simply the wrong line. Where the description scripts a
+   task, the table is the script. The generated rule survives as the FALLBACK, for a plan
+   with more repeats than the description scripts -- an examiner is free to set four per
+   hand, and a trial with no sentence at all is worse than a generated one.
+
+   {H} is replaced with the hand this trial actually uses. */
+const TRIAL_SCRIPTS = {
+  PEN_SPR1: ["Now use your {H} hand.",
+             "Now your {H} hand.",
+             "Let’s do a second spiral with your {H} hand.",
+             "Now your {H} hand.",
+             "Last one, let’s come back to your {H} hand.",
+             "Now your {H} hand."],
+  PEN_VODD: ["Now use your {H} hand. Keep drawing and keep counting.",
+             "Now your {H} hand.",
+             "Let’s do a second one with your {H} hand.",
+             "Now your {H} hand."],
+  PEN_VDGT: ["Now use your {H} hand. Keep drawing and say “yes” for every two.",
+             "Now your {H} hand.",
+             "Let’s do a second one with your {H} hand.",
+             "Now your {H} hand."],
+  TAP_FAST: ["Now use your {H} hand.",
+             "Now your {H} hand.",
+             "Let’s do a second trial with your {H} hand.",
+             "Now your {H} hand.",
+             "Last one with your {H} hand.",
+             "Now your {H} hand."],
+  TAP_BMIN: ["Are you ready? Use both hands together.", "Let’s do it again.", "Last one."],
+  TAP_BANT: ["Are you ready? Alternate between your two hands.", "Let’s do it again.", "Last one."],
+  TAP_TONE: ["Now use your {H} hand. Tap once as soon as you hear each beep.",
+             "Now your {H} hand.",
+             "Let’s do it one more time with your {H} hand.",
+             "Last one with your {H} hand."]
+};
+// The clause that says what to do, used only by the generated fallback.
+const TRIAL_TAIL = {
+  TAP_TONE:"Tap once as soon as you hear each beep.",
+  PEN_VODD:"Keep drawing and keep counting.",
+  PEN_VDGT:"Keep drawing and say “yes” for every two.",
+  PEN_VCNT:"Keep drawing and keep counting.",
+  FIN_VCNT:"Keep drawing and keep counting."
+};
+function trialScript(){
+  const c=byId(TRIAL.task); if(!c) return null;
+  const { ord, total } = taskTrialSpan();
+  const hand=(TRIAL.drawHand||TRIAL.tapHand||"right").toUpperCase();
+  // The scripted line, where there is one for this position.
+  const tbl=TRIAL_SCRIPTS[TRIAL.task];
+  if(tbl && ord<=tbl.length) return tbl[ord-1].replace("{H}",hand);
+  // ---- fallback, for a plan longer than the description scripts ----------------
+  const last = ord===total;
+  const tail = TRIAL_TAIL[TRIAL.task] ? " "+TRIAL_TAIL[TRIAL.task] : "";
+  if(c.zones===2 || TRIAL.hand==="both")
+    return (last ? "Last one." : "Let’s do it again.") + tail;
+  if(TRIAL.hand==="none" || (!c.spiral && !c.tap && !c.pent))
+    return (total>1 && ord>1 ? (last?"Last one. Are you ready?":"Let’s do it again. Are you ready?")
+                             : "Are you ready?") + tail;
+  const alternating = total>1 &&
+    new Set(QUEUE.filter(q=>q.task===TRIAL.task).map(q=>q.hand)).size>1;
+  if(!alternating)
+    return (ord===1 ? `Are you ready? Use your ${hand} hand.`
+          : last    ? `Last one with your ${hand} hand.`
+          :           `Let’s do it again with your ${hand} hand.`) + tail;
+  if(ord%2===0) return `Now your ${hand} hand.` + tail;
+  const pair=Math.ceil(ord/2), pairs=Math.ceil(total/2);
+  if(pair===1)     return `Now use your ${hand} hand.` + tail;
+  if(pair===2)     return `Let’s do a second one with your ${hand} hand.` + tail;
+  if(pair===pairs) return `Last one, let’s come back to your ${hand} hand.` + tail;
+  return `Let’s do another one with your ${hand} hand.` + tail;
+}
+// WHETHER THE LINE WAS SCRIPTED OR GENERATED, recorded on the trial. The participant heard
+// a particular sentence; if the plan ran past what the description scripts, the sentence
+// was this app's and the record should not imply otherwise.
+const trialScriptSource = () => {
+  const tbl=TRIAL_SCRIPTS[TRIAL.task], { ord } = taskTrialSpan();
+  return (tbl && ord<=tbl.length) ? "task_description" : "generated";
+};
+
 function reminderText(){
   const c=byId(TRIAL.task), bits=[];
   if(c.spiral){ bits.push($("instr").value==="between"?"between the lines":"trace the line");
@@ -7320,8 +7502,21 @@ function readyTrial(seq,c,justInstructed){
        {label:"Exit", ghost:true, onClick:()=>backToSession()}]);
   } else hideOverlay();
 
+  // WHAT TO SAY, ON THE SCREEN THE EXAMINER IS LOOKING AT WHEN THEY HAVE TO SAY IT. In
+  // quotation marks and in the participant's words, so it reads as a line to be spoken and
+  // not as a status message about the trial. The reminder line beside it stays what it was:
+  // the examiner's own shorthand for what the trial is.
+  {
+    const line=trialScript();
+    const el=$("saypre") || (()=>{ const d=document.createElement("div"); d.id="saypre";
+      $("reminder").parentElement.insertBefore(d, $("reminder")); return d; })();
+    el.innerHTML = line
+      ? `<div style="font-size:21px;line-height:1.45;color:#1f2933;margin:0 0 6px">“${line}”</div>`
+      : "";
+  }
   const start=document.createElement("button"); start.textContent="START";
   start.onclick=()=>{ $("ctrl").innerHTML=""; LAST_TASK=TRIAL.task; LAST_HAND=handNow;
+                      if($("saypre")) $("saypre").innerHTML="";
                       runTrial(seq,c); };
   $("ctrl").appendChild(start);
 
@@ -8655,13 +8850,41 @@ function askExaminerEntry(seq){
 function showEndControls(seq,c,pts,rate,att,tp){
   const sb=document.createElement("button"); sb.textContent="SAVE";
   sb.onclick=()=>{ hideStopSign(); saveTrial(sb); }; $("ctrl").appendChild(sb);
+  // RESTART, which the task description puts on the save screen and which the app only had
+  // DURING a trial, under the name Reset. The two are the same act -- discard what is not
+  // saved and run the trial again -- and the save screen is where an examiner actually
+  // decides it: they are looking at the drawing, and that is when they can see that the
+  // participant started outside the circle or drew the wrong template. Until now the only
+  // route from here was REPEAT, which runs the trial again but keeps the bad one.
+  const rs=document.createElement("button"); rs.textContent="RESTART"; rs.className="ghost";
+  rs.title="Discard this trial without saving it, and run it again";
+  rs.onclick=()=>{
+    if(RUN && RUN.saved){
+      alert("This trial is already saved, so there is nothing to discard.\n\n"+
+            "Use REPEAT to run it again — the saved trial is kept and the new one is "+
+            "recorded as a second repeat.");
+      return; }
+    if(!confirm("Discard this trial and start it again?\n\nThe drawing, the taps and any "+
+                "recording are discarded and NOT saved."+
+                (RUN&&RUN.voice&&RUN.voice.blob?"\n\nThe recording made for this trial goes with it.":"")))
+      return;
+    hideStopSign(); RUN=null; openTrial(false); };
+  $("ctrl").appendChild(rs);
   const rp=document.createElement("button"); rp.textContent="REPEAT"; rp.className="ghost";
   rp.onclick=()=>{ if(!okUnsaved("run it again")) return; hideStopSign(); RUN=null; openTrial(false); };
   $("ctrl").appendChild(rp);
   const nx=document.createElement("button"); nx.textContent="NEXT"; nx.className="ghost";
   nx.onclick=()=>{ if(!okUnsaved("move to the next task")) return; hideStopSign();
+    const wasTask=TRIAL.task, wasAdhoc=TRIAL.adhoc;
     if(RUN&&RUN.saved && !TRIAL.adhoc && QPOS===TRIAL.index) QPOS++;  // past the saved trial
-    RUN=null; runCurrent(); };
+    RUN=null;
+    // THE END-OF-TASK SCREEN, if that was the last trial of this task. Checked here rather
+    // than in runCurrent, because runCurrent is also how the NEXT button on the end screen
+    // itself continues -- putting the test there would show the screen again on the way out
+    // of it.
+    const moreOfThis = !wasAdhoc && QUEUE.some((q,i)=>i>=QPOS && q.task===wasTask && q.status==="pending");
+    if(!wasAdhoc && !moreOfThis){ showTaskEndScreen(wasTask); return; }
+    runCurrent(); };
   $("ctrl").appendChild(nx);
   // LIST, not Exit. The trial list is where an examiner goes to pick a different task or to
   // see what is left, and it was reachable DURING a trial but not after one -- so the only
