@@ -327,10 +327,11 @@ because on `TAP_FAST` the hand alternates between repeats.
 
 ## What NOT to carry across
 
-- **The pointer diagnostics** on the Practice tab exist to chase the Apple Pencil question
+- **The pointer diagnostics** beside the pen check on the device page exist to chase the
+  Apple Pencil question
   above. If the native build identifies the Pencil correctly, they have no purpose.
 - **The palm-rejection workarounds** — `dataHeld` flags, the "pen and touch not
   simultaneous" warnings. The native build removes the cause.
-- **The touch-event fallback** in the practice pad, which reads the touch stream when the
+- **The touch-event fallback** in the pen-check pad, which reads the touch stream when the
   pointer stream withholds the pencil. A Safari-specific rescue.
 - **The single-file structure.** It is a deployment constraint, not an architecture.

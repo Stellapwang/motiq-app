@@ -301,11 +301,10 @@
          numbers are load-bearing, and one of them being missed is a dead button. -->
     <span id="s1" class="on" onclick="goPage(1)">1 · Device</span>
     <span id="s2" onclick="goPage(2)">2 · Participant</span>
-    <span id="s7" onclick="goPage(7)">3 · Practice</span>
-    <span id="s3" onclick="goPage(3)">4 · Session</span>
-    <span id="s4" onclick="goPage(4)">5 · Parameters</span>
-    <span id="s5" onclick="goPage(5)">6 · Instructions</span>
-    <span id="s6" onclick="goPage(6)">7 · Results &amp; data</span>
+    <span id="s3" onclick="goPage(3)">3 · Session</span>
+    <span id="s4" onclick="goPage(4)">4 · Parameters</span>
+    <span id="s5" onclick="goPage(5)">5 · Instructions</span>
+    <span id="s6" onclick="goPage(6)">6 · Results &amp; data</span>
   </div>
 
   <!-- ===================== 1 CALIBRATION ===================== -->
@@ -433,6 +432,85 @@
       <div id="roomresult"></div>
     </fieldset>
 
+    <!-- ===================== THE TWO INPUT CHECKS =====================
+         These were a page of their own, called Practice, and they are not practice. The
+         participant's practice is administered INSIDE the session now -- a row in the trial
+         list ahead of each task's trials, with the task description's own wording and the
+         task's own rules -- so a separate tab called Practice was a second answer to a
+         question that already has one, and the two could drift.
+
+         What was left once the practice moved is what these pads were always really for:
+         finding out whether THIS DEVICE reports pen and finger correctly, before a session
+         is spent discovering that it does not. That is a device question, so it belongs on
+         the device page beside the other two.
+
+         The pen pad is not optional. It is the only thing that writes PENCHECK, which every
+         trial record carries as pen_check and which implement_verified is judged against --
+         whether the device confirmed the implement, rather than the examiner's selection
+         being taken as fact. -->
+    <fieldset>
+      <legend>Pen check <span style="font-weight:400;color:var(--muted)">— per participant, per hand</span></legend>
+      <p class="note" style="margin-top:0">One spiral on each hand, measured for sample rate,
+      pressure and pointer type. The reading goes into every trial record as
+      <code>pen_check</code>, and is what <code>implement_verified</code> is judged against:
+      a stylus the device never reported as a stylus is a trial whose implement is the
+      examiner's claim rather than a measurement.
+      <b>This is not the participant's practice</b> — that is administered inside the session,
+      on each task, with that task's own rules. Draw it yourself if you prefer; what is being
+      checked is the device.</p>
+      <div class="r4">
+        <div><label for="pchand">Hand</label>
+          <select id="pchand" onchange="practiceReset()"><option value="right">Right</option>
+            <option value="left">Left</option></select></div>
+        <div><label for="pcimpl">Implement</label>
+          <select id="pcimpl" onchange="practiceReset()"><option value="pen">Stylus</option>
+            <option value="finger">Index finger</option></select></div>
+      </div>
+      <div style="color:#1d5fa8;font-weight:700;font-size:15px;line-height:1.5;margin:6px 0 4px">
+        Start inside the green circle and trace the line all the way out.<br>
+        One continuous line — do not lift the pen.<br>
+        Hold inside the red circle for a second and a new spiral appears.
+      </div>
+      <canvas id="prpad" class="screenpad"></canvas>
+      <div class="btnrow" style="margin-top:8px">
+        <button class="ghost" onclick="practiceReset()">Start again</button>
+        <span id="prcount" class="note" style="margin:0"></span>
+      </div>
+      <!-- Empty unless the pad has something wrong to report; the diagnostics button
+           appears inside that report rather than beside a pad that is working. -->
+      <div id="prlog"></div>
+      <div id="prresult" class="note"></div>
+    </fieldset>
+
+    <!-- The touch half of the same question. It reported itself as tapping PRACTICE, on the
+         grounds that the first tones a participant hears should not be the first tones of a
+         scored trial -- and the task description settles that the other way: "No separate
+         practice trial is required" for every tapping task. What it still answers is whether
+         taps reach the page at all and as which pointer type, which is worth knowing before
+         a session rather than during TAP_FAST. -->
+    <fieldset>
+      <legend>Touch check <span style="font-weight:400;color:var(--muted)">— per device</span></legend>
+      <p class="note" style="margin-top:0">Ten seconds of tones with a target to tap, to
+      confirm taps register and to see which pointer type they arrive as. Nothing here is
+      scored and nothing is recorded; the tapping tasks are demonstrated rather than
+      practised, which is what the task description asks for.
+      <b>The tones here are something to tap to, not a hearing check</b> — they play at
+      whatever volume is set. What the participant can hear is the sound check on the next
+      page, and the audibility check inside the session.</p>
+      <div class="r3" style="margin-top:8px">
+        <div><label for="tphand">Hand</label>
+          <select id="tphand" onchange="tapPracticeReset()">
+            <option value="right">Right</option><option value="left">Left</option></select></div>
+        <div></div><div></div>
+      </div>
+      <div id="tpbox" class="tappracticebox"><div id="tppad" class="tapdot"></div></div>
+      <div class="btnrow" style="margin-top:8px">
+        <button class="ghost" id="tpbtn" onclick="tapPracticeStart()">Start 10 s</button>
+        <span id="tpcount" class="note" style="margin:0"></span>
+      </div>
+      <div id="tpresult" class="note"></div>
+    </fieldset>
+
     <div class="navrow"><span></span><button class="big" onclick="goPage(2)">Next</button></div>
   </div>
 
@@ -530,11 +608,15 @@
     </fieldset>
 
     <!-- A HEARING CHECK, WHICH IS A PROPERTY OF THE PERSON. It sat with the room check and
-         the practice pads, where it read as equipment setup -- but whether these two tones
+         the input pads, where it read as equipment setup -- but whether these two tones
          are clearly audible to THIS participant is a covariate, and it belongs next to the
-         other things recorded about them. It also has to be settled before the tapping
-         practice on the Practice page plays the same tones, and the Participant page comes
-         first, so the order holds without the two sharing a page. -->
+         other things recorded about them.
+
+         IT USED TO COME BEFORE THE PAD THAT PLAYS THE SAME TONES, and since the pads moved
+         to the device page it comes after. That ordering argument is retired rather than
+         restored: the touch check plays tones as something to tap TO, at whatever volume is
+         set, and it is not a statement about what the participant can hear. This is, and the
+         audibility check inside the session is the one that can stop a condition. -->
     <fieldset>
       <legend>Sound check <span style="font-weight:400;color:var(--muted)">— per participant</span></legend>
       <p class="note" style="margin-top:0">Play both tones at the level the session will use.
@@ -596,80 +678,6 @@
 
     <div class="navrow">
       <button class="big ghost" onclick="goPage(1)">Back</button>
-      <button class="big" onclick="goPage(7)">Next</button></div>
-  </div>
-
-  <!-- ===================== DEVICE AND PARTICIPANT CHECKS =====================
-       Split from the Participant page in v12.05. They were one page because they are
-       done in one sitting, but they are different KINDS of thing: who the participant
-       is, versus whether this device and this person can produce usable data today.
-       The first is typed once and rarely revisited; the second is worked through with
-       the participant in front of you, and two of the three write their own records. -->
-  <div id="pg7" class="hidden">
-
-    <!-- FIRST, BECAUSE IT IS FIRST IN THE SESSION. The tapping block opens the battery and
-         the spiral conditions come later, so rehearsing in the other order asks a participant
-         to practise the second thing they will do before the first. It also needs no pen: an
-         examiner whose stylus is not cooperating can still complete this page.
-
-         It plays tones, so the sound check has to have happened first -- and that is now on
-         the Participant page, which comes before this one. -->
-    <fieldset>
-      <legend>Tapping practice <span style="font-weight:400;color:var(--muted)">— per participant</span></legend>
-      <p class="note" style="margin-top:0">Ten seconds of the TAP_TONE stream, so the first
-      tones a participant hears are not the first tones of a scored trial. TAP_TONE measures
-      the whole response distribution, and the opening responses of an unpractised trial are
-      the participant working out the task. <b>Nothing here is scored.</b></p>
-      <div class="r3" style="margin-top:8px">
-        <div><label for="tphand">Hand</label>
-          <select id="tphand" onchange="tapPracticeReset()">
-            <option value="right">Right</option><option value="left">Left</option></select></div>
-        <div></div><div></div>
-      </div>
-      <div id="tpbox" class="tappracticebox"><div id="tppad" class="tapdot"></div></div>
-      <div class="btnrow" style="margin-top:8px">
-        <button class="ghost" id="tpbtn" onclick="tapPracticeStart()">Start 10 s</button>
-        <span id="tpcount" class="note" style="margin:0"></span>
-      </div>
-      <div id="tpresult" class="note"></div>
-    </fieldset>
-
-    <!-- The behavior the sustained conditions depend on, rehearsed before it costs a trial.
-         A participant meeting "finish one spiral and another appears" for the first time
-         DURING PEN_SPR60 spends the first pass working out what happened, and that pass is
-         data. Here it costs nothing and can be repeated. -->
-    <fieldset>
-      <legend>Spiral practice <span style="font-weight:400;color:var(--muted)">— per participant</span></legend>
-      <p class="note" style="margin-top:0"><b>Demonstrate first, then hand the iPad over.</b>
-      A smaller spiral than the trial uses, so a practice run takes seconds rather than a
-      minute. This replaces the separate pen check: the first completed spiral on each hand
-      is measured for sample rate, pressure and pointer type, which is what that check was
-      for. It was the same drawing twice.</p>
-      <div class="r4">
-        <div><label for="pchand">Hand</label>
-          <select id="pchand" onchange="practiceReset()"><option value="right">Right</option>
-            <option value="left">Left</option></select></div>
-        <div><label for="pcimpl">Implement</label>
-          <select id="pcimpl" onchange="practiceReset()"><option value="pen">Stylus</option>
-            <option value="finger">Index finger</option></select></div>
-      </div>
-      <div style="color:#1d5fa8;font-weight:700;font-size:15px;line-height:1.5;margin:6px 0 4px">
-        Start inside the green circle and trace the line all the way out.<br>
-        One continuous line — do not lift the pen.<br>
-        When you finish one spiral a new one appears. Start again from the middle.
-      </div>
-      <canvas id="prpad" class="screenpad"></canvas>
-      <div class="btnrow" style="margin-top:8px">
-        <button class="ghost" onclick="practiceReset()">Start again</button>
-        <span id="prcount" class="note" style="margin:0"></span>
-      </div>
-      <!-- Empty unless the pad has something wrong to report; the diagnostics button
-           appears inside that report rather than beside a pad that is working. -->
-      <div id="prlog"></div>
-      <div id="prresult" class="note"></div>
-    </fieldset>
-    <div class="navrow">
-      <button class="big ghost" onclick="goPage(2)">Back</button>
       <button class="big" onclick="goPage(3)">Next</button></div>
   </div>
 
@@ -2285,7 +2293,7 @@ const TRACE_SPEEDS_CM_S=[2,4,6];   // slow and careful, through to brisk
 function spiralPathMM(pitch,turns){ return pitch*Math.PI*turns*turns; }
 
 /* ------------------------------------------------------------------ pages */
-const PAGE_IDS=[1,2,7,3,4,5,6];        // element ids, in the order the tabs present them
+const PAGE_IDS=[1,2,3,4,5,6];          // element ids, in the order the tabs present them
 function goPage(n){
   PAGE_IDS.forEach(i=>$("pg"+i).classList.toggle("hidden", i!==n));
   PAGE_IDS.forEach(i=>$("s"+i).classList.toggle("on", i===n));
@@ -2298,7 +2306,10 @@ function goPage(n){
   // when it runs, so it has nothing to render on arrival.
   if(n===1) renderSetupNote();
   if(n===2){ onVoiceConsentChange(); renderAudioCheck(); }
-  if(n===7) requestAnimationFrame(()=>{ tapPracticeReset(); practiceRender(); });
+  // The two input pads live on the device page now. They size their canvases from
+  // clientWidth, which is not final in the same tick the page is unhidden, so they are
+  // measured on the next frame.
+  if(n===1) requestAnimationFrame(()=>{ tapPracticeReset(); practiceRender(); });
   if(n===3){ renderPlan(); renderQueue(); }
   renderStatus();
   if(n===4){ renderAudioTable(); updateGeo(); renderAdvanceNote(); }
@@ -2994,12 +3005,12 @@ function practiceReset(){
   // "page" what reached the document. The two disagreeing is the finding.
   cv.addEventListener("pointerdown", e=>{ prCount(PRLOG.canvas, e.pointerType); renderPrLog(); },
     {passive:true});
-  const onPad = e => { const pg=$("pg7");
+  const onPad = e => { const pg=$("pg1");
     if(pg && pg.classList.contains("hidden")) return false;
     const r=cv.getBoundingClientRect();
     return e.clientX>=r.left && e.clientX<=r.right && e.clientY>=r.top && e.clientY<=r.bottom; };
   document.addEventListener("pointerdown", e=>{
-    const pg=$("pg7"); if(pg && pg.classList.contains("hidden")) return;
+    const pg=$("pg1"); if(pg && pg.classList.contains("hidden")) return;
     noteSeenType(e.pointerType);
     prCount(PRLOG.page, e.pointerType);
     // DISARMS THE TOUCH FALLBACK. A real pen pointerdown proves pointer events work on this
@@ -3016,7 +3027,7 @@ function practiceReset(){
   document.addEventListener("pointercancel", e=>{ if(PR.drawing) cancel(e);  }, {capture:true});
   // EVERY pointer event type the pen produces, named. pointerover and pointermove without a
   // pointerdown is a pencil the browser sees and will not let the page have; see PRLOG.
-  const onChecks = () => { const pg=$("pg7"); return !(pg && pg.classList.contains("hidden")); };
+  const onChecks = () => { const pg=$("pg1"); return !(pg && pg.classList.contains("hidden")); };
   ["pointerover","pointerenter","pointermove","pointerdown","pointerup","pointerout",
    "pointercancel","pointerleave"].forEach(t=>
     document.addEventListener(t, e=>{
@@ -3084,7 +3095,7 @@ function practiceReset(){
 // The checks moved to their own page in v12.05 and this kept watching the old one, so the
 // pads stopped re-laying-out on rotation -- the one orientation change an iPad makes most.
 window.addEventListener("resize",()=>{
-  if(!$("pg7").classList.contains("hidden")){ practiceRender(); } });
+  if(!$("pg1").classList.contains("hidden")){ practiceRender(); } });
 
 /* ===========================================================================
    SCREENING SCREENS — per participant, not per trial.
@@ -7561,9 +7572,13 @@ function reminderText(){
    PRACTICE, INSIDE THE SESSION
 
    The task description gives seven of the twelve conditions a practice screen, and the app
-   had none: it has a Practice TAB, which is a rehearsal pad for the examiner and for
-   checking that the Pencil is seen, and that is a different thing from a practice trial
-   administered to the participant as part of the task.
+   had none. It had a Practice TAB instead -- a rehearsal pad for the examiner and a check
+   that the Pencil is seen, which is a different thing from a practice trial administered to
+   the participant as part of the task. That tab is gone, and it had to go once this existed:
+   two answers to one question drift, and an examiner with a page called Practice has no
+   reason to believe the practice is somewhere else. What the pads were really for -- finding
+   out whether this device reports pen and finger correctly -- is a device question, and they
+   are now the pen check and the touch check on the device page.
 
    WHAT IS PRACTISED IS NOT THE MOVEMENT, IT IS THE RULE. A participant can be told to trace
    a spiral and will do it; what they cannot be told in a way that survives is that holding
@@ -11169,7 +11184,7 @@ window.addEventListener("resize",()=>{
   const running = RUN && !RUN.ready;
   if(running){ noteTrialResize(); return; }
   if($("stage").classList.contains("on")){ layout(); drawScene(); }
-  else if(!$("pg7").classList.contains("hidden")){ tapPracticeReset(); }
+  else if(!$("pg1").classList.contains("hidden")){ tapPracticeReset(); }
 });
 // Recorded on the same footing as a mid-trial zoom, and invalidating the trial through the
 // same geometry_valid field, because the consequence is the same: the millimeters in this
