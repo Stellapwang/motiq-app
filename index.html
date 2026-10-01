@@ -700,6 +700,13 @@
       Everything here is a default, not a rule — change anything.</p>
       <div style="overflow-x:auto"><table id="planTable"></table></div>
       <div id="planSummary"></div>
+      <!-- THE SESSION SEQUENCE, SEPARATE FROM THE PLAN TABLE ABOVE. The plan table groups
+           by tier, so a core task and an exploratory one sitting next to each other in the
+           administration order appear in different groups there: arrows on those rows would
+           change the position number without visibly moving anything. This panel is the one
+           place the order is shown AS an order, and the only place it can be changed. -->
+      <div id="orderPanel"></div>
+      <div id="orderNote"></div>
       <div class="btnrow" id="tierButtons"></div>
       <div id="presetNote"></div>
       <div class="note">Each button selects or clears that tier, and they combine in any
@@ -1115,36 +1122,30 @@ const BUILD = "v13.01 2026-09-16";
    Audio settings live in AUDIO_DEFAULTS, keyed by the same id.
    ============================================================================ */
 const CATALOGUE = [
-  // ORDER FOLLOWS THE ADMINISTRATION SEQUENCE, not the task family. Each step introduces
-  // one new element: tapping alone, then tones with a response already known, then the
-  // vocal effector, then drawing, then drawing under load.
+  // ORDER: DRAWING FIRST, TAPPING LAST, which is the order the task description lists and
+  // is set by what the battery is for rather than by how it teaches itself. Drawing is the
+  // primary interest, and a participant is freshest at the start; tapping is short, well
+  // understood and needs no practice, so it is what the end of a session can afford.
+  //
+  // THAT REVERSES THE EARLIER RATIONALE, and the earlier rationale is worth recording
+  // because it was not wrong. The order used to be graded -- tapping alone, then tones with
+  // a response already known, then the vocal effector, then drawing, then drawing under
+  // load -- so each step introduced exactly one new element and nothing was ever met for
+  // the first time inside a dual task. It is a good teaching order and a bad fatigue order:
+  // every minute it spends preparing the participant is a minute spent before the measure
+  // the study rests on. The one ordering constraint that is not a preference survives
+  // intact: PEN_SPR60 and VOC_VODD both run before PEN_VODD, and VOC_VDGT before PEN_VDGT,
+  // so every dual task has single-task baselines for both of its components.
+  //
+  // The examiner can move any of it. See ORDER_OVERRIDE -- the number here is the default,
+  // not the protocol.
   //
   // dataHeld marks a condition whose UI is built and whose trials run, but whose DATA is
   // not usable as the dual task it is meant to be. It is not the same as a low tier: an
   // exploratory task is one nobody has decided about, a held task is one the platform
   // breaks. Every trial of a held task carries the reason in its record.
 
-  // --- Block A: tapping, no tones -------------------------------------------------
-  { id:"TAP_FAST", label:"Tapping, as fast as you can",   order:10,  tier:"core",   spiral:0, tap:1, audio:0, zones:1, hands:"each", repeats:3, lengthS:10 },
-  { id:"TAP_BMIN", label:"Bimanual tapping, in phase",    order:20,  tier:"core",   spiral:0, tap:1, audio:0, zones:2, hands:"both", repeats:3, lengthS:10 },
-  { id:"TAP_BANT", label:"Bimanual tapping, antiphase",   order:30,  tier:"core",   spiral:0, tap:1, audio:0, zones:2, hands:"both", repeats:3, lengthS:10 },
-
-  // --- Block B: tones added, the response already known ---------------------------
-  // 2 x 50 s at a 1000 ms mean, not 3 x 40 s at 1200 ms. Ex-Gaussian fitting needs about
-  // 100 responses per participant and this yields ~100. The FLOOR stays at 600 ms: it
-  // exists so a response completes before the next tone arrives, and tapping RT at 90+
-  // runs 300-400 ms, so density comes out of the mean and never out of the floor.
-  { id:"TAP_TONE", label:"Tapping to every tone",         order:40,  tier:"core",   spiral:0, tap:1, audio:1, zones:1, hands:"one",  oneHand:"dominant", repeats:2, lengthS:50 },
-
-  // --- Block C: the vocal effector, then the new rule ------------------------------
-  // The oddball administered ALONE. Not a cost baseline -- a spiral condition's window is
-  // anchored on its first stroke while this starts on the clock, so the two are not
-  // time-matched and a naive difference score between them is not a dual-task cost. Its
-  // job is to show the participant can do the task at all without competing motor demand.
-  { id:"VOC_VODD", label:"Counting the high tones aloud, no drawing", order:50, tier:"core", spiral:0, tap:0, audio:1, zones:0, hands:"none", repeats:1, lengthS:60,
-                   count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1 },
-
-  // --- Block D: drawing, then drawing under load -----------------------------------
+  // --- Block A: drawing on its own --------------------------------------------------
   // ONE SPIRAL AND SIXTY SECONDS OF SPIRALS ARE TWO TASKS, not one task with a setting.
   // They were a dropdown on a single condition until v13.01, which meant choosing either
   // foreclosed the other for that session -- a plan holds one sustainedS per task -- so the
@@ -1153,28 +1154,65 @@ const CATALOGUE = [
   // appear and to keep going, which is a sustained-attention demand the single spiral does
   // not make. Separate ids also keep the two apart in the export, where a pooled PEN_SPRL
   // distinguished only by a sustainedS column is a silent analysis error waiting to happen.
-  { id:"PEN_SPR1",  label:"Spiral, one only",               order:55,  tier:"core",   spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:2, lengthS:null, implement:"pen", sustainedS:null, windowLocked:1 },
+  //
+  // THREE PER HAND, SIX SPIRALS, alternating and starting with the dominant hand. The task
+  // description notes that this may be cut to two per hand if the testing burden turns out
+  // too high; that is a change to repeats in the plan, not a change here.
+  { id:"PEN_SPR1",  label:"Spiral, one only", order:10, tier:"core", spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:3, lengthS:null, implement:"pen", sustainedS:null, windowLocked:1 },
   // The window is LOCKED on this one: it is named for its length, so an editable seconds box
   // would let the id disagree with the record. The dual-task spirals below keep the box,
   // because their window is a genuine parameter and they have no one-spiral twin.
-  { id:"PEN_SPR60", label:"Spiral, 60 s",      order:60,  tier:"core",   spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:2, lengthS:null, implement:"pen", sustainedS:60, windowLocked:1 },
-  { id:"PEN_VODD", label:"Spiral + counting the high tones aloud", order:70, tier:"core", spiral:1, tap:0, audio:1, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
-                   selfPaceable:1, fixedS:60, count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1 },
+  //
+  // ONE TRIAL PER HAND. Sixty seconds of continuous spiralling is the most demanding minute
+  // in the battery, and the task description asks for one each rather than two.
+  { id:"PEN_SPR60", label:"Spiral, 60 s", order:20, tier:"core", spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:1, lengthS:null, implement:"pen", sustainedS:60, windowLocked:1 },
+
+  // --- Block B: the auditory-verbal load on its own ---------------------------------
+  // Administered ALONE, and NOT as a cost baseline -- a spiral condition's window is
+  // anchored on its first stroke while this starts on the clock, so the two are not
+  // time-matched and a naive difference score between them is not a dual-task cost. Its
+  // job is to show the participant can do the task at all without competing motor demand,
+  // and to put the audibility check and the practice before the dual task rather than
+  // inside it.
+  { id:"VOC_VODD", label:"Counting the high tones aloud, no drawing", order:30, tier:"core", spiral:0, tap:0, audio:1, zones:0, hands:"none", repeats:1, lengthS:60,
+                   count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1,
+                   avObserve:"final_count" },
+  // THE SAME STREAM WITH DIFFERENT MATERIALS AND A DIFFERENT RESPONSE. Digits are spoken
+  // words, so the check on them is intelligibility rather than audibility, and the response
+  // is one "yes" per target instead of a running total -- which means there is no number to
+  // ask the participant for at the end, and no count for them to lose. The pair therefore
+  // separates the monitoring load from the counting load, which the tone task alone cannot.
+  { id:"VOC_VDGT", label:"Saying yes to the number two, no drawing", order:40, tier:"core", spiral:0, tap:0, audio:1, zones:0, hands:"none", repeats:1, lengthS:60,
+                   count:0, respond:"speak", voice:1,
+                   avObserve:"yes_responses" },
+
+  // --- Block C: drawing under auditory-verbal load ----------------------------------
+  // FOUR TRIALS, ALTERNATING HANDS, starting with the dominant one: D, ND, D, ND. The hand
+  // alternates rather than being fixed to the dominant side because the dual-task cost is
+  // wanted for both hands, and the four trial indices are what AV_TARGET_COUNTS is keyed on.
+  { id:"PEN_VODD", label:"Spiral + counting the high tones aloud", order:50, tier:"core", spiral:1, tap:0, audio:1, zones:0, hands:"each", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
+                   selfPaceable:1, fixedS:60, count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1,
+                   avObserve:"final_count" },
+  { id:"PEN_VDGT", label:"Spiral + saying yes to the number two", order:60, tier:"core", spiral:1, tap:0, audio:1, zones:0, hands:"each", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
+                   selfPaceable:1, fixedS:60, count:0, respond:"speak", voice:1,
+                   avObserve:"yes_responses" },
+
+  // --- Block D: the copy ------------------------------------------------------------
   // Intersecting pentagon COPY, not a spiral. The model is shown beside a blank area and the
   // participant reproduces it; there is no template to trace and nothing to sustain, so it is
   // self-paced and ends at END. The app does NOT score it -- the criterion is ten angles and a
   // quadrilateral overlap, which is a judgment about a shape rather than something these
   // strokes can be thresholded into. It records the drawing and the model that was shown.
-  { id:"PEN_PENT", label:"Intersecting pentagon copy", order:75, tier:"core", spiral:0, pent:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:1, lengthS:null, implement:"pen" },
+  { id:"PEN_PENT", label:"Intersecting pentagon copy", order:70, tier:"core", spiral:0, pent:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:1, lengthS:null, implement:"pen" },
 
+  // --- Block E: the finger ----------------------------------------------------------
   // THE FINGER BLOCK ANSWERS TWO QUESTIONS, one condition each, and neither is a size effect.
   //
   // FIN_SPR1_T5 is the IMPLEMENT BRIDGE. It runs the stylus template exactly -- 12 x 5 -- so
   // the only thing that differs from PEN_SPR1 is what is held. Finger drawing is the only
   // input a phone has, so whether a finger measures what a stylus measures is the question
   // the whole phone direction rests on; without this condition every finger-versus-stylus
-  // difference is confounded with template size and cannot be untangled afterwards. One
-  // dominant-hand trial is enough to show the two behave alike, or that they do not.
+  // difference is confounded with template size and cannot be untangled afterwards.
   //
   // FIN_SPR1_T3 is PHONE FEASIBILITY, at 10 x 3 -- 60 mm across, which fits a phone screen
   // where the 120 mm stylus template does not. Pitch drops with turns because a 12 mm pitch
@@ -1184,34 +1222,52 @@ const CATALOGUE = [
   // ratios (path drawn over template path, laps over template turns). What it cannot answer
   // is whether small spirals are harder. A true size contrast would need 12 x 3 as well.
   //
-  // "Both, alternating" with one trial per hand. The battery table gives the hand as
-  // alternating and the trial count as 1; read as 1 PER HAND, since a single trial cannot
-  // alternate. Confirm if that is not what was meant.
-  { id:"FIN_SPR1_T5", label:"Spiral, finger, one only", order:78, tier:"second", spiral:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:1, lengthS:null, implement:"finger", sustainedS:null, windowLocked:1 },
-  { id:"FIN_SPR1_T3", label:"Spiral, finger, one only, 10 × 3", order:79, tier:"second", spiral:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:1, lengthS:null, implement:"finger", geomSet:"finger_small", sustainedS:null, windowLocked:1 },
-  { id:"FIN_SPR60", label:"Spiral, finger, 60 s", order:80, tier:"second", spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:1, lengthS:null, implement:"finger", sustainedS:60, windowLocked:1 },
+  // TWO TRIALS PER HAND ON EACH TEMPLATE, so four per template and eight in all. KEPT AS TWO
+  // IDS rather than one task with a template column: a pooled id distinguished only by a
+  // geometry column is the same silent analysis error the PEN_SPR1 / PEN_SPR60 split exists
+  // to prevent, and these two templates differ in both pitch and turns.
+  //
+  // WHICH TEMPLATE COMES FIRST ALTERNATES BY PARTICIPANT ID, so template order does not
+  // confound the comparison. See finTemplateOrder() -- the examiner never chooses it.
+  { id:"FIN_SPR1_T5", label:"Spiral, finger, one only", order:80, tier:"second", spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:2, lengthS:null, implement:"finger", sustainedS:null, windowLocked:1, finBlock:1 },
+  { id:"FIN_SPR1_T3", label:"Spiral, finger, one only, 10 × 3", order:85, tier:"second", spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:2, lengthS:null, implement:"finger", geomSet:"finger_small", sustainedS:null, windowLocked:1, finBlock:1 },
+  { id:"FIN_SPR60", label:"Spiral, finger, 60 s", order:88, tier:"second", spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:1, lengthS:null, implement:"finger", sustainedS:60, windowLocked:1 },
+
+  // --- Block F: tapping -------------------------------------------------------------
+  { id:"TAP_FAST", label:"Tapping, as fast as you can", order:100, tier:"core", spiral:0, tap:1, audio:0, zones:1, hands:"each", repeats:3, lengthS:10 },
+  { id:"TAP_BMIN", label:"Bimanual tapping, in phase",  order:110, tier:"core", spiral:0, tap:1, audio:0, zones:2, hands:"both", repeats:3, lengthS:10 },
+  { id:"TAP_BANT", label:"Bimanual tapping, antiphase", order:120, tier:"core", spiral:0, tap:1, audio:0, zones:2, hands:"both", repeats:3, lengthS:10 },
+  // TWO PER HAND, ALTERNATING, 50 s each. Four trials at a 1000 ms mean yields about 200
+  // responses, well past the ~100 per participant that ex-Gaussian fitting needs, and it
+  // gets them for both hands rather than only the dominant one.
+  { id:"TAP_TONE", label:"Tapping to every tone", order:130, tier:"core", spiral:0, tap:1, audio:1, zones:1, hands:"each", repeats:2, lengthS:50 },
 
   // --- Exploratory ------------------------------------------------------------------
+  // NOT IN THE TASK DESCRIPTION, and kept deliberately. The description specifies the core
+  // battery; these are conditions nobody has decided about, and two of them carry contrasts
+  // nothing else in the battery makes. They sit outside the default plan and have to be
+  // pulled onto the table one at a time.
+  //
   // The three spiral-plus-TAP conditions are held. Their UI is built and they run, but the
   // tapping hand's responses are suppressed by palm rejection while the Pencil is down, so
   // the data is not the dual task it is meant to be. See the PALM REJECTION comment.
-  { id:"PEN_FAST", label:"Spiral + tapping as fast as you can", order:90, tier:"expl", spiral:1, tap:1, audio:0, zones:1, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
+  { id:"PEN_FAST", label:"Spiral + tapping as fast as you can", order:200, tier:"expl", spiral:1, tap:1, audio:0, zones:1, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
                    dataHeld:"palm rejection" },
-  { id:"PEN_TONE", label:"Spiral + tapping to every tone", order:100, tier:"expl",  spiral:1, tap:1, audio:1, zones:1, hands:"one",  oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
+  { id:"PEN_TONE", label:"Spiral + tapping to every tone", order:210, tier:"expl", spiral:1, tap:1, audio:1, zones:1, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
                    selfPaceable:1, fixedS:60, dataHeld:"palm rejection" },
   // The same cognitive task as PEN_VODD with a MANUAL response channel instead of a vocal
   // one, so the pair isolates response channel from monitoring load. Nothing else in the
   // battery does that, which is why it is built despite being held.
-  { id:"PEN_TODD", label:"Spiral + tapping the high tones", order:110, tier:"expl", spiral:1, tap:1, audio:1, zones:1, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
+  { id:"PEN_TODD", label:"Spiral + tapping the high tones", order:220, tier:"expl", spiral:1, tap:1, audio:1, zones:1, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
                    selfPaceable:1, fixedS:60, dataHeld:"palm rejection" },
-  { id:"PEN_VCNT", label:"Spiral + counting the tones aloud", order:120, tier:"expl", spiral:1, tap:0, audio:1, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
-                   selfPaceable:1, fixedS:60, count:1, countMode:"aloud", countOf:"all", respond:"speak", voice:1 },
-  { id:"PEN_MATH", label:"Spiral + counting backward aloud", order:130, tier:"expl", spiral:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:1, lengthS:null, implement:"pen", sustainedS:60,
+  { id:"PEN_VCNT", label:"Spiral + counting the tones aloud", order:230, tier:"expl", spiral:1, tap:0, audio:1, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
+                   selfPaceable:1, fixedS:60, count:1, countMode:"aloud", countOf:"all", respond:"speak", voice:1, avObserve:"final_count" },
+  { id:"PEN_MATH", label:"Spiral + counting backward aloud", order:240, tier:"expl", spiral:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:1, lengthS:null, implement:"pen", sustainedS:60,
                    verbal:"math", respond:"speak", voice:1 },
-  { id:"PEN_WORD", label:"Spiral + naming words aloud",   order:140, tier:"expl",   spiral:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
+  { id:"PEN_WORD", label:"Spiral + naming words aloud", order:250, tier:"expl", spiral:1, tap:0, audio:0, zones:0, hands:"one", oneHand:"dominant", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
                    verbal:"word", respond:"speak", voice:1 },
-  { id:"FIN_VCNT", label:"Spiral (finger) + counting the tones aloud", order:150, tier:"expl", spiral:1, tap:0, audio:1, zones:0, hands:"one", oneHand:"dominant", repeats:1, lengthS:null, implement:"finger", sustainedS:60,
-                   selfPaceable:1, fixedS:60, count:1, countMode:"aloud", countOf:"all", respond:"speak", voice:1 }
+  { id:"FIN_VCNT", label:"Spiral (finger) + counting the tones aloud", order:260, tier:"expl", spiral:1, tap:0, audio:1, zones:0, hands:"one", oneHand:"dominant", repeats:1, lengthS:null, implement:"finger", sustainedS:60,
+                   selfPaceable:1, fixedS:60, count:1, countMode:"aloud", countOf:"all", respond:"speak", voice:1, avObserve:"final_count" }
 ];
 
 /* ---------------------------------------------------------------------------
@@ -1436,6 +1492,177 @@ let ORPHANED_AUDIO=null;
 //            separable, and it should be SHORT, because dense standards are what make the
 //            target rare. The response constraint applies to TARGET-to-target spacing, and
 //            is enforced where the targets are placed rather than by the floor.
+/* DECLARED HERE, NOT WITH THE SEQUENCE GENERATOR, for the same reason TASK_ALIAS and
+   the geometry accessors are declared early: buildAudioDefaults() runs during start-up,
+   several thousand lines above the generator, and it reads AV_GAP and avKind. A const
+   read inside its temporal dead zone THROWS rather than returning undefined, and takes
+   the rest of the script with it -- the whole app dead, with a blank page to say so.
+   The generator itself stays with the other sequence code: function declarations hoist,
+   so only the constants have to be up here. */
+
+/* ============================================================================
+   THE AUDITORY-VERBAL LOAD ELEMENT
+   Specified in MotiQ_auditory_verbal_element_spec_rev.docx and referenced by
+   VOC_VODD, VOC_VDGT, PEN_VODD and PEN_VDGT. TAP_TONE uses the same gap law,
+   per the stimulus timing paragraph of the task description.
+
+   WHAT CHANGED, AND WHY THE OLD DESIGN IS GONE
+
+   Until v13 the stream was described by a MEAN and a TARGET PROBABILITY, and the
+   number of targets in a trial fell out of them: round(n * p), jittered. Two
+   properties of that are now specified away rather than tuned.
+
+     The count is no longer sampled.   Each trial has a FIXED number of targets,
+     read from AV_TARGET_COUNTS by trial index. A probability makes the count a
+     random variable, so two participants on the same trial answer a different
+     number of times and the counts are not comparable without a covariate.
+
+     The gap is no longer rescaled.    The old generator drew n intervals and then
+     scaled the whole set to fill the requested duration, which bent every
+     interval by a few percent to make the arithmetic land. The gap law below is
+     exact per gap and the stream simply stops when the window is full.
+
+   The floor also stopped depending on the response channel. It used to: a tap was
+   given 600 ms and a spoken number 800, on the reasoning that one response must
+   finish before the next stimulus lands. That reasoning still holds, but it is
+   not the floor's job any more -- the constraint belongs to the stimuli that
+   ACTUALLY ask for a response, and those are the targets, which AV_PLACE spaces
+   at 2000 ms. Standards are not answered at all, so nothing is protected by
+   widening their spacing, and widening it thins the standards, which is what
+   makes a target rare. One floor, 600 ms, for every stream.
+   ============================================================================ */
+
+/* THE GAP LAW. Onset to onset: at least 600 ms, averaging 1000, never past 3500.
+
+     draw  X = -402.1 * ln(1 - U),   U ~ Uniform(0,1), in ms
+     if X > 2900, discard it and draw again
+     gap = 600 + X
+
+   AN OVERSIZED DRAW IS DISCARDED AND REPLACED, NOT CLAMPED. Clamping to 2900
+   would put roughly 7 gaps in every 10,000 on exactly 3500 ms, which is a cluster
+   of identical gaps sitting at the maximum -- audible as a repeated pause of the
+   same length, and a tell. A redraw is needed on about 0.07% of draws.
+
+   EXPONENTIAL, NOT UNIFORM. An exponential above a floor has a flat hazard:
+   having waited tells the participant nothing about when the next sound is due.
+   Uniform jitter has a rising hazard, so the participant learns roughly when the
+   next sound is coming and stops having to listen for it -- which turns a
+   vigilance task into a synchronization task.
+
+   WHY 402.1 AND NOT 400. 400 is what subtracting the floor from the mean
+   suggests, and it is wrong, because of the discard rule: only oversized draws
+   are ever thrown away, never undersized ones, so the surviving gaps are missing
+   their largest members and their average comes out low. At 400 the finished gaps
+   average 998 ms. 402.1 puts back what the discarding removes. DO NOT ROUND IT.
+   If the minimum, the mean, the maximum or the discard rule is ever changed, this
+   constant has to be recalculated, or the stream quietly stops averaging what the
+   specification says it averages. */
+const AV_GAP = { minMs:600, meanMs:1000, maxMs:3500, scaleMs:402.1, maxDrawMs:2900 };
+/* About the 3500 ms maximum. The exponential has no natural upper limit, so
+   without a maximum an occasional gap runs past four seconds, which does not
+   sound like a long gap -- it sounds like the iPad has stopped working. The
+   examiner is listening for exactly that and would stop a good trial. The trade
+   is that a participant who has waited the full 3500 ms knows the next sound must
+   come immediately, so that one moment IS predictable; it happens on roughly 1
+   stimulus in 1400, which is rare enough to disregard. */
+
+/* FIXED TARGET COUNTS BY TRIAL INDEX, from the specification's table.
+   Position 0 is the single-task trial; positions 1 to 4 are dual-task trials 1
+   to 4, which alternate hands dominant, non-dominant, dominant, non-dominant.
+
+   The two stimulus kinds deliberately DISAGREE on every dual trial: a participant
+   who has just counted 9 high tones on dual trial 1 is asked for 14 "yes"es on
+   the digit task's dual trial 1. Matching them would let the count carry over.
+
+   NO TRIAL USES A COUNT OF 10, which is the number a participant guesses when
+   they have lost the thread, so a report of 10 is never a plausible hit. The
+   assertion below is what keeps that true if the table is ever edited. */
+const AV_TARGET_COUNTS = {
+  tones:  { single:[12], dual:[ 9,13,14,11] },
+  digits: { single:[12], dual:[14,11, 9,13] }
+};
+(()=>{ const bad=[];
+  Object.entries(AV_TARGET_COUNTS).forEach(([k,v])=>
+    [...v.single,...v.dual].forEach(n=>{ if(n===10) bad.push(k+":"+n); }));
+  if(bad.length) throw new Error("AV_TARGET_COUNTS uses a count of 10 ("+bad.join(", ")+
+    "); 10 is the number a participant guesses, so no trial may use it.");
+})();
+// Practice is 20 s with three targets, for every auditory condition. Short enough
+// not to be a trial, long enough to contain the thing being practised.
+const AV_PRACTICE = { durS:20, targets:3 };
+
+/* TARGET PLACEMENT. Applied when the sequence is generated, never during it.
+   The 2000 ms separation is the response constraint: it is the gap a spoken
+   response needs, and it is enforced here rather than by the interval floor
+   because only the targets are answered. The two 2000 ms dead zones keep a target
+   off both edges of the window -- one at the start lands before the participant
+   has settled into the task, and one at the end leaves no room for the response
+   and can have its own tone clipped by the window closing. */
+const AV_PLACE = { minTargetGapMs:2000, noTargetFirstMs:2000, noTargetLastMs:2000,
+                   maxAttempts:200 };
+
+/* PREDEFINED SEEDS, written down rather than derived.
+
+   The specification asks that a given trial index present the same sequence to
+   every participant, so stimulus variance is out of the between-group comparison,
+   and that different trial indices differ, so a second trial of a task is not
+   partly a memory test. A literal table is the plainest way to be able to say
+   that: these numbers were drawn once and MUST NOT BE CHANGED. Changing one
+   changes the stimulus sequence every participant hears on that trial, and
+   records collected either side of the change are then not on the same stimuli
+   while naming the same trial index.
+
+   Position 0 is the single-task trial; 1 to 4 are the dual trials. A task not
+   listed here falls back to the derived seed in drawSeed(), which is matched
+   across participants in the same way but is not written down. */
+const AV_SEEDS = {
+  VOC_VODD:[1740318527,  829441063, 1455207819,  603918244, 1982006371],
+  PEN_VODD:[ 711204839, 1366950271,  248873615, 1899431052,  934718306],
+  VOC_VDGT:[2014773359,  458102947, 1127634088, 1670255413,  306849172],
+  PEN_VDGT:[1283066941, 1941207358,  672419085,  129573640, 1518904227],
+  TAP_TONE:[ 905613274, 1703948165,  371028593, 1264770318, 2096185447]
+};
+// Which stimulus materials a task uses. A task absent from here has no auditory
+// stream; a task present but with no target count responds to every stimulus.
+const AV_KIND = { VOC_VODD:"tones", PEN_VODD:"tones",
+                  VOC_VDGT:"digits", PEN_VDGT:"digits",
+                  TAP_TONE:"tones", PEN_TONE:"tones", PEN_TODD:"tones",
+                  PEN_VCNT:"tones", FIN_VCNT:"tones" };
+const avKind = task => AV_KIND[task] || "tones";
+// Does this task distinguish target from non-target at all? PEN_VCNT and
+// FIN_VCNT count EVERY tone, and TAP_TONE taps to every tone, so for those
+// three there is one stimulus type and no placement to do.
+const avHasTargets = task =>
+  !!(TASK_STREAM[task] && TASK_STREAM[task].stream==="oddball") ||
+  avKind(task)==="digits";
+
+/* Which trial of its own task this is, counting from 1. The target count and the
+   seed are both read from it, so it has to be the position in the TASK rather
+   than in the queue: a session that runs PEN_VODD after two other tasks still
+   starts PEN_VODD at trial 1. Computed from the queue rather than from the saved
+   repeat counters, because the counters are per hand and this is not. */
+function taskTrialOrdinal(){
+  if(!TRIAL) return 1;
+  if(TRIAL.adhoc || TRIAL.index==null) return 1;
+  let k=0;
+  for(let i=0;i<=TRIAL.index && i<QUEUE.length;i++) if(QUEUE[i].task===TRIAL.task) k++;
+  return Math.max(1,k);
+}
+// The count this trial asks for, and where the number came from. A repeat beyond
+// the specified set CYCLES the table rather than inventing a number, and the
+// record says so -- an examiner who adds a fifth dual trial gets a defined
+// stimulus sequence and a field that admits it was not one of the four.
+function avTargetCount(task, ordinal){
+  if(!avHasTargets(task)) return { count:null, source:"every_stimulus" };
+  const kind=avKind(task), tbl=AV_TARGET_COUNTS[kind];
+  if(!tbl) return { count:null, source:"no_table" };
+  const c=byId(task), dual=isDualTask(c);
+  const list=dual?tbl.dual:tbl.single;
+  const i=(ordinal-1)%list.length;
+  return { count:list[i], source:(ordinal-1)<list.length?"specified":"cycled",
+           table:dual?"dual":"single", table_index:i+1 };
+}
+
 const STREAMS = {
   // THE NUMBERS THAT USED TO LIVE HERE ARE GONE, and that is the point rather than a
   // simplification. A mean of 650 ms with a target probability of 0.20 was a stream
@@ -1722,16 +1949,36 @@ function instructionFor(taskId, opts){
 
   const a = AUDIO_DEFAULTS[taskId];
   if(c.audio){
-    if(c.count){
+    // THE DIGIT TASKS ARE SPOKEN WORDS AND A SINGLE-WORD ANSWER, so they come before the
+    // tone branches: they have targets and a voice response like the counting tasks, and
+    // would otherwise fall into the branch that tells the participant to tap a circle.
+    //
+    // Nothing is said about how many twos there will be, and nothing is asked at the end.
+    // The task is detection, not counting, and that is what separates it from VOC_VODD --
+    // mentioning a total would reintroduce the very load the pair exists to remove.
+    if(avKind(taskId)==="digits"){
+      if(!also) lines.push("You will hear the numbers one, two, three, four and five, one at a time.");
+      lines.push(`**${also?"At the same time, say":"Say"} “yes” out loud every time you hear the number TWO.**`);
+      lines.push("Say nothing for any other number.");
+      lines.push(also
+        ? "Do not stop drawing to answer, and do not stop answering to draw."
+        : "Keep going until the screen says END.");
+    } else if(c.count){
       // Four lines became two. The old version spent one line saying beeps would happen, one
       // saying what to do, one saying what not to do, and one on the report -- and "do not
       // tap" pre-empts a mistake nobody on a voice-only task was about to make.
       if(c.countOf==="all"){
         lines.push(`**${also?"At the same time, count":"Count"} every beep OUT LOUD: one, two, three, and so on.**`);
       } else {
-        lines.push(`**${also?"At the same time, count":"Count"} the HIGH beeps out loud.**`);
-        lines.push("The low beeps are more common. Ignore them.");
+        lines.push(`**${also?"At the same time, count":"Count"} the HIGH beeps out loud, one, two, three, and keep going up.**`);
+        lines.push("Most of the beeps are low. Say nothing for those.");
       }
+      // ON THE DUAL TASK THIS IS THE LINE THAT MATTERS, and it is the one the task
+      // description adds: a participant protecting the drawing stops counting, and a
+      // participant protecting the count stops drawing. Either way the trial stops being a
+      // dual task, and nothing in the record would say which happened without the
+      // task-switching field the examiner fills in afterwards.
+      if(also) lines.push("Do not stop drawing to count, and do not stop counting to draw.");
       lines.push("I will ask for your final number at the end.");
     } else if(c.ptgTargets || (AUDIO_DEFAULTS[taskId]&&AUDIO_DEFAULTS[taskId].hasTargets)){
       // Named on the tone tasks too, not only the unpaced ones: the circle is offset to the
@@ -1897,6 +2144,42 @@ const geomSet   = x => typeof x==="string"
   : (x && x.geomSet) || (x && x.implement==="finger" ? "finger" : "pen");
 const geomPitch = x => +$("pitch_"+geomSet(x)).value;
 const geomTurns = x => +$("turns_"+geomSet(x)).value;
+
+/* TEMPLATE NAMES, as the task description names them.
+
+   SPR_P12T5_R is the 12 mm pitch, 5 turn spiral wound for the RIGHT hand; _L is its
+   mirror. DOT_R and DOT_L are the single tap target on one side, DOT_Both the bimanual
+   pair. The name is what ties a trial to the printed sheet the participant was looking at
+   and to the templates PDF, so it is recorded on every trial rather than left to be
+   reconstructed from pitch, turns and hand -- which is a reconstruction that goes wrong
+   the first time a geometry default is edited.
+
+   The hand suffix is the PHYSICAL hand, not dominant or non-dominant. A template is wound
+   clockwise or counterclockwise and that is a fact about the hand holding the pen; which of
+   the participant's hands is dominant is recorded separately. */
+const mmTag = v => { const n=+v;
+  return Number.isInteger(n) ? String(n) : String(+n.toFixed(1)).replace(".","p"); };
+const spiralTemplateName = (pitch, turns, hand) =>
+  `SPR_P${mmTag(pitch)}T${mmTag(turns)}_${hand==="left"?"L":"R"}`;
+const tapTemplateName = (c, hand) => !c || !c.tap ? null
+  : c.zones===2 ? "DOT_Both" : (hand==="left"?"DOT_L":"DOT_R");
+// The template a task's practice uses: the small spiral, same pitch, three turns. Named the
+// same way, because it is a printed template too and the practice trial is recorded.
+// PRACTICE_TURNS, declared with the practice pad further down, is the same three turns.
+// Named once here would be two constants for one number, so this reads the pad's.
+const practiceTemplateName = (pitch, hand) =>
+  spiralTemplateName(pitch, PRACTICE_TURNS, hand);
+// The template named for whatever trial is loaded, or null where a task has none.
+function templateNameFor(c, hand){
+  if(!c) return null;
+  if(c.spiral) return spiralTemplateName(geomPitch(c), geomTurns(c), hand);
+  if(c.tap) return tapTemplateName(c, hand);
+  // The pentagon model is CONSTRUCTED rather than taken from a published figure, and the
+  // task description gives it no template code. Its vertices are exported with every trial,
+  // which is the identification that matters; inventing a name here would create a code
+  // that appears in the data and on no sheet anybody has.
+  return null;
+}
 const esc = s => String(s==null?"":s).replace(/[&<>"]/g,ch=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[ch]));
 $("buildstamp").textContent = "Build " + BUILD;
 
@@ -3240,6 +3523,92 @@ let PLAN=null, QUEUE=[], QPOS=0;
 // The length a self-paced task is switched to when "Fixed length" is chosen.
 const fixedLengthFor = c => c.lengthS ?? c.fixedS ?? 45;
 
+/* ===========================================================================
+   ADMINISTRATION ORDER
+
+   The catalogue's `order` is the DEFAULT, not the protocol. Drawing first and tapping last
+   is a judgment about fatigue -- drawing is what the study rests on and the participant is
+   freshest at the start -- and a judgment is something the examiner has to be able to
+   overrule in the room, for a participant who arrives tired, or who cannot hold a pen yet,
+   or who has done half a session before.
+
+   ORDER_OVERRIDE is the live order: a list of task ids. It starts as the catalogue's order
+   and is edited by the arrows on the plan table. Anything added to the catalogue later
+   appears in it automatically, at its catalogue position, so a new task is never silently
+   dropped from a saved session's order.
+   =========================================================================== */
+let ORDER_OVERRIDE=null;
+// The finger template order this session actually used, recorded on every trial of
+// either finger condition so the counterbalancing is auditable from the export alone.
+let FIN_ORDER_USED=null;
+const catalogueOrder = () => CATALOGUE.slice().sort((a,b)=>a.order-b.order).map(c=>c.id);
+// Reconciled rather than trusted. A saved session carries an order, and the build it is
+// reopened on may have tasks that order has never heard of; those are inserted at their
+// catalogue position instead of being appended, so a new drawing task does not land after
+// the tapping block just because it was added later.
+function administrationOrder(){
+  const cat=catalogueOrder();
+  if(!ORDER_OVERRIDE) return cat;
+  const kept=ORDER_OVERRIDE.filter(id=>byId(id));
+  const missing=cat.filter(id=>!kept.includes(id));
+  if(!missing.length) return kept;
+  const out=[];
+  cat.forEach(id=>{ if(missing.includes(id)) out.push(id); });
+  // Walk the kept order and splice each missing task in front of the first kept task that
+  // follows it in the catalogue.
+  const res=[];
+  kept.forEach(id=>{
+    out.filter(m=>cat.indexOf(m)<cat.indexOf(id) && !res.includes(m)).forEach(m=>res.push(m));
+    res.push(id);
+  });
+  out.forEach(m=>{ if(!res.includes(m)) res.push(m); });
+  return res;
+}
+const orderedCatalogue = () => administrationOrder().map(byId).filter(Boolean);
+function moveTask(id,dir){
+  const ord=administrationOrder().slice();
+  const i=ord.indexOf(id), j=i+dir;
+  if(i<0 || j<0 || j>=ord.length) return;
+  [ord[i],ord[j]]=[ord[j],ord[i]];
+  ORDER_OVERRIDE=ord;
+  // The trial list is built from the order, so an order changed after it was built is a
+  // claim the list does not yet honor. Said once, here, rather than silently.
+  if(QUEUE.length) $("orderNote") && ($("orderNote").innerHTML=
+    `<div class="warn">The order changed after the trial list was built. Build it again for
+     the new order to take effect.</div>`);
+  renderPlan(); saveState();
+}
+function resetOrder(){ ORDER_OVERRIDE=null; renderPlan(); saveState(); }
+const orderIsDefault = () =>
+  administrationOrder().join(",")===catalogueOrder().join(",");
+
+/* WHICH FINGER TEMPLATE COMES FIRST, counterbalanced across participants so template order
+   does not confound the standard-versus-small comparison. The task description sets the
+   rule: participant ids ending in an ODD digit get Standard then Small, ids ending in an
+   EVEN digit get Small then Standard.
+
+   THE EXAMINER NEVER CHOOSES IT. An assignment the examiner makes is an assignment that can
+   be forgotten, repeated, or quietly made to suit the participant in front of them, and
+   counterbalancing that is not blind to the participant is not counterbalancing. It is
+   derived from the id, displayed when the task begins, and written into the record.
+
+   THE LAST DIGIT, NOT THE LAST CHARACTER. Ids in this study are not guaranteed to end in a
+   digit -- "MQ-014b" is the shape a re-consented participant gets -- so the rule reads the
+   last digit anywhere in the id. An id with no digit at all has no parity, which is a
+   defined outcome rather than a crash: it takes the catalogue order and the record says the
+   order was not assigned. */
+function finTemplateOrder(pid){
+  const id=String(pid==null?($("pid")?$("pid").value:""):pid);
+  const digits=id.match(/\d/g);
+  if(!digits) return { order:["FIN_SPR1_T5","FIN_SPR1_T3"], parity:null,
+                       source:"no digit in the participant id" };
+  const last=+digits[digits.length-1];
+  return last%2===1
+    ? { order:["FIN_SPR1_T5","FIN_SPR1_T3"], parity:"odd",  source:"participant id" }
+    : { order:["FIN_SPR1_T3","FIN_SPR1_T5"], parity:"even", source:"participant id" };
+}
+const FIN_LABEL={ FIN_SPR1_T5:"Standard (12 × 5)", FIN_SPR1_T3:"Small (10 × 3)" };
+
 function defaultPlan(){
   const p={};
   CATALOGUE.forEach(c=>{ const allowed=handsAllowed(c);
@@ -3395,14 +3764,37 @@ function dependencyNote(c){
             ${missing.join(" and ")} there is no baseline for comparison, so this task
             yields a level rather than a cost.`;
   }
-  if(c.id==="PEN_VCNT" || c.id==="PEN_VODD"){
-    const other = c.id==="PEN_VCNT" ? "PEN_VODD" : "PEN_VCNT";
-    if(inc(other)) return null;
-    return `${c.id} and ${other} form a pair: one requires a spoken response to every tone,
-            the other to about a quarter of them while monitoring remains continuous. The
-            comparison separates response-rate interference from monitoring load. Neither
-            task provides this on its own.`;
+  // THE DUAL TASKS NEED BOTH OF THEIR COMPONENTS AS SINGLE TASKS, which the task
+  // description states as a prerequisite rather than a preference: a dual-task cost is a
+  // difference from a baseline, and without the baseline the trial yields a level.
+  // Order matters as well as presence, and the Session sequence panel checks that; this
+  // checks that they were selected at all.
+  const DUAL_BASELINES={ PEN_VODD:["PEN_SPR60","VOC_VODD"],
+                         PEN_VDGT:["PEN_SPR60","VOC_VDGT"],
+                         PEN_TODD:["PEN_SPR60","TAP_TONE"],
+                         PEN_FAST:["PEN_SPR60"] };
+  if(DUAL_BASELINES[c.id]){
+    const missing=DUAL_BASELINES[c.id].filter(id=>!inc(id));
+    if(!missing.length) return null;
+    return `Dual-task cost is measured against a single-task baseline. Without
+            ${missing.join(" and ")} there is no baseline for comparison, so this task
+            yields a level rather than a cost.`;
   }
+  // THE TONE AND DIGIT CONDITIONS ARE A PAIR, and it is the pair that separates monitoring
+  // from counting. Both ask the participant to monitor a stream continuously and answer the
+  // rare stimulus; only the tone task also asks them to hold and update a running total. A
+  // session with one and not the other cannot tell a counting cost from a monitoring cost.
+  const VERBAL_PAIR={ VOC_VODD:"VOC_VDGT", VOC_VDGT:"VOC_VODD",
+                      PEN_VODD:"PEN_VDGT", PEN_VDGT:"PEN_VODD" };
+  if(VERBAL_PAIR[c.id] && !inc(VERBAL_PAIR[c.id]))
+    return `${c.id} and ${VERBAL_PAIR[c.id]} form a pair: both ask for continuous
+            monitoring and a response to the rare stimulus, and only ${c.id.endsWith("VODD")?c.id:VERBAL_PAIR[c.id]}
+            also asks for a running total to be held and updated. Running one without the
+            other cannot separate the cost of counting from the cost of monitoring.`;
+  if(c.id==="PEN_VCNT" && !inc("PEN_VODD"))
+    return `PEN_VCNT and PEN_VODD form a pair: one requires a spoken response to every
+            tone, the other only to the rare one while monitoring remains continuous. The
+            comparison separates response-rate interference from monitoring load.`;
   return null;
 }
 
@@ -3461,7 +3853,9 @@ const selfPacedEstS = () => SELF_PACED_FALLBACK_S;
 function renderPlan(){
   renderStatus();
   let h=`<tr><th></th><th>Task</th><th>Repeats</th><th>Hands</th><th>Length</th><th>Uses</th><th></th></tr>`;
-  const ordered=CATALOGUE.slice().sort((a,b)=>a.order-b.order);
+  // The live order, so the groups below read down the page in the sequence the session
+  // will actually run -- including after the examiner has moved something.
+  const ordered=orderedCatalogue();
   const seen=new Set();
   TIER_GROUPS.forEach(grp=>{
     let rows=ordered.filter(c=>c.tier===grp.key);
@@ -3539,10 +3933,73 @@ function renderPlan(){
       <b>Not shown above:</b> ${orphan.map(c=>esc(c.id)+" (tier "+esc(c.tier)+")").join(", ")}
       — no group matches that tier, so these cannot be selected. This is a bug.</td></tr>`;
   $("planTable").innerHTML=h;
+  renderOrderPanel();
   renderTierButtons();
   if($("presetNote")) $("presetNote").innerHTML = PRESET_NOTE
     ? `<div class="warn" style="margin-top:8px">${PRESET_NOTE}</div>` : "";
   planSummary();
+}
+
+// THE SEQUENCE, AS A SEQUENCE. Only the selected tasks, in the order they will run, with
+// the arrows that change it. Empty until something is selected -- an order panel listing
+// sixteen tasks nobody has chosen is noise, and the plan table above is where choosing
+// happens.
+function renderOrderPanel(){
+  const host=$("orderPanel"); if(!host) return;
+  const sel=administrationOrder().map(byId).filter(c=>c && PLAN[c.id] && PLAN[c.id].include
+                                                   && !taskBlocked(c));
+  if(!sel.length){ host.innerHTML=""; return; }
+  const FIN=finTemplateOrder();
+  const finPlanned=FIN.order.filter(id=>sel.some(c=>c.id===id));
+  let h=`<table style="margin-top:10px"><tr><th>#</th><th>Task</th><th>Trials</th>
+          <th>Move</th></tr>`;
+  sel.forEach((c,i)=>{
+    const st=PLAN[c.id];
+    const n=(st.hands==="each"||st.hands==="roles") ? st.repeats*2 : st.repeats;
+    // The arrows move within the WHOLE order, not within this filtered list, so a selected
+    // task can be moved past an unselected one and the position is honored if that task is
+    // selected later. Moving the first or last selected task off the end does nothing.
+    h+=`<tr><td class="num">${i+1}</td>
+        <td><b>${c.id}</b> <span class="note" style="margin:0">${esc(c.label)}</span>
+          ${c.finBlock?`<span class="note" style="margin:0;color:var(--warm)">
+             · ${FIN_LABEL[c.id]||""}, order set by participant id</span>`:""}</td>
+        <td class="num">${n}</td>
+        <td>${i>0?`<button class="ghost sm" onclick="moveTask('${c.id}',-1)">↑</button>`:""}
+            ${i<sel.length-1?`<button class="ghost sm" onclick="moveTask('${c.id}',1)">↓</button>`:""}
+        </td></tr>`;
+  });
+  h+=`</table>`;
+  const notes=[];
+  notes.push(`<b>Drawing first, tapping last</b> is the default, because drawing is what the
+    battery is for and the participant is freshest at the start. Move anything you need to.`);
+  // The prerequisite the task description states, checked against the order the examiner is
+  // actually about to run rather than against the catalogue's.
+  const pos=id=>sel.findIndex(c=>c.id===id);
+  [["PEN_VODD",["PEN_SPR60","VOC_VODD"]],["PEN_VDGT",["PEN_SPR60","VOC_VDGT"]]].forEach(([dual,pre])=>{
+    if(pos(dual)<0) return;
+    const late=pre.filter(q=>pos(q)>=0 && pos(q)>pos(dual));
+    const absent=pre.filter(q=>pos(q)<0);
+    if(late.length) notes.push(`<span style="color:#8c2020"><b>${dual} runs before
+      ${late.join(" and ")}.</b> The dual task is meant to have single-task baselines for
+      both of its components already collected, so a dual-task cost computed against a
+      baseline recorded afterwards is a cost plus whatever practice happened in
+      between.</span>`);
+    else if(absent.length) notes.push(`<span style="color:#8c2020"><b>${dual} has no
+      single-task baseline for ${absent.join(" and ")}</b> in this session.</span>`);
+  });
+  if(finPlanned.length===2) notes.push(`Finger templates run
+    <b>${FIN_LABEL[FIN.order[0]]} then ${FIN_LABEL[FIN.order[1]]}</b> —
+    assigned from ${FIN.parity===null
+      ? "a participant id with no digit in it, so the default order is used"
+      : "the "+FIN.parity+" last digit of the participant id"}. Not an examiner choice:
+    counterbalancing that is not blind to the participant is not counterbalancing.`);
+  else if(finPlanned.length===1) notes.push(`Only one finger template is selected, so there
+    is no template order to counterbalance and the standard-versus-small comparison cannot
+    be made from this session.`);
+  if(!orderIsDefault()) notes.push(`<b>This is not the default order.</b>
+    <button class="ghost sm" onclick="resetOrder()">Back to the default</button>`);
+  host.innerHTML=`<fieldset style="margin-top:12px"><legend>Session sequence</legend>${h}
+    <div class="note">${notes.join("<br>")}</div></fieldset>`;
 }
 
 // D4. One trial of this task, right now, without touching the queue -- for running the
@@ -3786,7 +4243,23 @@ function buildQueue(){
   if(!requireParticipantFields()) return;
   const omitted=[];
   QUEUE=[]; QPOS=0;
-  CATALOGUE.slice().sort((a,b)=>a.order-b.order).forEach(c=>{
+  // THE ORDER THE EXAMINER IS LOOKING AT, which is the catalogue's unless it was moved.
+  // The finger templates are then swapped into their assigned order, which is the one thing
+  // in the sequence the examiner does not get to choose -- see finTemplateOrder.
+  const FIN=finTemplateOrder();
+  FIN_ORDER_USED=FIN;
+  const ord=(()=>{
+    const list=administrationOrder().slice();
+    const at=list.map((id,i)=>[id,i]).filter(([id])=>FIN.order.includes(id)).map(([,i])=>i);
+    if(at.length===2){
+      // Both planned: put them in the assigned order at the two positions they already
+      // occupy, so the rest of the sequence does not move.
+      const sorted=FIN.order.slice();
+      at.forEach((slot,k)=>{ list[slot]=sorted[k]; });
+    }
+    return list;
+  })();
+  ord.map(byId).filter(Boolean).forEach(c=>{
     const s=PLAN[c.id]; if(!s.include) return;
     const why=taskBlocked(c);
     if(why){ omitted.push(`${c.id} — ${why}`); return; }
@@ -5067,168 +5540,6 @@ updateGeo();
 function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);
   t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
 let LAST_SEED=null;
-/* ============================================================================
-   THE AUDITORY-VERBAL LOAD ELEMENT
-   Specified in MotiQ_auditory_verbal_element_spec_rev.docx and referenced by
-   VOC_VODD, VOC_VDGT, PEN_VODD and PEN_VDGT. TAP_TONE uses the same gap law,
-   per the stimulus timing paragraph of the task description.
-
-   WHAT CHANGED, AND WHY THE OLD DESIGN IS GONE
-
-   Until v13 the stream was described by a MEAN and a TARGET PROBABILITY, and the
-   number of targets in a trial fell out of them: round(n * p), jittered. Two
-   properties of that are now specified away rather than tuned.
-
-     The count is no longer sampled.   Each trial has a FIXED number of targets,
-     read from AV_TARGET_COUNTS by trial index. A probability makes the count a
-     random variable, so two participants on the same trial answer a different
-     number of times and the counts are not comparable without a covariate.
-
-     The gap is no longer rescaled.    The old generator drew n intervals and then
-     scaled the whole set to fill the requested duration, which bent every
-     interval by a few percent to make the arithmetic land. The gap law below is
-     exact per gap and the stream simply stops when the window is full.
-
-   The floor also stopped depending on the response channel. It used to: a tap was
-   given 600 ms and a spoken number 800, on the reasoning that one response must
-   finish before the next stimulus lands. That reasoning still holds, but it is
-   not the floor's job any more -- the constraint belongs to the stimuli that
-   ACTUALLY ask for a response, and those are the targets, which AV_PLACE spaces
-   at 2000 ms. Standards are not answered at all, so nothing is protected by
-   widening their spacing, and widening it thins the standards, which is what
-   makes a target rare. One floor, 600 ms, for every stream.
-   ============================================================================ */
-
-/* THE GAP LAW. Onset to onset: at least 600 ms, averaging 1000, never past 3500.
-
-     draw  X = -402.1 * ln(1 - U),   U ~ Uniform(0,1), in ms
-     if X > 2900, discard it and draw again
-     gap = 600 + X
-
-   AN OVERSIZED DRAW IS DISCARDED AND REPLACED, NOT CLAMPED. Clamping to 2900
-   would put roughly 7 gaps in every 10,000 on exactly 3500 ms, which is a cluster
-   of identical gaps sitting at the maximum -- audible as a repeated pause of the
-   same length, and a tell. A redraw is needed on about 0.07% of draws.
-
-   EXPONENTIAL, NOT UNIFORM. An exponential above a floor has a flat hazard:
-   having waited tells the participant nothing about when the next sound is due.
-   Uniform jitter has a rising hazard, so the participant learns roughly when the
-   next sound is coming and stops having to listen for it -- which turns a
-   vigilance task into a synchronization task.
-
-   WHY 402.1 AND NOT 400. 400 is what subtracting the floor from the mean
-   suggests, and it is wrong, because of the discard rule: only oversized draws
-   are ever thrown away, never undersized ones, so the surviving gaps are missing
-   their largest members and their average comes out low. At 400 the finished gaps
-   average 998 ms. 402.1 puts back what the discarding removes. DO NOT ROUND IT.
-   If the minimum, the mean, the maximum or the discard rule is ever changed, this
-   constant has to be recalculated, or the stream quietly stops averaging what the
-   specification says it averages. */
-const AV_GAP = { minMs:600, meanMs:1000, maxMs:3500, scaleMs:402.1, maxDrawMs:2900 };
-/* About the 3500 ms maximum. The exponential has no natural upper limit, so
-   without a maximum an occasional gap runs past four seconds, which does not
-   sound like a long gap -- it sounds like the iPad has stopped working. The
-   examiner is listening for exactly that and would stop a good trial. The trade
-   is that a participant who has waited the full 3500 ms knows the next sound must
-   come immediately, so that one moment IS predictable; it happens on roughly 1
-   stimulus in 1400, which is rare enough to disregard. */
-
-/* FIXED TARGET COUNTS BY TRIAL INDEX, from the specification's table.
-   Position 0 is the single-task trial; positions 1 to 4 are dual-task trials 1
-   to 4, which alternate hands dominant, non-dominant, dominant, non-dominant.
-
-   The two stimulus kinds deliberately DISAGREE on every dual trial: a participant
-   who has just counted 9 high tones on dual trial 1 is asked for 14 "yes"es on
-   the digit task's dual trial 1. Matching them would let the count carry over.
-
-   NO TRIAL USES A COUNT OF 10, which is the number a participant guesses when
-   they have lost the thread, so a report of 10 is never a plausible hit. The
-   assertion below is what keeps that true if the table is ever edited. */
-const AV_TARGET_COUNTS = {
-  tones:  { single:[12], dual:[ 9,13,14,11] },
-  digits: { single:[12], dual:[14,11, 9,13] }
-};
-(()=>{ const bad=[];
-  Object.entries(AV_TARGET_COUNTS).forEach(([k,v])=>
-    [...v.single,...v.dual].forEach(n=>{ if(n===10) bad.push(k+":"+n); }));
-  if(bad.length) throw new Error("AV_TARGET_COUNTS uses a count of 10 ("+bad.join(", ")+
-    "); 10 is the number a participant guesses, so no trial may use it.");
-})();
-// Practice is 20 s with three targets, for every auditory condition. Short enough
-// not to be a trial, long enough to contain the thing being practised.
-const AV_PRACTICE = { durS:20, targets:3 };
-
-/* TARGET PLACEMENT. Applied when the sequence is generated, never during it.
-   The 2000 ms separation is the response constraint: it is the gap a spoken
-   response needs, and it is enforced here rather than by the interval floor
-   because only the targets are answered. The two 2000 ms dead zones keep a target
-   off both edges of the window -- one at the start lands before the participant
-   has settled into the task, and one at the end leaves no room for the response
-   and can have its own tone clipped by the window closing. */
-const AV_PLACE = { minTargetGapMs:2000, noTargetFirstMs:2000, noTargetLastMs:2000,
-                   maxAttempts:200 };
-
-/* PREDEFINED SEEDS, written down rather than derived.
-
-   The specification asks that a given trial index present the same sequence to
-   every participant, so stimulus variance is out of the between-group comparison,
-   and that different trial indices differ, so a second trial of a task is not
-   partly a memory test. A literal table is the plainest way to be able to say
-   that: these numbers were drawn once and MUST NOT BE CHANGED. Changing one
-   changes the stimulus sequence every participant hears on that trial, and
-   records collected either side of the change are then not on the same stimuli
-   while naming the same trial index.
-
-   Position 0 is the single-task trial; 1 to 4 are the dual trials. A task not
-   listed here falls back to the derived seed in drawSeed(), which is matched
-   across participants in the same way but is not written down. */
-const AV_SEEDS = {
-  VOC_VODD:[1740318527,  829441063, 1455207819,  603918244, 1982006371],
-  PEN_VODD:[ 711204839, 1366950271,  248873615, 1899431052,  934718306],
-  VOC_VDGT:[2014773359,  458102947, 1127634088, 1670255413,  306849172],
-  PEN_VDGT:[1283066941, 1941207358,  672419085,  129573640, 1518904227],
-  TAP_TONE:[ 905613274, 1703948165,  371028593, 1264770318, 2096185447]
-};
-// Which stimulus materials a task uses. A task absent from here has no auditory
-// stream; a task present but with no target count responds to every stimulus.
-const AV_KIND = { VOC_VODD:"tones", PEN_VODD:"tones",
-                  VOC_VDGT:"digits", PEN_VDGT:"digits",
-                  TAP_TONE:"tones", PEN_TONE:"tones", PEN_TODD:"tones",
-                  PEN_VCNT:"tones", FIN_VCNT:"tones" };
-const avKind = task => AV_KIND[task] || "tones";
-// Does this task distinguish target from non-target at all? PEN_VCNT and
-// FIN_VCNT count EVERY tone, and TAP_TONE taps to every tone, so for those
-// three there is one stimulus type and no placement to do.
-const avHasTargets = task =>
-  !!(TASK_STREAM[task] && TASK_STREAM[task].stream==="oddball") ||
-  avKind(task)==="digits";
-
-/* Which trial of its own task this is, counting from 1. The target count and the
-   seed are both read from it, so it has to be the position in the TASK rather
-   than in the queue: a session that runs PEN_VODD after two other tasks still
-   starts PEN_VODD at trial 1. Computed from the queue rather than from the saved
-   repeat counters, because the counters are per hand and this is not. */
-function taskTrialOrdinal(){
-  if(!TRIAL) return 1;
-  if(TRIAL.adhoc || TRIAL.index==null) return 1;
-  let k=0;
-  for(let i=0;i<=TRIAL.index && i<QUEUE.length;i++) if(QUEUE[i].task===TRIAL.task) k++;
-  return Math.max(1,k);
-}
-// The count this trial asks for, and where the number came from. A repeat beyond
-// the specified set CYCLES the table rather than inventing a number, and the
-// record says so -- an examiner who adds a fifth dual trial gets a defined
-// stimulus sequence and a field that admits it was not one of the four.
-function avTargetCount(task, ordinal){
-  if(!avHasTargets(task)) return { count:null, source:"every_stimulus" };
-  const kind=avKind(task), tbl=AV_TARGET_COUNTS[kind];
-  if(!tbl) return { count:null, source:"no_table" };
-  const c=byId(task), dual=isDualTask(c);
-  const list=dual?tbl.dual:tbl.single;
-  const i=(ordinal-1)%list.length;
-  return { count:list[i], source:(ordinal-1)<list.length?"specified":"cycled",
-           table:dual?"dual":"single", table_index:i+1 };
-}
 /* SEQUENCE SEEDING. Three modes, and the default is the one that removes stimulus
    variance from the between-group comparison.
 
@@ -9122,6 +9433,11 @@ function saveState(){
       // Same reason: a checkbox has no .value for STATE_FIELDS to persist.
       setup: SETUP_ITEMS.reduce((o,[id])=>{ o[id]=!!($(id)&&$(id).checked); return o; },{}),
       explShown:[...EXPL_SHOWN],
+      // The administration order, if it was moved. Null means the catalogue's, and is
+      // stored as null rather than as a copy of it -- a copy would freeze the order of the
+      // build that saved the session, so a task added later would come back missing from it
+      // and administrationOrder() would have to repair something that was never broken.
+      orderOverride:ORDER_OVERRIDE,
       series:SERIES, repeats:REPEATS, lastTask:LAST_TASK, lastHand:LAST_HAND,
       audio:AUDIO_DEFAULTS,
       // What the build that saved this session shipped. On the way back in it is the only
@@ -9148,6 +9464,14 @@ function restoreState(){
     if(st.race!=null) document.querySelectorAll(".racebox").forEach(bx=>{ bx.checked=!!(st.race & +bx.value); });
     // Renamed codes resolve through the alias, so a pulled-in task survives the rename.
     if(Array.isArray(st.explShown)) EXPL_SHOWN=new Set(st.explShown.map(taskId).filter(id=>byId(id)));
+    // The order, through the same alias so a renamed task keeps its place, and dropped
+    // entirely if nothing in it resolves -- an order of ids this build does not have is a
+    // saved session from a different battery, and administrationOrder() rebuilding it from
+    // the catalogue is the right outcome.
+    if(Array.isArray(st.orderOverride)){
+      const ord=st.orderOverride.map(taskId).filter(id=>byId(id));
+      ORDER_OVERRIDE = ord.length ? ord : null;
+    }
     // A session saved before this field existed carries no nominated side. It keeps the
     // handedness it recorded and falls back to the right hand, which is what the app was
     // already doing silently. Nothing already written is rewritten.
