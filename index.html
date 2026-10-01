@@ -599,7 +599,7 @@
            tick on it. Red until it is answered, green once it is. -->
       <div id="consentbox" class="consentbox">
         <label class="checkrow" for="voiceconsent" style="margin-top:0">
-          <input id="voiceconsent" type="checkbox" onchange="onVoiceConsentChange()">
+          <input id="voiceconsent" type="checkbox" checked onchange="onVoiceConsentChange(true)">
           <span><b>Voice recording consented.</b> The participant has agreed to be
           audio-recorded for the spoken tasks. Until this is ticked those tasks cannot be
           added to the plan. Recordings stay on this device.</span></label>
@@ -982,8 +982,8 @@
       <div class="r2" style="margin-top:10px">
         <div><label for="digitstandin">Stimulus for VOC_VDGT and PEN_VDGT</label>
           <select id="digitstandin" onchange="setDigitStandin(this.value)">
+            <option value="speech" selected>The device announces 1, 2, 3, 4, 5 — rehearsal</option>
             <option value="none">None — the conditions stay blocked</option>
-            <option value="speech">The device announces 1, 2, 3, 4, 5 — rehearsal</option>
           </select></div>
         <div style="align-self:end"><button class="ghost sm" onclick="demoDigits()">Play 1 to 5</button></div>
       </div>
@@ -3517,6 +3517,20 @@ function goConsent(){
   try{ box.focus({preventScroll:true}); }catch(e){ box.focus(); }
 }
 const voiceConsented = () => !!($("voiceconsent") && $("voiceconsent").checked);
+/* CONSENT NOW SHIPS TICKED, by instruction, and the record keeps the one thing that costs:
+   whether a person touched it.
+
+   voice.consented goes into every trial record, and a default of true means the box reads
+   the same whether the examiner confirmed consent or never looked at the page. That is a
+   claim about a human being, so it is not one the build should be able to make silently --
+   and it cannot be detected afterwards from the flag alone, which is what makes it worse
+   than the geometry defaults this app already distinguishes.
+
+   So the value is the default and consent_source records where it came from: "examiner" if
+   the box was touched this session, "build_default" if it was not. The same distinction
+   AUDIO_SHIPPED draws for the stream parameters, for the same reason. */
+let CONSENT_TOUCHED=false;
+const consentSource = () => CONSENT_TOUCHED ? "examiner" : "build_default";
 const VOICE_TASKS = () => CATALOGUE.filter(c=>c.voice).map(c=>c.id);
 // ITEM 3 OF THE DEVELOPER NOTES, written live rather than as a fixed paragraph, because the
 // answer depends on the address this page was opened from and the app knows it.
@@ -3552,7 +3566,12 @@ function renderSecureNote(){
          <b>the spoken tasks run but capture no audio</b>, and each trial record says so.`}
     </p>`;
 }
-function onVoiceConsentChange(){
+// byExaminer is true ONLY from the checkbox's own change event. Four other callers run this
+// to redraw the note -- opening the Participant page is one of them -- and treating those as
+// a person setting the tick would make consent_source read "examiner" on every session where
+// somebody merely looked at the page, which is the one thing the field exists to rule out.
+function onVoiceConsentChange(byExaminer){
+  if(byExaminer) CONSENT_TOUCHED=true;
   renderSecureNote();
   if($("consentbox")) $("consentbox").classList.toggle("ok", voiceConsented());
   if(!$("voicenote")) return;
@@ -4997,7 +5016,10 @@ function newParticipant(){
   if($("soundok")) $("soundok").checked=false;
   if($("volstep")) $("volstep").value="0";
   if($("audioroute")) $("audioroute").value="speaker";
-  if($("voiceconsent")) $("voiceconsent").checked=false;
+  // Back to the BUILD'S DEFAULT, not to false. The default is now ticked, and resetting to
+  // unticked would make "new participant" quietly stricter than a fresh load.
+  if($("voiceconsent")) $("voiceconsent").checked=true;
+  CONSENT_TOUCHED=false;
   if($("paramexplore")) $("paramexplore").checked=false;
   // The room belongs to the session, not the person, but a new participant is a new
   // session. A retained floor from a previous room would be misleading.
@@ -6339,7 +6361,12 @@ const digitSlotCeilingMs = () => AV_GAP.minMs-150;
      is cut rather than pushing everything after it -- a queue that serialises would turn a
      60-stimulus trial into a cumulative slide -- and the cut is counted.
    =========================================================================== */
-const DIGIT_STANDIN={ mode:"none", voice:null, primed:false };
+/* THE STAND-IN SHIPS ON, by instruction, so the two digit conditions are runnable out of
+   the box. Nothing about what it is changes: every trial it produces is DATA HELD, carries
+   the measured dispatch drift, and names digit_set "standin/speech_synthesis". It switches
+   itself off the moment real recordings are installed, because digitSetProblem() stops
+   consulting it once DIGIT_SET.installed is true. */
+const DIGIT_STANDIN={ mode:"speech", voice:null, primed:false };
 const digitStandin = () => DIGIT_STANDIN.mode==="none" ? null : DIGIT_STANDIN.mode;
 const speechAvailable = () => typeof window!=="undefined" && !!window.speechSynthesis
                            && typeof SpeechSynthesisUtterance==="function";
@@ -8568,7 +8595,7 @@ function runTrial(seq,c){
   // end of the trial. A task with no tones has its origin at the trial start, which is
   // the same instant on the same clock.
   if(c.voice){
-    RUN.voice={ consented:voiceConsented(), attempted:false, recorded:false,
+    RUN.voice={ consented:voiceConsented(), consent_source:consentSource(), attempted:false, recorded:false,
       audio_id:null, mime_type:null, bytes:null, blob:null,
       recorder_start_ms:null, recorder_stop_ms:null,
       recorder_start_clock:"ms from START, the same origin as sequence.onsets_ms",
@@ -10524,7 +10551,10 @@ function buildRecord(){
       } : null,
     // Audio bytes are in IndexedDB under audio_id, never here: base64 in a ~5 MB string
     // store would fill the quota and take the trial records down with it.
-    voice: V ? { consented:V.consented, attempted:V.attempted, recorded:V.recorded,
+    voice: V ? { consented:V.consented,
+        consent_source: V.consent_source ?? null,
+        consent_note:"consented is the state of the tick at trial time. The tick SHIPS ON in this build, so consent_source is what says whether a person set it: \"examiner\" if the box was touched this session, \"build_default\" if it was never touched. A trial whose consent was never confirmed by anybody is identifiable only from this field.",
+        attempted:V.attempted, recorded:V.recorded,
         level:V.level??null,
         // What was REQUESTED is in the code; this is what the browser reported applying.
         // Automatic gain control is the one that matters: it lifts a quiet speaker to the
@@ -10741,7 +10771,9 @@ const CSV_HEAD=[
   "adhoc","palm_rejection_affected","prioritization_given","data_held","data_held_reason",
   "count_reported","count_presented","count_error","count_mode","count_of",
   "count_presented_scheduled",
-  "voice_consented","voice_recorded","voice_audio_id","voice_mime",
+  // consent_source beside consented, because the tick ships ON: without it the column
+  // reads the same whether a person confirmed consent or nobody ever opened the page.
+  "voice_consented","voice_consent_source","voice_recorded","voice_audio_id","voice_mime",
   "voice_recorder_start_ms","voice_alignment","voice_failure",
   "voice_level_p90_dbfs","voice_level_mean_dbfs","voice_level_min_dbfs",
   "voice_usable_threshold_dbfs","voice_frac_below_usable","voice_too_low_to_score",
@@ -10892,7 +10924,8 @@ function csvRows(rec){
     rec.counting?(ct.reported??""):"", rec.counting?(ct.presented??""):"",
     rec.counting?(ct.error??""):"", rec.counting?(ct.mode??""):"", rec.counting?(ct.of??""):"",
     rec.counting?(ct.presented_scheduled??""):"",
-    rec.voice?bit(V.consented):"", rec.voice?bit(V.recorded):"", rec.voice?(V.audio_id??""):"",
+    rec.voice?bit(V.consented):"", rec.voice?(V.consent_source??""):"",
+    rec.voice?bit(V.recorded):"", rec.voice?(V.audio_id??""):"",
     rec.voice?(V.mime_type??""):"", rec.voice?(V.recorder_start_ms??""):"",
     rec.voice?(V.recorder_start_alignment??""):"", rec.voice?(V.failure??""):"",
     VL.p90_dbfs??"", VL.mean_dbfs??"", VL.min_dbfs??"",
@@ -11316,6 +11349,9 @@ function saveState(){
       // an examiner who reloads mid-session must not be asked to run the check again, and
       // must not be able to get out of a failed one by reloading either.
       audibility:AUDIBILITY,
+      // Whether a PERSON set the consent tick, not just what it says. Without this the
+      // distinction dies on reload and every trial after one reads "build_default".
+      consentTouched:CONSENT_TOUCHED,
       practiceDone:[...PRACTICE_DONE], practiceSkipped:[...PRACTICE_SKIPPED],
       // Deliberately persisted: a rehearsal switch that silently turned itself off on a
       // reload would leave the two conditions blocked again mid-session with no explanation,
@@ -11352,9 +11388,12 @@ function restoreState(){
     // entirely if nothing in it resolves -- an order of ids this build does not have is a
     // saved session from a different battery, and administrationOrder() rebuilding it from
     // the catalogue is the right outcome.
-    if(st.digitStandin==="speech" && !DIGIT_SET.installed){
-      DIGIT_STANDIN.mode="speech";
-      if($("digitstandin")) $("digitstandin").value="speech";
+    if(typeof st.consentTouched==="boolean") CONSENT_TOUCHED=st.consentTouched;
+    // Either value is restored now that the default is "speech": a session where the
+    // examiner deliberately turned it OFF has to come back off.
+    if((st.digitStandin==="speech" || st.digitStandin==="none") && !DIGIT_SET.installed){
+      DIGIT_STANDIN.mode=st.digitStandin;
+      if($("digitstandin")) $("digitstandin").value=st.digitStandin;
     }
     if(Array.isArray(st.practiceDone))
       PRACTICE_DONE=new Set(st.practiceDone.map(taskId).filter(id=>byId(id)));
