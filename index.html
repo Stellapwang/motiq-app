@@ -6333,10 +6333,14 @@ function renderStandinNote(){
        not the specified stimulus: the voice belongs to this iPad's operating system rather
        than to one speaker recorded once, and speech cannot be scheduled on the audio clock,
        so the onsets drift from the schedule. <b>Every trial is marked DATA HELD</b> and
-       carries the measured drift. Use it to walk through the conditions, not to collect.</div>`
+       carries the measured drift. These two conditions do not need the voice-recording
+       consent tick while this is on, because the microphone is never opened — the record
+       says so rather than claiming a consent nobody gave.
+       Use it to walk through the conditions, not to collect.</div>`
     : `<div class="note" style="margin:0">No recordings are installed, so VOC_VDGT and
        PEN_VDGT cannot be planned. Switch this on to walk through them with the device
-       speaking the numbers — the trials run and are marked DATA HELD. See
+       speaking the numbers — the trials run and are marked DATA HELD, and they do <b>not</b>
+       need the voice-recording consent tick, because nothing is recorded. See
        <code>DIGIT_SET</code> for what installing the real recordings requires.</div>`;
 }
 // Hear the stand-in without starting a trial.
