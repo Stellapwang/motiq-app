@@ -4526,7 +4526,10 @@ function buildQueue(){
   if(omitted.length) alert("Left out of the trial list:\n\n"+omitted.join("\n"));
   SESSION_STARTED_AT=Date.now();
   $("queueBox").classList.remove("hidden");
-  renderQueue(); saveState();
+  // The sequence panel reports the practice from the rows that exist, so it has to be
+  // redrawn when the rows change. It is rendered by renderPlan, which building does not
+  // call -- so after a rebuild the panel kept showing the count from before.
+  renderQueue(); renderOrderPanel(); saveState();
 }
 // Rotates each block's trials into round-robin order in place. A queue with no blocked
 // tasks comes back unchanged, which is what happens today: BLOCKS ships empty.
@@ -4637,7 +4640,39 @@ function renderQueue(){
       skipped. Build a new session, or change the plan and build again.</div>`;
   }
   $("queueBox").classList.remove("hidden");
+  /* A LIST BUILT BEFORE THE PRACTICE ROWS EXISTED HAS NONE, AND SAID NOTHING.
+
+     The trial list is saved with the session and restored whole, so a session built by an
+     earlier build comes back exactly as it was -- with no practice in it. Everything then
+     agreed with itself and was wrong together: the list showed two trials, the Session
+     sequence panel said "2" rather than "2 practice + 2" because it counts the rows that
+     exist, and the practice simply never ran. The examiner's only clue would have been that
+     a task they expected to be practised was not.
+
+     It is not fixed by rebuilding automatically. A rebuild discards the list, and the list
+     may have trials already run in it, so this says what is wrong and leaves the decision.
+     The same check catches any other way practice could go missing from a list. */
+  const practiceMissing=[...new Set(QUEUE.map(q=>q.task))].filter(t=>{
+    const c=byId(t); if(!c || !practicePlan(c).length) return false;
+    if(practiceRowsOf(t).length) return false;
+    if(PRACTICE_SKIPPED.has(t) || PRACTICE_DONE.has(t)) return false;
+    // A finger condition is covered by the other one's practice, which is the description's
+    // rule and not an omission.
+    if(c.finBlock && CATALOGUE.some(o=>o.finBlock && o.id!==t && practiceRowsOf(o.id).length))
+      return false;
+    return true;
+  });
   let h=`<tr><th>#</th><th>Task</th><th>Hand</th><th>Length</th><th>Status</th><th>Move</th></tr>`;
+  if(practiceMissing.length) h+=`<tr><td colspan="6" class="warn" style="padding:9px">
+      <b>This list has no practice for ${practiceMissing.join(", ")}.</b>
+      Practice is part of the trial list now, ahead of each task's trials. A list built
+      before that — a session carried over from an earlier version of the app — comes back
+      without it, and the practice will not run.
+      <b>Build session again</b> on this page to put it in.
+      ${QUEUE.some(q=>q.status!=="pending")
+        ? `<br>Some trials in this list have already been run or skipped; rebuilding discards
+           the list, and the trials themselves are already saved and are not affected.`
+        : ""}</td></tr>`;
   QUEUE.forEach((q,i)=>{
     const cls=i===QPOS?"now":(q.status!=="pending"?"done":"");
     const pr=isPracticeRow(q), c=byId(q.task);
