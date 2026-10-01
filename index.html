@@ -3948,8 +3948,25 @@ function dependencyNote(c){
 
 // Why a task cannot be planned right now, or null. One place, so the plan table, the
 // summary and the queue builder cannot disagree about it.
+/* A REHEARSAL IS NOT A RECORDING, so it is not gated on consent to record.
+
+   The digit conditions carry voice:1 and were therefore refused for lack of consent BEFORE
+   the digit gate was ever reached -- which made the stand-in look inert: switching it on
+   changed nothing, because the row was grey for a different reason and said so in text an
+   examiner reasonably reads as "still blocked".
+
+   A condition running on the stand-in is DATA HELD. Nothing it produces is data, and nothing
+   of the participant is kept: the microphone is not even opened, and the record says why. So
+   there is nothing to consent TO, and requiring the tick would be asking for consent to a
+   recording that is not made.
+
+   THE TICK IS NOT DEFAULTED, and that is deliberate. voice.consented goes into every trial
+   record, so a default of true is a record claiming consent nobody gave -- the same class of
+   fault as implement_verified taking the examiner's selection as fact, which this app
+   already refuses to do. Consent stays something a person does. */
+const rehearsalOnly = c => heldKeyFor(c)===DIGIT_STANDIN_HELD;
 function taskBlocked(c){
-  if(c.voice && !voiceConsented())
+  if(c.voice && !voiceConsented() && !rehearsalOnly(c))
     return "voice recording consent not yet ticked";
   // THE DIGIT CONDITIONS REFUSE TO RUN WITHOUT THE RECORDINGS, rather than substituting
   // something that would play. A synthesized or stand-in stimulus would produce a complete
@@ -7416,10 +7433,17 @@ function openTrial(showInstruction){
   const finishOpen=()=> showInstruction ? showInstructionScreen(seq,c) : readyTrial(seq,c);
   const afterMic =()=> c.verbal ? showVerbalSetup(c,finishOpen) : finishOpen();
 
-  // PRACTICE IS NOT RECORDED, so it does not ask for the microphone. Asking would put the
-  // permission sheet in front of the examiner twice, and a practice run that captured audio
-  // would leave a recording in the store with no trial record to belong to.
-  if(c.voice && !TRIAL.practice){
+  // NEITHER PRACTICE NOR A REHEARSAL ASKS FOR THE MICROPHONE. For practice, asking would
+  // put the permission sheet in front of the examiner twice and leave a recording in the
+  // store with no trial record to belong to. For a stand-in rehearsal there is nothing worth
+  // capturing and, without consent, nothing that may be captured -- so the trial runs
+  // unrecorded and the record carries the reason rather than a permission prompt per trial.
+  if(c.voice && !TRIAL.practice && rehearsalOnly(c) && !voiceConsented()){
+    TRIAL.voiceFailure={ reason:"rehearsal_standin",
+      detail:"a rehearsal on the digit stand-in, run without recording consent. The "+
+             "microphone was not opened and nothing of the participant was captured." };
+  }
+  if(c.voice && !TRIAL.practice && !(rehearsalOnly(c) && !voiceConsented())){
     if(!voiceConsented()){
       // Should be unreachable -- the plan blocks it -- but a queue built before consent
       // was withdrawn could still contain one, and it must not record silently.
