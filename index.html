@@ -3491,6 +3491,22 @@ const administeredInParticipantLanguage = () => {
 // same as being able to reach it. This scrolls to it and marks it, so the block is one tap
 // from being resolved. It does NOT tick it: consent is the participant's, not a formality to
 // be auto-satisfied because it is inconvenient.
+/* One click from the row that is blocked to the switch that unblocks it, which is how the
+   consent button has always worked. It turns the stand-in ON rather than only navigating:
+   the examiner has just pressed a button that says what it does, and landing them on a page
+   with a select they still have to find is how the stand-in went unnoticed in the first
+   place. It is loud afterwards -- the panel turns red, every plan row reads DATA HELD, and
+   the instruction screen carries the warning -- and switching it back off is the same
+   control. */
+function goDigitStandin(){
+  setDigitStandin("speech");
+  goPage(4);
+  const el=$("digitstandin"); if(!el) return;
+  const row=el.closest("div") || el;
+  row.scrollIntoView({block:"center", behavior:"smooth"});
+  row.classList.add("flashrow");
+  setTimeout(()=>row.classList.remove("flashrow"), 2200);
+}
 function goConsent(){
   goPage(2);
   const box=$("voiceconsent"); if(!box) return;
@@ -4079,8 +4095,23 @@ function renderPlan(){
               <b>Pen and touch not simultaneous.</b> See the developer notes on the Device page.</div>`:""}
           ${dep?`<div class="warn" style="margin:5px 0 0;max-width:300px">${dep}</div>`:""}
           ${blocked?`<div class="note" style="margin:4px 0 0;color:var(--warm)">${blocked}
-            ${c.voice?`<button class="ghost sm" style="margin-left:6px"
-              onclick="goConsent()">Tick consent</button>`:""}</div>`:""}</td>
+            ${/* THE REMEDY HAS TO MATCH THE BLOCK. This offered "Tick consent" on any blocked
+                 condition carrying voice:1, whatever the block actually was -- so the two
+                 digit conditions said "no digit recordings are installed in this build" and
+                 then offered a button that does nothing about it. An examiner follows the
+                 button, tick the consent, comes back, and the row is still grey with the
+                 same message. Each remedy is now derived from the state that caused the
+                 block rather than from the row carrying a voice flag. */""}
+            ${c.voice && !voiceConsented() && !rehearsalOnly(c)
+              ? `<button class="ghost sm" style="margin-left:6px"
+                   onclick="goConsent()">Tick consent</button>` : ""}
+            ${avKind(c.id)==="digits" && !DIGIT_SET.installed && !digitStandin()
+              ? `<button class="ghost sm" style="margin-left:6px"
+                   onclick="goDigitStandin()">Use the rehearsal stand-in</button>` : ""}
+            ${audibilityBlocks(c.id)
+              ? `<span class="note" style="margin:0 0 0 6px">The check cannot be retaken in
+                 this session; it is recorded against the participant.</span>` : ""}
+            </div>`:""}</td>
         <td><input type="number" min="1" max="20" value="${s2.repeats}" ${blocked?"disabled":""}
              onchange="planSet('${c.id}','repeats',+this.value)"></td>
         <td><select onchange="planSet('${c.id}','hands',this.value)" ${blocked?"disabled":""}>
