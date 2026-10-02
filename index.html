@@ -2288,10 +2288,13 @@ const tapTemplateName = (c, hand) => !c || !c.tap ? null
 // Named once here would be two constants for one number, so this reads the pad's.
 const practiceTemplateName = (pitch, hand) =>
   spiralTemplateName(pitch, PRACTICE_TURNS, hand);
-// The template named for whatever trial is loaded, or null where a task has none.
-function templateNameFor(c, hand){
+/* The template named for whatever trial is loaded, or null where a task has none.
+   `raw` asks for the TASK's template rather than whatever is on screen: the task start
+   screen runs while the first row is a practice row, so geomTurns is under its three-turn
+   override and the screen described a six-trial spiral task as SPR_P12T3_R. */
+function templateNameFor(c, hand, raw){
   if(!c) return null;
-  if(c.spiral) return spiralTemplateName(geomPitch(c), geomTurns(c), hand);
+  if(c.spiral) return spiralTemplateName(geomPitch(c), (raw?geomTurns_raw:geomTurns)(c), hand);
   if(c.tap) return tapTemplateName(c, hand);
   // The pentagon model is CONSTRUCTED rather than taken from a published figure, and the
   // task description gives it no template code. Its vertices are exported with every trial,
@@ -7461,6 +7464,9 @@ function runCurrent(){
    the information an examiner needs in order to decide to skip it, and which exists nowhere
    on the screens that follow. */
 function showTaskStartScreen(cont){
+  // Explicitly as well as in showOverlay: this is the screen that found the bug, and the
+  // trial canvas behind it wants laying out before the participant sees anything.
+  stageOn(true);
   const c=byId(TRIAL.task);
   const { total } = taskTrialSpan();
   const hands=[...new Set(testRowsOf(TRIAL.task).map(q=>q.hand))];
@@ -7482,10 +7488,11 @@ function showTaskStartScreen(cont){
     <p style="font-size:19px;margin-top:18px">${total} trial${total===1?"":"s"} ·
       ${handWords} · ${len}</p>
     ${fin}
-    ${templateNameFor(c, TRIAL.drawHand||TRIAL.tapHand)
+    ${templateNameFor(c, TRIAL.drawHand||TRIAL.tapHand, true)
       ? `<p style="font-size:17px;color:#5d6570">${c.finBlock?"Code":"Template"}
-         <code>${templateNameFor(c, TRIAL.drawHand||TRIAL.tapHand)}</code>${
-         c.spiral?` · practice on <code>${practiceTemplateName(geomPitch(c), TRIAL.drawHand)}</code>`:""}</p>` : ""}`,
+         <code>${templateNameFor(c, TRIAL.drawHand||TRIAL.tapHand, true)}</code>${
+         c.spiral && practicePlan(c).length
+           ? ` · practice on <code>${practiceTemplateName(geomPitch(c), TRIAL.drawHand)}</code>`:""}</p>` : ""}`,
     [{ label:"Next", onClick:()=>{ hideOverlay(); cont(); } },
      { label:"Back", ghost:true, onClick:()=>backToSession() }]);
 }
@@ -7517,6 +7524,18 @@ function showTaskEndScreen(taskId){
 // Every overlay goes through here: body scrolls, buttons stay pinned.
 function showOverlay(bodyHTML, buttons){
   const ov=$("overlay");
+  /* THE STAGE MUST BE ON, OR THE OVERLAY IS INVISIBLE.
+
+     #overlay lives inside #stage, and #stage is display:none until stageOn(true). Every
+     caller that reached here used to arrive through openTrial, which turns the stage on
+     first -- and then the task start screen was added, which runs BEFORE openTrial and
+     turned nothing on. The screen rendered into a hidden container: 0 by 0, offsetParent
+     null, text present and invisible. START THIS TRIAL did nothing at all, on every task.
+
+     It is guarded here rather than only at the new caller, because an overlay nobody can
+     see is never the intended outcome, and the next screen added before openTrial would
+     have failed the same silent way. */
+  if(!$("stage").classList.contains("on")) stageOn(true);
   // Rebuild the shell if a caller replaced the overlay's innerHTML wholesale. Without
   // this, display is already "flex" when the next line throws, so the *previous*
   // overlay content is left on screen with no way forward.
