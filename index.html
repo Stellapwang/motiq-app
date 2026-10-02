@@ -4142,8 +4142,9 @@ function renderPlan(){
               ? `<button class="ghost sm" style="margin-left:6px"
                    onclick="goDigitStandin()">Spoken digit settings</button>` : ""}
             ${audibilityBlocks(c.id)
-              ? `<span class="note" style="margin:0 0 0 6px">The check cannot be retaken in
-                 this session; it is recorded against the participant.</span>` : ""}
+              ? `<button class="ghost sm" style="margin-left:6px"
+                   onclick="clearAudibility('${avKind(c.id)}')">Present the check again</button>`
+              : ""}
             </div>`:""}</td>
         <td><input type="number" min="1" max="20" value="${s2.repeats}" ${blocked?"disabled":""}
              onchange="planSet('${c.id}','repeats',+this.value)"></td>
@@ -4978,7 +4979,7 @@ function newSession(){
   // the iPad is facing have not been re-established -- and the check also confirms the
   // EXAMINER can hear the stimulus from where they are sitting. Carrying a pass forward
   // carries a claim about a setup that no longer exists.
-  AUDIBILITY={ tones:null, digits:null };
+  AUDIBILITY={ tones:null, digits:null }; AUDIBILITY_CLEARED=[];
   PRACTICE_DONE=new Set(); PRACTICE_SKIPPED=new Set();
   $("sessnum").value=sessNo()+1;
   renderStatus(); renderPlan(); renderQueue();
@@ -4997,7 +4998,7 @@ function newVisit(){
   // the iPad is facing have not been re-established -- and the check also confirms the
   // EXAMINER can hear the stimulus from where they are sitting. Carrying a pass forward
   // carries a claim about a setup that no longer exists.
-  AUDIBILITY={ tones:null, digits:null };
+  AUDIBILITY={ tones:null, digits:null }; AUDIBILITY_CLEARED=[];
   PRACTICE_DONE=new Set(); PRACTICE_SKIPPED=new Set();
   $("visitno").value=visitNo()+1; $("sessnum").value=1;
   renderStatus(); renderPlan(); renderQueue();
@@ -5025,7 +5026,7 @@ function newParticipant(){
   // the pen check, sound check, screening screens and consent belong to the person,
   // not the device
   Object.keys(PENCHECK).forEach(k=>delete PENCHECK[k]);
-  AUDIBILITY={ tones:null, digits:null };
+  AUDIBILITY={ tones:null, digits:null }; AUDIBILITY_CLEARED=[];
   PRACTICE_DONE=new Set(); PRACTICE_SKIPPED=new Set();
   if($("soundok")) $("soundok").checked=false;
   if($("volstep")) $("volstep").value="0";
@@ -6425,10 +6426,27 @@ const availableVoices = () => !speechAvailable() ? []
 const digitSetId = () => DIGIT_SET.installed ? DIGIT_SET.id
   : (standinVoice() ? `device_speech/${standinVoice().name}@${standinVoice().lang}`
                     : "device_speech/unavailable");
+/* VOICES LOAD ASYNCHRONOUSLY, AND AN EMPTY LIST IS NOT A MISSING VOICE.
+
+   getVoices() returns [] for the first moments after a page load and does not fill until the
+   engine is ready. Treating that as "the declared voice is not on this device" blocked the
+   two digit conditions on every fresh load -- and renderPlan force-unticks a blocked
+   condition, so by the time the voices arrived the examiner's selection had already been
+   cleared and the rows stayed empty with a message saying a voice they do have is missing.
+
+   So: an empty list means NOT YET KNOWN, the plan is redrawn when the list arrives, and only
+   a loaded list that lacks the voice is a block. */
+const voicesLoaded = () => speechAvailable() &&
+  ((window.speechSynthesis.getVoices()||[]).length>0);
 if(speechAvailable()) try{
-  // Voices load asynchronously; without this the first trial of a session picks nothing and
-  // the platform default is used silently.
-  window.speechSynthesis.addEventListener("voiceschanged", ()=>{ DIGIT_STANDIN.voice=null; standinVoice(); });
+  window.speechSynthesis.addEventListener("voiceschanged", ()=>{
+    DIGIT_STANDIN.voice=null; standinVoice();
+    // The plan was drawn while the answer was unknown; draw it again now that it is not.
+    try{ if(typeof renderPlan==="function" && typeof PLAN!=="undefined" && PLAN) renderPlan(); }catch(e){}
+    try{ renderStandinNote(); }catch(e){}
+  });
+  // Safari sometimes fills the list without firing the event, so ask once.
+  window.speechSynthesis.getVoices();
 }catch(e){}
 // IOS WANTS A GESTURE BEFORE IT WILL SPEAK AT ALL, and the stream on a spiral condition
 // starts at the first pen contact rather than at the START press. So the first utterance is
@@ -6546,6 +6564,9 @@ function digitSetProblem(){
   // in a different one.
   if(!DIGIT_SET.installed && digitStandin()){
     if(!speechAvailable()) return "this device has no speech synthesis";
+    // Not yet loaded is not missing: see voicesLoaded. Blocking here would unselect the
+    // condition before the device has had a chance to answer.
+    if(!voicesLoaded()) return null;
     if(!standinVoice())
       return `the study voice “${DIGIT_VOICE.name}” is not installed on this device`;
     return null;
@@ -7395,7 +7416,13 @@ function runAdhoc(taskId){
 
 function runCurrent(){
   if(!storageGuard()){ goPage(6); return; }
-  if(QPOS>=QUEUE.length){ sessionComplete(); return; }
+  /* PAST ANYTHING THAT IS NOT PENDING. The cursor was taken on trust: whatever sat at QPOS
+     was opened, done or skipped. A list whose next rows have been skipped -- by a failed
+     audibility check, say -- therefore opened a skipped trial and ran it, and a list whose
+     rows were ALL skipped left START THIS TRIAL opening something that could not proceed.
+     Both read to the examiner as the button not working. */
+  while(QPOS<QUEUE.length && QUEUE[QPOS].status!=="pending") QPOS++;
+  if(QPOS>=QUEUE.length){ renderQueue(); sessionComplete(); return; }
   const q=QUEUE[QPOS], c=byId(q.task);
   const phys = q.hand==="none" ? null : physHand(q.hand);
   TRIAL={ ...q, index:QPOS,
@@ -8306,6 +8333,17 @@ const AUDIBILITY_FORM_LABEL = {
   tones:"two pitches told apart", digits:"five spoken numbers understood" };
 // Outcome per form, for this session. Null means not yet run.
 let AUDIBILITY = { tones:null, digits:null };
+/* CHECKS THE EXAMINER CLEARED, kept rather than erased.
+
+   A failed check takes every condition of that stimulus kind out of the session and blocks
+   it, which is right -- and it was irreversible, so a check failed by accident ended those
+   conditions for the sitting with no route back and no explanation beyond rows that would
+   not run. That is too sharp an edge for a screen somebody is meeting for the first time.
+
+   So it can be cleared and run again. What must not happen is the clearing vanishing: a
+   participant who failed, was re-checked and then passed is a different participant from one
+   who passed first time, and only this list says which. Every trial record carries it. */
+let AUDIBILITY_CLEARED=[];
 // Which form a task needs, or null for a task with no auditory stream.
 const audibilityForm = taskId => byId(taskId) && byId(taskId).audio ? avKind(taskId) : null;
 // The outcome standing against a task, whatever form it uses.
@@ -8413,6 +8451,28 @@ function showAudibilityCheck(kind, cont){
    after the other has already failed is asking a participant to sit through sixty seconds
    of something they cannot hear. Each skipped trial records the reason rather than being
    quietly dropped, so a session with a gap in it explains its own gap. */
+/* Clear a recorded outcome so the check can be taken again. Deliberate, confirmed, recorded
+   -- and it puts the skipped trials back, because a check that can be retaken is no use if
+   the trials it removed are gone. */
+function clearAudibility(kind){
+  const prev=AUDIBILITY[kind]; if(!prev) return;
+  if(!confirm(`Clear the ${AUDIBILITY_FORM_LABEL[kind]} check?\n\n`+
+      `It was recorded as "${prev.outcome}". Clearing lets you present it again, puts the `+
+      `trials it removed back into the list, and is itself recorded on every trial of this `+
+      `session — a participant who failed and was re-checked is not the same as one who `+
+      `passed first time.`)) return;
+  AUDIBILITY_CLEARED.push({ form:kind, outcome:prev.outcome, attempts:prev.attempts??null,
+                            at_iso:new Date().toISOString() });
+  AUDIBILITY[kind]=null;
+  let back=0;
+  QUEUE.forEach(q=>{ if(audibilityForm(q.task)!==kind) return;
+    if(q.status==="skipped" && /audibility check failed/.test(q.skipReason||"")){
+      q.status="pending"; q.skipReason=null; back++; } });
+  if(back) QPOS=Math.min(QPOS, QUEUE.findIndex(q=>q.status==="pending"));
+  renderPlan(); renderQueue(); saveState();
+  alert(back ? `${back} trial${back===1?"":"s"} put back into the list.`
+             : "Cleared. Build the session again to put those conditions back in.");
+}
 function audibilityFailed(kind){
   const why=`audibility check failed (${AUDIBILITY_FORM_LABEL[kind]})`;
   let n=0;
@@ -8538,9 +8598,26 @@ function showQueueOverlay(seq,c){
         QUEUE[QPOS].status="skipped"; QUEUE[QPOS].skipReason=why; QPOS++;
         hideOverlay(); renderQueue(); runCurrent(); }}]);
 }
+/* "go" DID NOTHING AT ALL on a row that was not pending, which is indistinguishable from a
+   broken button. A skipped row can be put back -- that is the examiner's call and the reason
+   to press go on one -- EXCEPT where the skip was a decision the session has already
+   recorded, which is a failed audibility check: letting that one back in would run a
+   condition the check just established the participant cannot do. */
 function jumpTo(i){
-  if(QUEUE[i].status!=="pending") return;
-  QPOS=i; $("overlay").style.display="none"; renderQueue(); runCurrent();
+  const q=QUEUE[i]; if(!q) return;
+  if(q.status!=="pending"){
+    const why=taskBlocked(byId(q.task));
+    if(why){ alert(`${q.task} cannot be run: ${why}.`); return; }
+    if(q.status==="done"){
+      alert(`That trial is already saved.\n\nUse REPEAT at the end of a trial to run `+
+            `another of the same kind; it is recorded as a further repeat rather than `+
+            `replacing the saved one.`);
+      return; }
+    if(!confirm(`${q.task} was skipped${q.skipReason?` — ${q.skipReason}`:""}.\n\n`+
+                `Put it back into the list and run it now?`)) return;
+    q.status="pending"; q.skipReason=null;
+  }
+  QPOS=i; $("overlay").style.display="none"; renderQueue(); saveState(); runCurrent();
 }
 
 function runTrial(seq,c){
@@ -10468,6 +10545,10 @@ function buildRecord(){
       stream_targets: c.audio ? AV_PRACTICE.targets : null,
       note:"a practice run is administered to the participant and is not saved as a trial. It is a row in the trial list, ahead of the task's trials and inside its block, so it moves with the task and is counted in the session estimate. specified is whether the task description gives this condition a practice; ran and skipped are what happened in this session."
       }; })(),
+    /* CHECKS CLEARED AND RETAKEN, on every trial of the session. A pass recorded after a
+       failed check was cleared is not the same evidence as a pass first time, and the
+       outcome field alone cannot tell them apart. */
+    audibility_cleared: AUDIBILITY_CLEARED.length ? AUDIBILITY_CLEARED.slice() : null,
     audibility: c.audio ? (audibilityFor(c.id) || { outcome:"not_run", form:avKind(c.id),
         note:"the trial ran without the check having been recorded, which readyTrial should "+
              "make impossible; treat the trial as unverified for audibility." }) : null,
@@ -11476,7 +11557,7 @@ function saveState(){
       // Stored on the SESSION, which is what makes "once per session" true across a reload:
       // an examiner who reloads mid-session must not be asked to run the check again, and
       // must not be able to get out of a failed one by reloading either.
-      audibility:AUDIBILITY,
+      audibility:AUDIBILITY, audibilityCleared:AUDIBILITY_CLEARED,
       // Whether a PERSON set the consent tick, not just what it says. Without this the
       // distinction dies on reload and every trial after one reads "build_default".
       consentTouched:CONSENT_TOUCHED,
@@ -11532,6 +11613,7 @@ function restoreState(){
       PRACTICE_SKIPPED=new Set(st.practiceSkipped.map(taskId).filter(id=>byId(id)));
     if(st.audibility && typeof st.audibility==="object")
       AUDIBILITY={ tones:st.audibility.tones||null, digits:st.audibility.digits||null };
+    if(Array.isArray(st.audibilityCleared)) AUDIBILITY_CLEARED=st.audibilityCleared;
     if(Array.isArray(st.orderOverride)){
       const ord=st.orderOverride.map(taskId).filter(id=>byId(id));
       ORDER_OVERRIDE = ord.length ? ord : null;
