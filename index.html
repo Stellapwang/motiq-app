@@ -255,6 +255,12 @@
   #saypre:not(:empty) { position:absolute; top:54px; left:0; right:0; z-index:2;
      padding:10px 18px; text-align:center; background:rgba(255,255,255,.92);
      border-bottom:1px solid var(--line); }
+  /* Under the bar, across the screen, in the colour everything else that stops a trial
+     uses. It stays up until the trial ends: the condition that produced it has not gone
+     away, and a warning that fades is one the examiner can miss twice. */
+  #contactwarn:not(:empty) { position:absolute; top:54px; left:0; right:0; z-index:3;
+     padding:12px 18px; background:#fdecec; color:#8c2020; border-bottom:1px solid #e9b7b7;
+     font-size:17px; line-height:1.5; text-align:center; }
   #adminbar .spacer { flex:0 1 auto; }
   @media (max-width:820px){
     #adminbar button { font-size:15px; padding:8px 12px; min-width:0; }
@@ -7779,6 +7785,7 @@ function openTrial(showInstruction){
   }
   STROKES=[]; TAPS=[]; TAPFLASH=null; HOVER=[];
   TRIAL.voiceFailure=null;
+  if($("contactwarn")) $("contactwarn").innerHTML="";
   // The trial owns the stage from here, so the overlay no longer does.
   stageOn(true); STAGE_RAISED_BY_OVERLAY=false;
   layout(); drawScene();
@@ -9070,12 +9077,32 @@ function runTrial(seq,c){
     // THE IMPLEMENT REFUSAL IS NO LONGER SILENT. A contact of the wrong kind simply
     // vanished, which on the only implement in the room reads as a dead screen -- and it is
     // the first thing to check when somebody reports that the pen does not register.
+    /* A REFUSED CONTACT IS THE LOUDEST THING ON THE SCREEN, because it is the one failure
+       where the participant is drawing, the examiner is watching their hand, and the app
+       looks simply dead. It was a line of small red text in the toolbar -- correct, and
+       invisible to anybody not already looking for it.
+
+       It names the device question when that is what it is. HANDOFF.md records that on the
+       study iPad every contact has arrived as a touch, 140 of them, with no stylus event at
+       all -- a paired Pencil always reports as a pen on iPadOS, so that is a pairing or
+       hardware matter and no amount of drawing will change it. Saying so here is the
+       difference between a dead screen and a diagnosis. */
     if(!drawOK(e.pointerType) && drawTask && !RUN.implementWarned){
       RUN.implementWarned=true;
-      $("reminder").innerHTML=`<span style="color:#8c2020"><b>Contact ignored:</b> this task
-        is set to <b>${TRIAL.implement==="pen"?"stylus":"finger"}</b> and that arrived as
-        <b>${esc(e.pointerType)}</b>.${TRIAL.implement==="pen"&&e.pointerType==="touch"&&!deviceEverSawPen()
-          ? " This device has never reported a stylus to the browser." : ""}</span>`;
+      RUN.refusedTypes=RUN.refusedTypes||{};
+      const want = TRIAL.implement==="pen" ? "stylus" : "index finger";
+      const neverPen = TRIAL.implement==="pen" && e.pointerType==="touch" && !deviceEverSawPen();
+      const el=$("contactwarn") || (()=>{ const d=document.createElement("div");
+        d.id="contactwarn"; $("adminbar").insertAdjacentElement("afterend", d); return d; })();
+      el.innerHTML=`<b>Nothing is being drawn.</b> This task is set to <b>${want}</b>, and the
+        contact arrived as <b>${esc(e.pointerType)}</b>, so it is being ignored.
+        ${neverPen
+          ? `This device has <b>never</b> reported a stylus to the browser, in this session or
+             any earlier one. On iPadOS a paired Apple Pencil always arrives as a pen, so this
+             is a pairing or hardware question rather than an app one — check the Pencil is
+             paired and charged, then confirm with the <b>Pen check</b> on the Device page.`
+          : `Check which implement the participant is using, or the Implement setting for this
+             task.`}`;
     }
     if(!drawOK(e.pointerType)){
       // A REFUSED CONTACT USED TO BE SILENT, which is correct for a palm and wrong for the
