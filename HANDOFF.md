@@ -19,7 +19,7 @@ Three sources, in order of what they are good for:
 | `DECISIONS.md` | Why each rule is the shape it is. What was tried first and how it failed. Generated from the commit history. |
 | `SCOPE.md`, `CLAUDE.md` | Project constraints and working rules the build inherits. |
 
-Line numbers below are **as of BUILD v14.01 (2026-10-01)** where they have been rechecked
+Line numbers below are **as of BUILD v14.01 (2026-10-04)** where they have been rechecked
 and older where they have not. They drift. Each entry also gives a search string that does
 not, and the search string is the one to use.
 
