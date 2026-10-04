@@ -277,36 +277,51 @@ the battery without them reimplements a different battery.
 
 | What | Search for |
 |---|---|
-| The audibility check, both forms | `THE AUDIBILITY CHECK` |
+| The audibility check and practice, one screen | `function showCheckAndPractice(` |
 | Practice, inside the session | `PRACTICE, INSIDE THE SESSION` |
 | The examiner entry screen | `THE EXAMINER ENTRY SCREEN` |
 | What the examiner says before each trial | `const TRIAL_SCRIPTS` |
 | The start and end-of-task screens | `function showTaskStartScreen(` |
 
-**The audibility check runs in two forms, and that is a departure from the specification as
-written.** It says the check runs once per session at the first auditory condition, which is
-right for a session with one kind of stimulus. This battery has two, and they ask different
-questions: tones ask whether two pitches can be told apart, digits whether five spoken words
-can be understood. Presbycusis takes the high frequencies consonants live in, so a
-participant can pass pitch discrimination and still not tell "two" from "three". The tone
-form runs once at the first tone condition, the digit form once at the first digit
-condition. **A failed check takes every condition of that stimulus kind out of the session**,
-each skipped trial carrying the reason.
+**The audibility check covers the tones only, and shares a screen with the practice.** Two
+buttons play one low beep and one high beep on demand, as often as the examiner wants; the
+outcome is **pass or fail**, recorded on the same screen. It runs once per session, at
+whichever tone condition the session reaches first -- normally VOC_VODD, and PEN_VODD when
+VOC_VODD is not in the list. **A failed check takes every tone condition out of the
+session**, each skipped trial carrying the reason, and can be cleared and run again.
 
-**Practice is administered to the participant and is not saved.** Seven conditions have one.
-What is practised is not the movement but the rule -- the hold, the single-word response, and
-on a dual task that neither half may stop while the other is done. There is **no SKIP
-control on the dual tasks**, which is the specification being deliberate: the dual task is
-the only place a participant can do both halves correctly in isolation and still not do the
-task. The practice screens are also the only place in the battery where the correct count is
-shown, because practice is where a misunderstanding is supposed to be found.
+Two things were deliberately given up here on 2026-10-04 and cannot be recovered from the
+data afterwards. **The digit conditions are not checked at all**: telling two pure tones
+apart and understanding a spoken "two" are different abilities, and presbycusis takes the
+high frequencies consonants live in, so a participant can pass the beeps and still mishear
+the word. And **"pass after repeat" is gone** -- it was defined as all six correct on the
+second presentation, and with the fixed six replaced by on-demand buttons there is no second
+presentation for it to mean.
 
-**The examiner entry screen enforces an order, and the order is the measurement.** Field 1
-is what the examiner HEARD; field 2 is what the participant claims. Field 2 is unreachable
-until field 1 is in, and field 1 cannot be edited afterwards -- both are judgments about the
-same quantity and the second arrives with the answer attached. The two are never merged in
-the record. The reported total is scored in three levels against the trial's target count,
-not as a continuous error.
+**Practice is administered to the participant and is not saved.** It runs **10 s with three
+targets** on the auditory conditions. Three targets in ten seconds is a 27.8% target rate
+against 19.9% in the trial, so the practice is denser than what follows; two would match.
+Three is the specified figure.
+
+**The two auditory dual tasks have no practice and no check.** PEN_VODD and PEN_VDGT go from
+the instruction screen to one restated line -- "keep drawing, and count at the same time,
+don't stop one to do the other" -- and then into the trial. By then both halves have been
+practised separately. What this gives up: the dual task is the only condition where a
+participant can do each half correctly in isolation and still not do the task, and that is
+now found out inside the sixty seconds that count.
+
+**The save screen asks one question.** On the tone conditions, "How many high beeps in
+total?", left blank when the participant gives no number. On the digit conditions there is no
+running total to ask for, so the one field is the examiner's count of "yes" responses
+instead. The reported total is scored in three levels against the trial's target count
+-- plausible, grossly discrepant, no number -- not as a continuous error.
+
+The counting aloud is not in that field and never was: it is in the voice recording, which
+the specification calls the primary record, captured in the same file as the stimulus. The
+examiner's own observed count, a quality rating and a free-text note were on this screen
+until 2026-10-04 and are null on every trial from this build. The dual tasks keep the
+task-switching flag, which is the only record of a participant who did one half by abandoning
+the other.
 
 ---
 

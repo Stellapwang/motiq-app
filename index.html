@@ -167,8 +167,13 @@
   .tapdot.lit { background:#1d5fa8; border-color:#1d5fa8; color:#fff; }
   /* The instruction can be taller than the screen. Content scrolls; the action button
      sits in a bar pinned to the bottom so it can never be pushed out of reach. */
+  /* OPAQUE, not 98%. Two per cent of a 150-point END cue is still legible, so every screen
+     that opens after a trial had "END — you can stop counting" showing faintly through its
+     own text: on the recap screen that is the previous trial's ending sitting behind the
+     line the examiner is about to read. There is nothing underneath the overlay that is
+     ever worth seeing through it. */
   #overlay { position:absolute; inset:0; display:flex; flex-direction:column;
-             background:rgba(255,255,255,.98); z-index:3; }
+             background:#fff; z-index:3; }
   /* justify-content:center centres the column -- right while it fits, WRONG the moment it
      does not: an overflowing centered column has its top pushed outside the scroll area, and
      scrolling cannot bring it back. The instruction screen lost its first line that way,
@@ -1780,9 +1785,16 @@ const AV_TARGET_COUNTS = {
   if(bad.length) throw new Error("AV_TARGET_COUNTS uses a count of 10 ("+bad.join(", ")+
     "); 10 is the number a participant guesses, so no trial may use it.");
 })();
-// Practice is 20 s with three targets, for every auditory condition. Short enough
-// not to be a trial, long enough to contain the thing being practised.
-const AV_PRACTICE = { durS:20, targets:3 };
+/* PRACTICE IS 10 s WITH THREE TARGETS, from the revised task description.
+
+   Three targets in ten seconds is a 27.8% target rate, measured over 1000 seeds, against
+   19.9% in the 60-second trial. The practice therefore teaches a denser oddball than the
+   one that follows; two targets would give 19.0% and match it. Three is the specified
+   figure and is what runs -- this note exists so the difference is a known one rather than
+   a discovered one. Placement under AV_PLACE succeeds on every seed tried: the first target
+   lands between 2.0 and 3.8 s and the last between 6.1 and 8.0 s, so the sequence is not
+   the same one every time. */
+const AV_PRACTICE = { durS:10, targets:3 };
 
 /* TARGET PLACEMENT. Applied when the sequence is generated, never during it.
    The 2000 ms separation is the response constraint: it is the gap a spoken
@@ -2190,6 +2202,7 @@ function instructionFor(taskId, opts){
       : null;
   })();
   const a = AUDIO_DEFAULTS[taskId];
+  let handOver = null;
   if(c.audio){
     // THE DIGIT TASKS ARE SPOKEN WORDS AND A SINGLE-WORD ANSWER, so they come before the
     // tone branches: they have targets and a voice response like the counting tasks, and
@@ -2211,9 +2224,24 @@ function instructionFor(taskId, opts){
       // tap" pre-empts a mistake nobody on a voice-only task was about to make.
       if(c.countOf==="all"){
         lines.push(`**${also?"At the same time, count":"Count"} every beep OUT LOUD: one, two, three, and so on.**`);
-      } else {
-        lines.push(`**${also?"At the same time, count":"Count"} the HIGH beeps out loud, one, two, three, and keep going up.**`);
+      } else if(also){
+        lines.push("**At the same time, count the HIGH beeps out loud, one, two, three, and keep going up.**");
         lines.push("Most of the beeps are low. Say nothing for those.");
+      } else {
+        /* THE TASK DESCRIPTION'S OWN WORDS, section 3.2, rather than a paraphrase of them.
+           What was here said the same thing in four bullets of my writing and dropped two
+           sentences entirely: the one that tells the participant how they will know to stop,
+           and the one that hands over to the audibility check. Both matter -- without the
+           first, a participant who loses the thread has nothing to listen for, and without
+           the second the next screen arrives unannounced. */
+        lines.push("You’ll hear a series of beeps. Most of them will be low beeps. Every now and then you’ll hear a higher beep.");
+        lines.push("**Each time you hear a higher beep, count it out loud, one, two, three… and keep going up.**");
+        lines.push("Say nothing for the low beeps.");
+        lines.push("Keep counting out loud until the screen says END.");
+        // Held back, not pushed: it hands over to the audibility check and has to be the
+        // last thing the examiner reads. Pushed here it sat above the voice and orientation
+        // lines, which are appended further down.
+        handOver = "First let’s make sure you can hear the difference.";
       }
       // ON THE DUAL TASK THIS IS THE LINE THAT MATTERS, and it is the one the task
       // description adds: a participant protecting the drawing stops counting, and a
@@ -2221,7 +2249,6 @@ function instructionFor(taskId, opts){
       // dual task, and nothing in the record would say which happened without the
       // task-switching field the examiner fills in afterwards.
       if(also) lines.push("Do not stop drawing to count, and do not stop counting to draw.");
-      lines.push("I will ask for your final number at the end.");
     } else if(c.ptgTargets || (AUDIO_DEFAULTS[taskId]&&AUDIO_DEFAULTS[taskId].hasTargets)){
       // Named on the tone tasks too, not only the unpaced ones: the circle is offset to the
       // tapping side on every one-zone task now, so the instruction and the screen should
@@ -2274,6 +2301,9 @@ function instructionFor(taskId, opts){
   }
   // Last, because it is about holding the device rather than about the task.
   if(orientLine) lines.push(orientLine);
+  // Then the hand-over to the audibility check, after everything else, because the screen
+  // it introduces is the next thing that happens.
+  if(handOver) lines.push(handOver);
 
   return { id:taskId, title:c.label, lines,
            drawingRules: c.spiral ? rules : null,
@@ -5050,7 +5080,12 @@ function renderNextUpParams(){
     exploration session” above.`}</div>
   </details>`;
 }
-const handWord=h=> h==="both"?"both":h==="dominant"?"dominant":"non-dominant";
+/* "none" IS A HAND VALUE AND IT IS NOT NON-DOMINANT. The queue stores hand:"none" for the
+   listening-and-speaking conditions, and this fell to the final branch, so the session page
+   announced "VOC_VODD — non-dominant · practice 1 of 1" for a task with no hand in it at
+   all. Same root as the hand banner in readyTrial: a fallback written for the two-sided
+   tasks answering for a task that has no side. */
+const handWord=h=> h==="none"?"no hand":h==="both"?"both":h==="dominant"?"dominant":"non-dominant";
 // dominant/non-dominant resolve to a physical side only at run time
 // Which physical side counts as dominant. For a right- or left-handed participant that is
 // their own answer. For an ambidextrous one there is no answer to read, so the examiner
@@ -5146,7 +5181,7 @@ function newSession(){
   // EXAMINER can hear the stimulus from where they are sitting. Carrying a pass forward
   // carries a claim about a setup that no longer exists.
   AUDIBILITY={ tones:null, digits:null }; AUDIBILITY_CLEARED=[];
-  PRACTICE_DONE=new Set(); PRACTICE_SKIPPED=new Set();
+  PRACTICE_DONE=new Set(); PRACTICE_SKIPPED=new Set(); RECAP_SHOWN=new Set();
   $("sessnum").value=sessNo()+1;
   renderStatus(); renderPlan(); renderQueue();
 }
@@ -5165,7 +5200,7 @@ function newVisit(){
   // EXAMINER can hear the stimulus from where they are sitting. Carrying a pass forward
   // carries a claim about a setup that no longer exists.
   AUDIBILITY={ tones:null, digits:null }; AUDIBILITY_CLEARED=[];
-  PRACTICE_DONE=new Set(); PRACTICE_SKIPPED=new Set();
+  PRACTICE_DONE=new Set(); PRACTICE_SKIPPED=new Set(); RECAP_SHOWN=new Set();
   $("visitno").value=visitNo()+1; $("sessnum").value=1;
   renderStatus(); renderPlan(); renderQueue();
 }
@@ -5193,7 +5228,7 @@ function newParticipant(){
   // not the device
   Object.keys(PENCHECK).forEach(k=>delete PENCHECK[k]);
   AUDIBILITY={ tones:null, digits:null }; AUDIBILITY_CLEARED=[];
-  PRACTICE_DONE=new Set(); PRACTICE_SKIPPED=new Set();
+  PRACTICE_DONE=new Set(); PRACTICE_SKIPPED=new Set(); RECAP_SHOWN=new Set();
   if($("soundok")) $("soundok").checked=false;
   if($("volstep")) $("volstep").value="0";
   if($("audioroute")) $("audioroute").value="speaker";
@@ -7996,16 +8031,18 @@ function showInstructionScreen(seq,c,returnToReady){
   const digits = avKind(TRIAL.task)==="digits";
   const btn = (fn,txt)=>`<button class="ghost" style="font-size:18px;padding:14px 26px;margin:4px"
         onclick="${fn}">${txt}</button>`;
-  const soundBtns = c.audio ? `<div style="margin-top:14px">` +
-      (digits
-        ? btn(`demoDigit(${DIGIT_SET.target})`,`Play the number ${DIGIT_WORD[DIGIT_SET.target]||DIGIT_SET.target}`)
-          + btn("demoDigits()","Play 1 to 5")
-        : twoTones
-        ? btn("demo('std')","Play the LOW beep") + btn("demo('tgt')","Play the HIGH beep")
-          + btn("demo('alt')","Count the high beep")
-        : btn("demo('std')","Play the beep")) +
-      `<div class="note" style="margin-top:6px">Play ${digits||twoTones?"these":"this"} before
-        starting.</div></div>` : ``;
+  /* NO STIMULUS BUTTONS ON THE INSTRUCTION SCREEN, as of 2026-10-04.
+
+     Five of them lived here -- Play the LOW beep, Play the HIGH beep, Count the high beep,
+     Play the number two, Play 1 to 5 -- and none of them is in the task description. They
+     were mine. The screen the participant reads is now only the words that are read to
+     them, and demonstrating the stimulus belongs to the screen after it, which is what the
+     audibility check is for. The digit conditions demonstrate nothing at all: their check
+     was removed, and a demonstration without a recorded outcome is a rehearsal.
+
+     The Device page keeps its own Play 1 to 5, which is an examiner check that all five
+     words speak before a session starts, not something a participant hears. */
+  const soundBtns = ``;
   /* WHY THIS CONDITION'S DATA IS HELD, on the screen the examiner reads immediately before
      running it. It used to be palm rejection only, named as a platform limit -- which was
      the only reason a condition could be held when it was written. The digit stand-in is a
@@ -8252,6 +8289,15 @@ function reminderText(){
    whether it ran, on each test trial that follows, because "this participant practised" and
    "the examiner skipped it" are different facts about every trial of that task.
    =========================================================================== */
+/* The conditions whose practice was removed on 2026-10-04. Named one by one rather than
+   derived from isDualTask: the exploratory dual tasks are not part of the specified battery
+   and keep theirs. */
+const NO_PRACTICE_DUAL = new Set(["PEN_VODD","PEN_VDGT"]);
+// Tasks whose instruction repeat has been read this session. On a task with practice the
+// recap is shown by practiceResult when the last practice row is done; a task with no
+// practice has nothing to hang it on, so readyTrial shows it before the first trial and
+// this is what keeps it from reappearing before the second.
+let RECAP_SHOWN=new Set();
 let PRACTICE_DONE=new Set();
 let PRACTICE_SKIPPED=new Set();
 // PRACTICE is gone with the cursor it held: the queue is the cursor now.
@@ -8260,9 +8306,19 @@ function practicePlan(c){
   if(!c) return [];
   if(c.tap && !c.spiral) return [];              // the tapping tasks are demonstrated, not practised
   if(c.pent) return [];                          // copying a figure cannot be practised without copying it
-  // THE DUAL TASKS GET ONE, ON THE DOMINANT HAND. Not one per hand: the thing being
-  // practised is doing both at once, which is not hand-specific, and a second practice run
-  // costs forty more seconds of a session that already runs long.
+  /* THE TWO AUDITORY DUAL TASKS GET NO PRACTICE, by decision of 2026-10-04. By the time
+     they run, both halves have been practised on their own -- the spiral on PEN_SPR60 and
+     the auditory response on VOC_VODD or VOC_VDGT -- and what stands in their place is a
+     restatement of the instruction naming both halves together.
+
+     Recorded here because it is the one thing the examiner cannot put back: the dual task
+     is the only condition where a participant can do each half correctly in isolation and
+     still not do the task, by stopping one to do the other. If that is going to be found
+     out, it is now found out inside the sixty seconds that count. */
+  if(NO_PRACTICE_DUAL.has(c.id)) return [];
+  // Any other dual task still gets one, on the dominant hand. Not one per hand: the thing
+  // being practised is doing both at once, which is not hand-specific, and a second
+  // practice run costs forty more seconds of a session that already runs long.
   if(isDualTask(c)) return ["dominant"];
   if(c.audio) return ["none"];                   // the voice-only conditions: one sequence
   if(c.spiral) return ["dominant","nondominant"];
@@ -8375,11 +8431,13 @@ function practiceRecap(c){
   // handed the counting recap -- unreachable today, because practiceRecap is only called
   // after a practice run and TAP_TONE has none, but a wrong string waiting for somebody to
   // give that task a practice is not better for being currently unreachable.
-  if(!practicePlan(c).length) return null;
+  // The two auditory dual tasks have no practice as of 2026-10-04 and this line is all that
+  // stands between the instruction screen and the trial, so they are admitted explicitly.
+  if(!practicePlan(c).length && !NO_PRACTICE_DUAL.has(c.id)) return null;
   if(isDualTask(c))
     return avKind(c.id)==="digits"
-      ? "Both at once for one minute — keep tracing spirals and say “yes” when you hear the number two."
-      : "Both at once for one minute — keep tracing spirals and keep counting the high beeps out loud.";
+      ? "Now we’ll do both together. Keep drawing the spirals, and say “yes” every time you hear the number two. Don’t stop one to do the other."
+      : "Now we’ll do both together. Keep drawing the spirals, and count the high beeps out loud at the same time. Don’t stop one to do the other.";
   if(c.audio && !c.spiral)
     return avKind(c.id)==="digits"
       ? "Now we’ll do it for one minute. Say “yes” when you hear the number two, and nothing for the other numbers."
@@ -8402,39 +8460,10 @@ function practiceRecap(c){
   return null;
 }
 
-/* The practice screens, driven by the queue row rather than by a run of their own. The
-   earlier version held its own cursor in a PRACTICE object and walked the hands itself,
-   which is the same job the queue already does for trials -- and doing it twice is what kept
-   the practice out of the list, out of the sequence panel and out of both time estimates. */
-function showPracticeIntro(c, seq){
-  const step=TRIAL.practice.step, of=TRIAL.practice.of, hand=TRIAL.practice.hand;
-  const go=()=>{ TRIAL.introDone=true; hideOverlay(); readyTrial(seq, c, false); };
-  const btns=[{ label:"Next", onClick:go }];
-  if(practiceSkippable(c)) btns.push({ label:"Skip practice", ghost:true, onClick:()=>{
-      if(!confirm("Skip the practice for this task?\n\nEvery trial of this task will record "+
-                  "that practice was skipped.")) return;
-      hideOverlay(); skipRemainingPractice(c.id); } });
-  btns.push({ label:"Instruction", ghost:true,
-              onClick:()=>showInstructionScreen(seq, c, {practice:true}) });
-  btns.push({ label:"Back", ghost:true, onClick:()=>backToSession() });
-  const tpl = c.spiral ? practiceTemplateName(geomPitch(c), TRIAL.drawHand) : null;
-  const same = c.spiral && geomTurns_raw(c)<=PRACTICE_TURNS;
-  showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em;
-      margin:0 0 14px">${TRIAL.task} · practice ${step} of ${of}</div>
-    <h3 style="font-size:28px;line-height:1.3">Practice</h3>
-    <p style="font-size:22px;line-height:1.45">“${practiceScript(c, hand, step-1)}”</p>
-    ${tpl?`<p style="font-size:16px;color:#5d6570">Template <code>${tpl}</code>${
-      same?" — this condition's test template is already three turns, so the practice runs the same one"
-          :" — three turns, the small spiral"}.</p>`:""}
-    ${c.audio?`<p style="font-size:16px;color:#5d6570">${AV_PRACTICE.durS} s containing
-      ${AV_PRACTICE.targets} targets.</p>`:""}
-    ${c.spiral && c.sustainedS
-      ? `<p style="font-size:17px;color:#5d6570">Press <b>END</b> once they have done one or
-         two spirals — the practice runs on the same clock as the trial and will not stop on
-         its own before then.</p>` : ""}
-    <p class="note" style="margin-top:12px">Nothing here is saved. Run it again as often as
-    the participant needs.</p>`, btns);
-}
+/* showPracticeIntro lived here until 2026-10-04. It was the second of the two screens the
+   practice used to need; showCheckAndPractice is now the only one, and a dead screen that
+   still renders is how two versions of the same thing end up on the iPad. Its Skip button
+   is gone with it: NEXT without pressing PRACTICE is the skip, and records the same fact. */
 // SKIPPING TAKES THE WHOLE TASK'S PRACTICE, not the row in front of the examiner. "Skip
 // practice" is a decision about the task; skipping one hand and practising the other is not
 // a thing the description offers and is not what anybody pressing it means.
@@ -8560,111 +8589,157 @@ let AUDIBILITY = { tones:null, digits:null };
    participant who failed, was re-checked and then passed is a different participant from one
    who passed first time, and only this list says which. Every trial record carries it. */
 let AUDIBILITY_CLEARED=[];
-// Which form a task needs, or null for a task with no auditory stream.
-const audibilityForm = taskId => byId(taskId) && byId(taskId).audio ? avKind(taskId) : null;
+/* WHICH FORM A TASK NEEDS, or null for a task that is not checked.
+
+   ONLY THE TONES ARE CHECKED, by decision of 2026-10-04. The digit conditions present
+   recognisable spoken words rather than two pitches a few hundred hertz apart, and the
+   examiner hears whether the participant is answering them.
+
+   What that gives up, since it cannot be recovered afterwards: telling two pure tones apart
+   and understanding a spoken "two" are different abilities, and a tone check does not stand
+   in for a speech one. A participant who passes the beeps and still mishears the word has
+   nothing in the record to say so. */
+const audibilityForm = taskId => {
+  const c=byId(taskId);
+  return c && c.audio && avKind(taskId)==="tones" ? "tones" : null;
+};
 // The outcome standing against a task, whatever form it uses.
 const audibilityFor = taskId => { const f=audibilityForm(taskId); return f ? AUDIBILITY[f] : null; };
+/* Two outcomes are offered now, not three. "Pass after repeat" was defined as all six
+   correct on the SECOND presentation, and with the six replaced by buttons the examiner
+   presses as often as they like, there is no first or second presentation for it to mean.
+   It stays in this list so a session saved before 2026-10-04 still reads as a pass. */
 const AUDIBILITY_PASSES = ["pass","pass_after_repeat"];
 const audibilityBlocks = taskId => { const o=audibilityFor(taskId);
   return !!(o && !AUDIBILITY_PASSES.includes(o.outcome)); };
 
-/* The check, as a screen. Stepped one stimulus at a time rather than played as a run of
-   six, because the examiner has to ask after each one and record the answer -- "I'll play
-   six numbers, tell me each number you hear" is a six-turn exchange, not a six-stimulus
-   burst. Marking each item also means a fail says WHICH ones were missed, which a single
-   pass/fail verdict does not. */
-function showAudibilityCheck(kind, cont){
-  const seq=AUDIBILITY_SEQ[kind];
-  const st={ played:0, attempt:1, examinerHeard:false };
-  const isTarget = k => kind==="tones" ? seq[k] : seq[k]===DIGIT_SET.target;
-  const nameOf = k => kind==="tones" ? (seq[k]?"the HIGH beep":"the LOW beep") : String(seq[k]);
-  const play = k => {
-    if(kind==="digits"){
-      // Straight through, inside the button press: see speakDigitAt. A timer here loses the
-      // gesture and iOS plays nothing.
-      primeSpeech(); clearSpeech(); speakDigitAt(seq[k], 0);
-      return;
-    }
-    newMaster();
-    tone(audio().currentTime+0.08, isTarget(k)?+$("ftgt").value:+$("fstd").value,
-         100, +$("lvl").value);
-  };
-  const script = kind==="tones"
-    ? "I’ll play six beeps. After each one, tell me whether it was the low beep or the high beep."
-    : "I’ll play six numbers. Tell me each number you hear.";
-  const finish=outcome=>{
-    AUDIBILITY[kind]={ outcome, form:kind, attempts:st.attempt,
-      sequence: seq.slice(), presented: st.played,
+/* THE AUDIBILITY CHECK AND THE PRACTICE ON ONE SCREEN.
+
+   Replaces the six-stimulus presentation of 2026-10-01, which drove the presenting itself,
+   printed the answer key in the body where the participant could read it, and buried "pass
+   after repeat" in a browser dialog.
+
+   The beep buttons play ONE beep per press and may be pressed as often as needed, so the
+   examiner demonstrates and tests in whatever order the participant needs rather than
+   working through a script the app imposes. The screen says nothing about which beep is
+   which: the examiner knows from the button they pressed, and the participant must not.
+
+   NEXT AND PRACTICE APPEAR ONLY ONCE AN OUTCOME IS RECORDED, on the conditions that carry a
+   check. A trial with no audibility outcome is a hole that cannot be filled afterwards --
+   it is the only thing separating "could not do the task" from "could not hear the task"
+   when the counts are read months later. BACK and INSTRUCTION are present throughout, so
+   nobody is held on this screen; what is gated is starting the trial, not leaving.
+
+   On a condition with no check (the digits) the same screen renders the practice half
+   alone, so there is one practice screen in the battery rather than two. */
+function showCheckAndPractice(c, seq, form){
+  const practice = !!(TRIAL && TRIAL.practice && !TRIAL.introDone);
+  const st={ examinerHeard:false };
+  const beep = high => { newMaster();
+    tone(audio().currentTime+0.08, high?+$("ftgt").value:+$("fstd").value,
+         100, +$("lvl").value); };
+  const record = outcome => {
+    AUDIBILITY[form]={ outcome, form, attempts:1,
+      presentation:"on_demand_buttons",
       examiner_could_hear: st.examinerHeard,
-      level: +$("lvl").value, volume_step: $("volstep")?+$("volstep").value:null,
+      level:+$("lvl").value, volume_step: $("volstep")?+$("volstep").value:null,
       route_declared: $("audioroute")?$("audioroute").value:null,
-      digit_set: kind==="digits" ? (digitStandin()? "standin/speech_synthesis" : DIGIT_SET.id) : null,
-      at_iso: new Date().toISOString() };
+      digit_set:null, at_iso:new Date().toISOString() };
     saveState();
+  };
+  // Straight into the run, rather than by way of the ready screen: PRACTICE is specified as
+  // "runs the practice sequence", and readyTrial's START would be a second tap for a screen
+  // the examiner has already read. Called inside the click handler so the gesture that iOS
+  // requires before it will speak or play is still the one in progress.
+  const runPractice = () => { TRIAL.introDone=true; hideOverlay(); readyTrial(seq, c, false, true); };
+  const onward = () => {
     hideOverlay();
-    if(AUDIBILITY_PASSES.includes(outcome)) cont();
-    else audibilityFailed(kind);
+    // NEXT with the practice never run is the examiner choosing to skip it, and every trial
+    // of this task records that it was skipped -- "this participant practised" and "the
+    // examiner went straight to the trial" are different facts about every trial.
+    if(practice){ skipRemainingPractice(c.id); return; }
+    readyTrial(seq, c, false);
   };
-  /* THE SPECIFICATION RECORDS ONE OUTCOME, AND THE APP MUST NOT ENFORCE MORE THAN THAT.
 
-     What it says is: present six stimuli in a fixed order, ask the participant to identify
-     each one, and record pass, pass after repeat, or fail. It does not say the app has to
-     drive the presenting, and an earlier version of this screen made that a requirement --
-     the way forward appeared only after six presses of Play. An examiner who did not realise
-     that, or who presented the stimuli some other way, was left on a screen whose only
-     buttons were Play and Exit, with the task unreachable. That is the app inventing a
-     procedure and then blocking the session on it.
-
-     So the answer is available from the first moment. Play is an AID for pacing the six --
-     press it, ask, press the next -- and the outcome can be recorded whenever the examiner
-     is ready, including immediately. The screen says how many have been played, so nobody
-     has to remember; it just does not refuse to proceed. */
+  const detail=()=>{
+    if(c.audio && !c.spiral)
+      return `<p style="font-size:16px;color:#5d6570">${AV_PRACTICE.durS} s containing
+        ${AV_PRACTICE.targets} targets.</p>`;
+    const bits=[];
+    if(c.spiral){
+      const tpl=practiceTemplateName(geomPitch(c), TRIAL.drawHand);
+      const same=geomTurns_raw(c)<=PRACTICE_TURNS;
+      if(tpl) bits.push(`<p style="font-size:16px;color:#5d6570">Template <code>${tpl}</code>${
+        same?" — this condition's test template is already three turns, so the practice runs the same one"
+            :" — three turns, the small spiral"}.</p>`);
+      if(c.audio) bits.push(`<p style="font-size:16px;color:#5d6570">${AV_PRACTICE.durS} s of
+        the stream, containing ${AV_PRACTICE.targets} targets.</p>`);
+      if(c.sustainedS) bits.push(`<p style="font-size:17px;color:#5d6570">Press <b>END</b>
+        once they have done one or two spirals — the practice runs on the same clock as the
+        trial and will not stop on its own before then.</p>`);
+    }
+    return bits.join("");
+  };
   const render=()=>{
-    const all=st.played>=seq.length;
-    const cur=st.played-1;
-    const body = `<h3>Audibility check — ${kind==="tones"?"tones":"spoken numbers"}</h3>
-      <p style="font-size:19px">${script}</p>
-      <p style="font-size:17px;color:#5d6570">
-        ${st.played===0
-          ? `Six stimuli${st.attempt>1?", second presentation":""}, in a fixed order. Press
-             <b>Play</b>, ask what it was, then play the next.`
-          : all
-            ? `All six presented${st.attempt>1?", second time":""}.`
-            : `Played <b>${st.played} of ${seq.length}</b> — that one was
-               <b>${nameOf(cur)}</b>.`}
-        ${st.played>0 && !all
-          ? ` <button class="ghost sm" style="margin-left:8px"
-                onclick="window.__audAgain()">Play that one again</button>` : ""}</p>
-      <p class="note" style="margin:10px auto 0;max-width:520px">In order they are:
-        ${seq.map((_,k)=>nameOf(k)).join(", ")}. Record the outcome whenever you are ready —
-        the buttons below do not wait for all six.</p>
-      <label style="display:flex;align-items:center;gap:9px;justify-content:center;
-        font-size:16px;margin-top:12px;max-width:460px;margin-left:auto;margin-right:auto">
+    const done = form ? AUDIBILITY[form] : true;
+    const head = practice
+      ? `${TRIAL.task} · practice ${TRIAL.practice.step} of ${TRIAL.practice.of}`
+      : `${c.id} · before the trial`;
+    const check = form ? `
+      <h3 style="font-size:26px;line-height:1.3">Audibility check</h3>
+      <p style="font-size:21px;line-height:1.45">“This is the low beep. And this is the high
+        beep. Now tell me which one this is.”</p>
+      <div style="display:flex;gap:14px;justify-content:center;margin:16px 0 4px">
+        <button class="ghost" style="min-width:150px" onclick="window.__cpBeep(0)">LOW BEEP</button>
+        <button class="ghost" style="min-width:150px" onclick="window.__cpBeep(1)">HIGH BEEP</button>
+      </div>
+      <p class="note" style="margin:0 auto 14px;max-width:520px">One beep per press. Press
+        either as many times as you need.</p>
+      <label style="display:inline-flex;align-items:flex-start;gap:10px;
+        font-size:16px;margin:0 auto 16px;max-width:430px;text-align:left;line-height:1.4">
         <input type="checkbox" ${st.examinerHeard?"checked":""}
-          style="width:auto;flex:0 0 auto" onchange="window.__audHeard(this.checked)">
-        <span style="text-align:left">I can hear it clearly from where I am sitting, at the
-        volume that is set</span></label>`;
-    const btns=[];
-    if(!all) btns.push({ label:`Play ${st.played+1} of ${seq.length}`,
-      onClick:()=>{ play(st.played); st.played++; render(); } });
-    btns.push({ label:"All six correct", ghost:!all,
-      onClick:()=>finish(st.attempt===1?"pass":"pass_after_repeat") });
-    btns.push({ label:"Not all six", ghost:true, onClick:()=>{
-      if(st.attempt===1){
-        if(confirm("Present the six again?\n\nOne repetition is allowed. All six correct on "+
-                   "the second presentation is recorded as a pass after repeat.\n\n"+
-                   "Cancel records a fail instead, and the conditions using this stimulus "+
-                   "are left out of the session.")){
-          st.attempt=2; st.played=0; render(); return; }
-      }
-      finish("fail"); } });
-    btns.push({ label:"Exit", ghost:true, onClick:()=>backToSession() });
-    showOverlay(body, btns);
+          style="width:auto;flex:0 0 auto;margin-top:2px" onchange="window.__cpHeard(this.checked)">
+        <span>I can hear it clearly from where I am sitting, at the volume that is
+        set</span></label>
+      ${done
+        ? `<p style="font-size:17px;color:#155e39;font-weight:600">Recorded:
+           ${AUDIBILITY[form].outcome==="fail"?"fail":"pass"}.</p>`
+        : `<p style="font-size:17px;color:#1f2933;margin-bottom:8px">Can they tell them
+             apart?</p>
+           <div style="display:flex;gap:14px;justify-content:center">
+             <button style="min-width:130px" onclick="window.__cpPass()">PASS</button>
+             <button class="ghost" style="min-width:130px" onclick="window.__cpFail()">FAIL</button>
+           </div>`}` : "";
+    const prac = practice ? `
+      ${form?`<hr style="border:0;border-top:1px solid #dfe3e8;margin:22px auto;max-width:560px">`:""}
+      <h3 style="font-size:26px;line-height:1.3">Practice</h3>
+      <p style="font-size:21px;line-height:1.45">“${practiceScript(c, TRIAL.practice.hand,
+        TRIAL.practice.step-1)}”</p>
+      ${detail()}
+      <p class="note" style="margin-top:10px">Nothing here is saved — run it as often as the
+        participant needs.</p>` : "";
+    showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em;
+        margin:0 0 14px">${head}</div>${check}${prac}`, (()=>{
+      const btns=[];
+      if(done && practice) btns.push({ label:"PRACTICE", onClick:runPractice });
+      if(done) btns.push({ label:"NEXT", ghost:practice, onClick:onward });
+      btns.push({ label:"Instruction", ghost:true,
+        onClick:()=>showInstructionScreen(seq, c, practice?{practice:true}:{seq}) });
+      btns.push({ label:"Back", ghost:true, onClick:()=>backToSession() });
+      return btns;
+    })());
   };
-  window.__audAgain = () => { if(st.played>0) play(st.played-1); };
-  window.__audHeard = v => { st.examinerHeard=!!v; };
+  window.__cpBeep = h => beep(!!h);
+  window.__cpHeard = v => { st.examinerHeard=!!v; };
+  window.__cpPass = () => { record("pass"); render(); };
+  window.__cpFail = () => {
+    if(!confirm("Record a FAIL?\n\nThe conditions that use this stimulus are left out of "+
+                "the session, each one recording the reason. It can be cleared again from "+
+                "the session page.")) return;
+    record("fail"); hideOverlay(); audibilityFailed(form); };
   render();
 }
+
 /* A FAILED CHECK TAKES EVERY CONDITION OF THAT KIND OUT OF THE SESSION, not just the one
    that was about to run. The check is a statement about the participant, so a second
    condition using the same stimuli would fail it for the same reason, and presenting one
@@ -8709,7 +8784,7 @@ function audibilityFailed(kind){
     [{ label:"Back to the session", onClick:()=>{ hideOverlay(); backToSession(); } }]);
 }
 
-function readyTrial(seq,c,justInstructed){
+function readyTrial(seq,c,justInstructed,autoStart){
   // THE CHECK COMES BEFORE THE TRIAL IS SET UP, AND GATES IT. Placed here rather than on
   // the instruction screen's Ready button because readyTrial is the one door every trial
   // goes through -- a repeat, an ad-hoc run, and a trial reached after the instruction page
@@ -8717,13 +8792,39 @@ function readyTrial(seq,c,justInstructed){
   // It self-gates on the session outcome, so it presents once per form and never again.
   {
     const form=audibilityForm(TRIAL.task);
-    if(form && !AUDIBILITY[form]){ showAudibilityCheck(form, ()=>readyTrial(seq,c,justInstructed)); return; }
     if(form && audibilityBlocks(TRIAL.task)){ audibilityFailed(form); return; }
-    // THE PRACTICE INTRO, which carries the line the examiner reads. It sits after the
-    // audibility check and before the practice run, which is the order the description
-    // gives, and it is reached through readyTrial because that is the one door every run
-    // goes through -- a Run-it-again lands here too and gets the same screen.
-    if(TRIAL.practice && !TRIAL.introDone){ showPracticeIntro(c, seq); return; }
+    const needCheck = !!(form && !AUDIBILITY[form]);
+    const needPractice = !!(TRIAL.practice && !TRIAL.introDone);
+    /* ONE SCREEN CARRIES BOTH. The check is a thing said once and the practice follows it
+       immediately, so they were two screens with one NEXT between them for no clinical
+       gain. Either half renders alone when the other is not wanted: the digits have no
+       check, and a tone condition reached without a practice row still has to be checked.
+
+       WHICH CONDITION CARRIES THE TONE CHECK is not named anywhere. It is simply the first
+       tone condition the session reaches, because the outcome is stored per form and tested
+       here -- normally VOC_VODD, and PEN_VODD when VOC_VODD is not in the session. That is
+       why removing the check from the dual tasks needed no code: by the time they run, it
+       has already been recorded. */
+    if(needCheck || needPractice){ showCheckAndPractice(c, seq, needCheck?form:null); return; }
+    /* THE INSTRUCTION REPEAT, for a task with no practice to carry it. On every other task
+       this line is shown by practiceResult once the last practice row is done; PEN_VODD and
+       PEN_VDGT have no practice row, so without this they would go from the instruction
+       screen straight into a sixty-second dual trial with nobody having said what doing
+       both at once means. Once per task per session. */
+    if(!TRIAL.practice && !RECAP_SHOWN.has(TRIAL.task) && NO_PRACTICE_DUAL.has(TRIAL.task)){
+      const recap=practiceRecap(c);
+      if(recap){
+        RECAP_SHOWN.add(TRIAL.task);
+        showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;
+            letter-spacing:.04em;margin:0 0 14px">${c.id} · before the first trial</div>
+          <h3 style="font-size:24px">Read this, then start</h3>
+          <p style="font-size:22px;line-height:1.5">“${recap}”</p>`,
+          [{ label:"Ready", onClick:()=>{ hideOverlay(); readyTrial(seq,c,false); } },
+           { label:"Instruction", ghost:true, onClick:()=>showInstructionScreen(seq,c,{seq}) },
+           { label:"Exit", ghost:true, onClick:()=>backToSession() }]);
+        return;
+      }
+    }
   }
   $("hud").classList.remove("cue"); $("hud").classList.remove("big");
   $("hud").textContent = (TRIAL.lengthS===null && !c.audio) ? "" : (TRIAL.lengthS??"")+" s";
@@ -8740,13 +8841,27 @@ function readyTrial(seq,c,justInstructed){
 
   // What changed since the last trial is the thing that gets missed once the instruction
   // page stops appearing, so it is stated large on the screen itself.
-  const handNow = TRIAL.drawHand || TRIAL.tapHand || "both";
-  const changed = !justInstructed && LAST_HAND && handNow!==LAST_HAND && TRIAL.task===LAST_TASK;
+  /* A TASK WITH NO HAND GETS NO HAND SCREEN. VOC_VODD and VOC_VDGT are listening and
+     speaking: drawHand and tapHand are both null on them, so `|| "both"` invented a hand,
+     and the effector fell through the spiral test to the tapping branch. Between them they
+     put "Now tap with the BOTH index finger" in 34-point type in front of a participant
+     about to count beeps. It needed a hand-using task to have run first -- the instruction
+     screen's Ready sets LAST_TASK, so by the time this ran the task matched while LAST_HAND
+     still held the previous task's side -- which is why it never appeared in a single-task
+     test and appeared immediately in a real battery.
+
+     LAST_HAND is left alone on a hand-less task too: it describes the last hand the
+     participant was asked to use, and a listening task does not change that. */
+  const cc0 = byId(TRIAL.task) || {};
+  const taskHasHand = !!(cc0.spiral || cc0.tap || cc0.pent);
+  const handNow = taskHasHand ? (TRIAL.drawHand || TRIAL.tapHand || "both") : null;
+  const changed = !justInstructed && taskHasHand && LAST_HAND && handNow!==LAST_HAND
+                  && TRIAL.task===LAST_TASK;
   if(changed){
     // Name the effector, not just the side: "the right hand" is ambiguous when the task
     // is drawn with a fingertip.
     const cc=byId(TRIAL.task);
-    const what = cc.spiral
+    const what = (cc.spiral || cc.pent)
       ? (TRIAL.implement==="finger"
           ? `Now use the <b>index finger</b> of the <b>${handNow.toUpperCase()}</b> hand to draw`
           : `Now draw with the <b>${handNow.toUpperCase()}</b> hand`)
@@ -8773,7 +8888,8 @@ function readyTrial(seq,c,justInstructed){
       : "";
   }
   const start=document.createElement("button"); start.textContent="START";
-  start.onclick=()=>{ $("ctrl").innerHTML=""; LAST_TASK=TRIAL.task; LAST_HAND=handNow;
+  start.onclick=()=>{ $("ctrl").innerHTML=""; LAST_TASK=TRIAL.task;
+                      if(taskHasHand) LAST_HAND=handNow;
                       if($("saypre")) $("saypre").innerHTML="";
                       // The one gesture every trial has. iOS will not speak before one, and
                       // on a spiral condition the stream starts at the first pen contact,
@@ -8781,6 +8897,10 @@ function readyTrial(seq,c,justInstructed){
                       if(digitStandin()) primeSpeech();
                       runTrial(seq,c); };
   $("ctrl").appendChild(start);
+  // PRACTICE on the merged screen means "run it", not "show me the screen that runs it".
+  // Fired here, inside the same click, so the user gesture iOS requires before it will play
+  // or speak has not been lost to a timer.
+  if(autoStart){ start.onclick(); return; }
 
   const ins=document.createElement("button"); ins.textContent="Instruction";
   ins.className="ghost"; ins.style.minWidth="0";
@@ -10068,11 +10188,26 @@ const AV_SWITCH = [
   ["both",            "Both, at different points"],
   ["not_observed",    "Could not tell"]
 ];
-// Which fields a condition has. Field 2 exists only where a running total is held, so the
-// digit conditions do not have it: there is no total to report, which is the point of them.
+/* ONE COUNT FIELD, which one depending on whether there is a total to ask for.
+
+   Until 2026-10-04 this screen had five fields, taken from the auditory-verbal spec: the
+   examiner's own observed count, the participant's reported total, a quality rating, a note,
+   and the task-switching flag. The task description asks for one -- "How many high beeps?",
+   with a place to enter the number, left blank if they give none -- and that is what runs.
+
+   The counting aloud is not lost by dropping the examiner's field: it is in the voice
+   recording, which the specification already calls the primary record, captured in the same
+   file as the stimulus.
+
+   The digit conditions have no running total to ask the participant for, which is the whole
+   point of them, so their one field is the examiner's count of "yes" responses instead.
+
+   The task-switching flag stays on the two dual tasks. Nothing said about this screen
+   addressed dual tasks, the auditory-verbal spec asks for it there, and it is the only
+   record of a participant who did one half by abandoning the other. */
 const avEntrySpec = c => ({
-  observe: c.avObserve || null,
-  report:  !!c.count,
+  observe: c.count ? null : (c.avObserve || null),   // digits: what the examiner heard
+  report:  !!c.count,                                 // tones: what the participant reports
   switch:  isDualTask(c)
 });
 // Does this trial need the entry screen at all?
@@ -10084,72 +10219,27 @@ function askExaminerEntry(seq){
     observed_count:null, observed_unable:false, observed_entered:false,
     reported_kind:null, reported_value:null,
     quality:null, note:"", task_switch:null };
-  const observedLabel = spec.observe==="yes_responses"
-    ? "How many “yes” responses did you hear?"
-    : "What was the last number you heard them reach?";
   const render=()=>{
-    const locked=E.observed_entered;
     const rows=[];
-    // NUMBERED CONSECUTIVELY AS SHOWN, not by the specification's field numbers. A digit
-    // condition has no field 2, and printing "1, 3, 4" on screen reads as a field that
-    // failed to render rather than as one that does not exist for this condition. The
-    // specification's numbering is what `field_order` in the record preserves; this counter
-    // is only what the examiner reads down the page.
-    let fieldNo=0;
-    const num=()=>String(++fieldNo);
-    // ---- field 1 -----------------------------------------------------------------
-    rows.push(`<div style="text-align:left;max-width:560px;margin:0 auto 18px">
-      <div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em">${num()} · WHAT YOU HEARD</div>
-      <div style="font-size:21px;margin:4px 0 8px">${observedLabel}</div>
-      ${locked
-        ? `<div style="font-size:24px"><b>${E.observed_unable?"Unable to track":E.observed_count}</b>
-           <span class="note" style="margin:0 0 0 10px">recorded, and not editable — see below</span></div>`
-        : `<input id="obsInput" type="number" min="0" max="500" value="${E.observed_count??""}"
-             style="max-width:170px;font-size:26px;text-align:center">
-           <label style="display:flex;align-items:center;gap:9px;font-size:16px;margin-top:9px">
-             <input type="checkbox" ${E.observed_unable?"checked":""}
-               onchange="window.__avEntry('unable',this.checked)">
-             I could not follow it well enough to say</label>`}
+    // ---- the count -----------------------------------------------------------------
+    if(spec.report) rows.push(`<div style="text-align:center;max-width:560px;margin:0 auto 22px">
+      <div style="font-size:26px;margin:4px 0 14px">“How many high beeps in total?”</div>
+      <input id="repInput" type="number" min="0" max="500"
+        value="${E.reported_kind==="integer"?E.reported_value:""}"
+        style="max-width:190px;font-size:34px;text-align:center"
+        oninput="window.__avEntry('repNum',this.value)">
+      <div class="note" style="margin:10px auto 0">Leave blank if they do not give a number.</div>
     </div>`);
-    // ---- field 2 -----------------------------------------------------------------
-    if(spec.report) rows.push(`<div style="text-align:left;max-width:560px;margin:0 auto 18px;
-        ${locked?"":"opacity:.4;pointer-events:none"}">
-      <div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em">${num()} · WHAT THEY REPORT</div>
-      <div style="font-size:21px;margin:4px 0 8px">“How many high beeps in total?”</div>
-      ${locked
-        ? `<input id="repInput" type="number" min="0" max="500"
-             value="${E.reported_kind==="integer"?E.reported_value:""}"
-             placeholder="their number"
-             style="max-width:170px;font-size:26px;text-align:center"
-             oninput="window.__avEntry('repNum',this.value)">
-           <div style="margin-top:9px">${AV_REPORT_OPTS.map(([k,l])=>
-             `<button class="ghost sm" style="margin:3px 6px 3px 0;${E.reported_kind===k
-               ?"background:#e3f3ea;border-color:#9ecfb5;font-weight:600":""}"
-               onclick="window.__avEntry('repKind','${k}')">${l}</button>`).join("")}</div>`
-        : `<div class="note" style="margin:0">Available once field 1 is recorded.</div>`}
+    if(spec.observe) rows.push(`<div style="text-align:center;max-width:560px;margin:0 auto 22px">
+      <div style="font-size:26px;margin:4px 0 14px">How many “yes” responses did you hear?</div>
+      <input id="obsInput" type="number" min="0" max="500" value="${E.observed_count??""}"
+        style="max-width:190px;font-size:34px;text-align:center"
+        oninput="window.__avEntry('obsNum',this.value)">
+      <div class="note" style="margin:10px auto 0">Leave blank if you could not follow it.</div>
     </div>`);
-    // ---- field 3 -----------------------------------------------------------------
-    rows.push(`<div style="text-align:left;max-width:560px;margin:0 auto 18px">
-      <div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em">${num()} · QUALITY</div>
-      <div style="margin-top:6px">${AV_QUALITY.map(([k,l])=>
-        `<button class="ghost sm" style="margin:3px 6px 3px 0;${E.quality===k
-          ?"background:#e3f3ea;border-color:#9ecfb5;font-weight:600":""}"
-          onclick="window.__avEntry('quality','${k}')">${l}</button>`).join("")}</div>
-    </div>`);
-    // ---- field 4 -----------------------------------------------------------------
-    rows.push(`<div style="text-align:left;max-width:560px;margin:0 auto 4px">
-      <div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em">${num()} · NOTE</div>
-      <textarea id="avNote" rows="2" style="width:100%;font-size:17px;margin-top:6px"
-        oninput="window.__avEntry('note',this.value)"
-        placeholder="anything about this trial worth recording">${esc(E.note||"")}</textarea>
-    </div>`);
-    // ---- field 5 -----------------------------------------------------------------
-    // LAST, which is the order the specification states. An earlier draft put it above the
-    // note so the free text would be the final thing typed; the note no longer re-renders
-    // on each keystroke, so there is nothing to gain from the swap and a stated order is
-    // worth more than the convenience was.
+    // ---- the dual-task flag ----------------------------------------------------------
     if(spec.switch) rows.push(`<div style="text-align:left;max-width:560px;margin:0 auto 18px">
-      <div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em">${num()} · TASK SWITCHING</div>
+      <div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em">TASK SWITCHING</div>
       <div style="font-size:17px;margin:4px 0 6px;color:#5d6570">Did either task stop while the
         other one was being done?</div>
       <div>${AV_SWITCH.map(([k,l])=>
@@ -10157,22 +10247,12 @@ function askExaminerEntry(seq){
           ?"background:#e3f3ea;border-color:#9ecfb5;font-weight:600":""}"
           onclick="window.__avEntry('switch','${k}')">${l}</button>`).join("")}</div>
     </div>`);
+    // A BLANK COUNT IS A VALID ANSWER and must not be nagged about -- the description says
+    // to leave it blank when no number is given. The dual-task flag is the only thing the
+    // examiner cannot answer later from the recording, so it is the only thing required.
     const missing=[];
-    if(!E.observed_entered) missing.push("field 1");
-    if(spec.report && E.observed_entered && !E.reported_kind) missing.push("field 2");
-    if(!E.quality) missing.push("the quality rating");
     if(spec.switch && !E.task_switch) missing.push("the task-switching answer");
     const btns=[];
-    if(!E.observed_entered) btns.push({ label:"Record what you heard", onClick:()=>{
-        const el=$("obsInput"), v=el?el.value:"";
-        if(!E.observed_unable && v===""){
-          alert("Enter the number you heard, or tick that you could not follow it.\n\n"+
-                "This field is what you heard, and it is recorded before you ask them for "+
-                "their total — which is why it cannot be left for later.");
-          return; }
-        E.observed_count = E.observed_unable ? null : +v;
-        E.observed_entered=true;
-        render(); } });
     btns.push({ label:"Save the trial", ghost:!!missing.length, onClick:()=>{
         if(missing.length){ alert("Still to complete: "+missing.join(", ")+"."); return; }
         hideOverlay();
@@ -10186,25 +10266,22 @@ function askExaminerEntry(seq){
                     "what you heard and anything the participant said.")) return;
         backToSession(); } });
     showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em;
-        margin:0 0 14px">${RUN.task} · trial complete — your record of it</div>`+
+        margin:0 0 18px">${RUN.task} · trial complete</div>`+
       rows.join("") +
       `<div class="note" style="max-width:560px;margin:14px auto 0;text-align:left">
-        Do not tell them the number. Three more trials of this kind may follow, and an
-        examiner who knows the answer prompts differently.</div>`, btns);
+        Do not tell them the number. More trials of this kind may follow, and an examiner
+        who knows the answer prompts differently.</div>`, btns);
   };
   window.__avEntry=(what,v)=>{
-    if(what==="unable"){ E.observed_unable=!!v; if(v && $("obsInput")) $("obsInput").value=""; render(); return; }
-    if(what==="repKind"){ E.reported_kind=v; E.reported_value=null;
-      if($("repInput")) $("repInput").value=""; render(); return; }
     if(what==="repNum"){
-      if(v===""){ if(E.reported_kind==="integer"){ E.reported_kind=null; E.reported_value=null; } }
+      if(v===""){ E.reported_kind=null; E.reported_value=null; }
       else { E.reported_kind="integer"; E.reported_value=+v; }
-      render(); return; }
-    if(what==="quality"){ E.quality=v; render(); return; }
+      return; }
+    if(what==="obsNum"){
+      if(v===""){ E.observed_count=null; E.observed_entered=false; }
+      else { E.observed_count=+v; E.observed_entered=true; }
+      return; }
     if(what==="switch"){ E.task_switch=v; render(); return; }
-    // The note must not re-render: doing so would rebuild the textarea and lose the caret
-    // on every keystroke.
-    if(what==="note"){ E.note=v; return; }
   };
   render();
 }
@@ -11024,7 +11101,15 @@ function buildRecord(){
       const level = rep==null ? (E.reported_kind || "no_number")
         : (want!=null && Math.abs(rep-want)<=2 ? "plausible" : "grossly_discrepant");
       return {
-        field_order:["observed_count","participant_reported_total","quality","note","task_switch"],
+        // WHAT THE SCREEN ACTUALLY ASKED, which from 2026-10-04 is one count and, on a dual
+        // task, the switching flag. The other three keys below are still written so the
+        // export keeps one shape across the whole pilot; they are null on every trial run
+        // by this build, and non-null only on trials collected before the change.
+        field_order: c.count ? (isDualTask(c) ? ["participant_reported_total","task_switch"]
+                                              : ["participant_reported_total"])
+                             : (isDualTask(c) ? ["observed_count","task_switch"]
+                                              : ["observed_count"]),
+        entry_screen_version:"one_count_2026_10_04",
         observed_count: E.observed_unable ? null : (E.observed_count??null),
         observed_unable_to_track: !!E.observed_unable,
         observed_of: c.avObserve || null,
@@ -11040,8 +11125,8 @@ function buildRecord(){
         quality: E.quality||null,
         note: E.note||"",
         task_switch: isDualTask(c) ? (E.task_switch||null) : "not_applicable",
-        entry_order_enforced:true,
-        note_on_order:"field 1 is recorded before the participant is asked for their total, and is not editable afterwards. Both fields are the examiner's judgment about the same quantity and the second arrives with the answer attached, so the order is what keeps field 1 independent of it."
+        entry_order_enforced:false,
+        note_on_order:"one count field, left blank when the participant gives no number. The count spoken aloud during the trial is in the voice recording, which is the primary record; the examiner's own observed count, the quality rating and the free-text note were removed from this screen on 2026-10-04 and are null on every trial from this build."
       }; })() : null,
     verbal: c.verbal ? { ...(TRIAL.verbal||{}),
         fluency_cue_ms: R.fluencyCueMs ?? null,
