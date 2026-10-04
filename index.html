@@ -97,9 +97,25 @@
             touch-action:none; display:block; margin-top:10px; width:100%; }
   /* Screening canvases behave like the pen pad: they own their touch handling, and the
      page behind them must not scroll while a stylus is dragging across one. */
+  /* touch-action:none means the browser will not scroll a drag that STARTS on this
+     element, which is exactly right for a drawing pad and exactly wrong for a full-width
+     block sitting in the middle of the page the app opens on. The checks moved to the
+     device page, and with them a region where swiping did nothing -- on a long page, with
+     no other symptom, that reads as an app that has stopped responding. The pads are
+     collapsed behind a disclosure now, so nothing on the landing page refuses to scroll
+     until the examiner has opened a check deliberately. */
   .screenpad { border:1px solid var(--line); border-radius:10px; background:#fff;
                touch-action:none; display:block; margin-top:10px; width:100%;
                user-select:none; -webkit-user-select:none; -webkit-touch-callout:none; }
+  details.check > summary { cursor:pointer; font-size:15px; font-weight:600; padding:8px 0;
+                            color:var(--accent); }
+  details.check[open] > summary { margin-bottom:4px; }
+  /* A CLOSED <details> HIDES ITS CHILDREN THROUGH A USER-AGENT RULE, and an author rule
+     beats a user-agent one -- so .screenpad's own display:block kept the canvas on screen
+     inside a details that reported itself closed. The pad stayed visible, stayed full width,
+     and kept its touch-action:none, which is the whole thing the disclosure was added to
+     stop. Stated here as an author rule so it wins. */
+  details.check:not([open]) > *:not(summary) { display:none !important; }
   /* Red while unanswered, green once ticked. Consent is not a preference among the other
      ticks on this page: six of the fifteen conditions cannot be planned without it, so an
      unticked box is the reason most of the battery is greyed out two pages later. It reads
@@ -490,6 +506,8 @@
       <b>This is not the participant's practice</b> — that is administered inside the session,
       on each task, with that task's own rules. Draw it yourself if you prefer; what is being
       checked is the device.</p>
+      <details class="check" id="pencheckbox" ontoggle="padGateChanged()">
+      <summary>Open the pad to run the check</summary>
       <div class="r4">
         <div><label for="pchand">Hand</label>
           <select id="pchand" onchange="practiceReset()"><option value="right">Right</option>
@@ -512,6 +530,7 @@
            appears inside that report rather than beside a pad that is working. -->
       <div id="prlog"></div>
       <div id="prresult" class="note"></div>
+      </details>
     </fieldset>
 
     <!-- The touch half of the same question. It reported itself as tapping PRACTICE, on the
@@ -529,6 +548,8 @@
       <b>The tones here are something to tap to, not a hearing check</b> — they play at
       whatever volume is set. What the participant can hear is the sound check on the next
       page, and the audibility check inside the session.</p>
+      <details class="check" id="touchcheckbox">
+      <summary>Open the pad to run the check</summary>
       <div class="r3" style="margin-top:8px">
         <div><label for="tphand">Hand</label>
           <select id="tphand" onchange="tapPracticeReset()">
@@ -541,6 +562,7 @@
         <span id="tpcount" class="note" style="margin:0"></span>
       </div>
       <div id="tpresult" class="note"></div>
+      </details>
     </fieldset>
 
     <div class="navrow"><span></span><button class="big" onclick="goPage(2)">Next</button></div>
@@ -1157,6 +1179,28 @@
 
 <script>
 "use strict";
+/* IF THE SCRIPT DIES, SAY SO ON THE SCREEN.
+
+   The markup is static, so a page whose script threw during start-up still RENDERS
+   perfectly: every control is drawn, every inline onclick refers to a function that was
+   never defined, and nothing responds. From the examiner's side that is indistinguishable
+   from a stale page, a covered page, or a broken button -- which is three wrong diagnoses
+   deep before anyone thinks to open a console that an iPad does not have.
+
+   So the first thing this script does is arrange to be visible when it fails. */
+window.addEventListener("error", e => {
+  try{
+    if(document.getElementById("bootfail")) return;
+    const d=document.createElement("div"); d.id="bootfail";
+    d.style.cssText="position:fixed;inset:0 0 auto 0;z-index:9999;background:#8c2020;"+
+      "color:#fff;font:14px/1.45 system-ui;padding:12px 16px;white-space:pre-wrap";
+    d.textContent="The app hit an error and may not respond.\n"+
+      (e.message||e.error||"unknown")+"\nat "+(e.filename||"").split("/").pop()+
+      " line "+e.lineno+":"+e.colno+"\nBuild "+(typeof BUILD!=="undefined"?BUILD:"?")+
+      "\n"+navigator.userAgent;
+    (document.body||document.documentElement).appendChild(d);
+  }catch(_){}
+});
 const BUILD = "v14.01 2026-10-01";
 
 /* ============================================================================
@@ -2826,6 +2870,11 @@ function practiceSetup(){
   // and was the only one exported, so anything reaching for "the zone" got the wrong circle.
   return { g,w,h,cx,cy,R,dir,endPx:ec, zonePx:ez, startPx:sd };
 }
+// The canvas sizes itself from clientWidth, which is 0 while the disclosure is closed.
+function padGateChanged(){
+  const d=$("pencheckbox");
+  if(d && d.open) requestAnimationFrame(()=>practiceRender());
+}
 function practiceRender(){
   PR.view=practiceSetup();
   if($("prcount")) $("prcount").textContent =
@@ -3070,12 +3119,19 @@ function practiceReset(){
   // "page" what reached the document. The two disagreeing is the finding.
   cv.addEventListener("pointerdown", e=>{ prCount(PRLOG.canvas, e.pointerType); renderPrLog(); },
     {passive:true});
+  /* THE PAD IS ONLY LIVE WHILE IT IS OPEN. Its handlers are attached to the document in
+     the capture phase and its canvas carries touch-action:none, so a closed pad that still
+     counted as "on the page" went on claiming contacts and refusing to scroll on the page
+     the app opens on. */
+  const padOpen = () => { const d=$("pencheckbox"); return !d || d.open; };
   const onPad = e => { const pg=$("pg1");
     if(pg && pg.classList.contains("hidden")) return false;
+    if(!padOpen()) return false;
     const r=cv.getBoundingClientRect();
     return e.clientX>=r.left && e.clientX<=r.right && e.clientY>=r.top && e.clientY<=r.bottom; };
   document.addEventListener("pointerdown", e=>{
     const pg=$("pg1"); if(pg && pg.classList.contains("hidden")) return;
+    if(!padOpen()) return;
     noteSeenType(e.pointerType);
     prCount(PRLOG.page, e.pointerType);
     // DISARMS THE TOUCH FALLBACK. A real pen pointerdown proves pointer events work on this
@@ -3092,7 +3148,8 @@ function practiceReset(){
   document.addEventListener("pointercancel", e=>{ if(PR.drawing) cancel(e);  }, {capture:true});
   // EVERY pointer event type the pen produces, named. pointerover and pointermove without a
   // pointerdown is a pencil the browser sees and will not let the page have; see PRLOG.
-  const onChecks = () => { const pg=$("pg1"); return !(pg && pg.classList.contains("hidden")); };
+  const onChecks = () => { const pg=$("pg1");
+    return !(pg && pg.classList.contains("hidden")) && padOpen(); };
   ["pointerover","pointerenter","pointermove","pointerdown","pointerup","pointerout",
    "pointercancel","pointerleave"].forEach(t=>
     document.addEventListener(t, e=>{
