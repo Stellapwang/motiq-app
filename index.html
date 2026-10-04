@@ -1204,45 +1204,65 @@
 
    So the first thing this script does is arrange to be visible when it fails. */
 window.__ERRORS=[];
-window.addEventListener("error", e => {
+/* THE ERROR HAS TO BE GETTABLE OFF THE DEVICE, which is a different problem from detecting
+   it. An iPad has no console, the detail is small, and reading a stack trace aloud is not a
+   thing anyone should be asked to do. So: the message itself is large enough to photograph,
+   the whole report including the stack sits in a selectable block, and Copy puts it on the
+   clipboard in one tap.
+
+   Promise rejections are caught too. window.onerror does not see them, and the three things
+   most likely to fail on an iPad -- the microphone, IndexedDB and audio decoding -- are all
+   promise-based, so without this the most probable failures would be the invisible ones. */
+function __report(kind, message, file, line, col, stack){
   try{
-    const rec={ message:String(e.message||e.error||"unknown"),
-                file:String(e.filename||"").split("/").pop(),
-                line:e.lineno, col:e.colno,
-                at:new Date().toISOString() };
-    window.__ERRORS.push(rec);
+    window.__ERRORS.push({ kind, message:String(message||"unknown"),
+      file:String(file||"").split("/").pop(), line, col, stack:String(stack||""),
+      at:new Date().toISOString() });
     let d=document.getElementById("bootfail");
     if(!d){
       d=document.createElement("div"); d.id="bootfail";
       d.style.cssText="position:fixed;left:0;right:0;top:0;z-index:9999;background:#8c2020;"+
-        "color:#fff;font:13px/1.45 system-ui;padding:10px 12px;max-height:45vh;overflow:auto;"+
+        "color:#fff;font:13px/1.45 system-ui;padding:12px;max-height:60vh;overflow:auto;"+
         "-webkit-overflow-scrolling:touch";
       (document.body||document.documentElement).appendChild(d);
     }
-    const all=window.__ERRORS;
+    const esc=t=>String(t).replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]));
+    const first=window.__ERRORS[0];
+    const full=window.__ERRORS.map((r,n)=>
+      (n+1)+". ["+r.kind+"] "+r.message+"\n   "+r.file+" line "+r.line+":"+r.col+
+      (r.stack?"\n   "+r.stack.split("\n").slice(0,4).join("\n   "):"")).join("\n")+
+      "\n--\nbuild "+(typeof BUILD!=="undefined"?BUILD:"?")+"\n"+navigator.userAgent;
+    window.__ERRTEXT=full;
     d.innerHTML =
-      '<div style="font-weight:700;margin-bottom:4px">The app hit an error and may not respond.</div>'+
+      '<div style="font-weight:700;font-size:15px">The app hit an error and may not respond.</div>'+
+      '<div style="font-size:18px;font-weight:600;margin:8px 0;word-break:break-word">'+
+        esc(first.message)+'</div>'+
+      '<div style="font-size:14px;opacity:.9">'+esc(first.file)+' line '+first.line+':'+first.col+'</div>'+
+      '<div style="margin:10px 0;display:flex;gap:8px;flex-wrap:wrap">'+
+        '<button id="bfcopy" style="font-size:15px;padding:9px 16px;border-radius:7px;'+
+          'border:0;background:#fff;color:#8c2020;font-weight:600">Copy the full report</button>'+
+        '<button id="bfhide" style="font-size:15px;padding:9px 16px;border-radius:7px;'+
+          'border:1px solid #fff;background:transparent;color:#fff">Hide</button></div>'+
       '<div style="font:12px/1.4 ui-monospace,Menlo,monospace;white-space:pre-wrap;'+
-        'background:rgba(0,0,0,.25);padding:8px;border-radius:6px;user-select:text;'+
-        '-webkit-user-select:text">'+
-        all.map((r,k)=>(k+1)+". "+r.message+"\n   "+r.file+" line "+r.line+":"+r.col)
-           .join("\n").replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]))+
-        "\n   build "+(typeof BUILD!=="undefined"?BUILD:"?")+
-        "\n   "+navigator.userAgent+"</div>"+
-      '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">'+
-        '<button onclick="this.closest(\'#bootfail\').remove()" '+
-          'style="font-size:13px;padding:7px 14px;border-radius:7px;border:1px solid #fff;'+
-          'background:transparent;color:#fff">Hide</button>'+
-        '<span style="font-size:12px;opacity:.85;align-self:center">'+
-          'The text above is selectable — send it to Claude.</span></div>';
+        'background:rgba(0,0,0,.28);padding:8px;border-radius:6px;user-select:text;'+
+        '-webkit-user-select:text">'+esc(full)+'</div>';
+    const cp=document.getElementById("bfcopy");
+    if(cp) cp.onclick=()=>{
+      try{ navigator.clipboard.writeText(window.__ERRTEXT)
+             .then(()=>{cp.textContent="Copied — paste it to Claude";})
+             .catch(()=>{cp.textContent="Select the text below and copy";}); }
+      catch(_){ cp.textContent="Select the text below and copy"; } };
+    const hd=document.getElementById("bfhide");
+    if(hd) hd.onclick=()=>d.remove();
   }catch(_){}
+}
+window.addEventListener("error", e =>
+  __report("error", e.message||e.error, e.filename, e.lineno, e.colno,
+           e.error && e.error.stack));
+window.addEventListener("unhandledrejection", e => {
+  const r=e && e.reason;
+  __report("promise", (r && (r.message||r.name)) || r, "", 0, 0, r && r.stack);
 });
-/* AN ERROR MUST NOT ALSO TAKE THE SCREEN. The first version of this banner was a fixed
-   block with no way out, so a non-fatal error -- and most are -- covered the examiner bar
-   and cost them the trial controls on top of whatever went wrong. It is capped at 45% of
-   the height, scrolls, lists every error rather than only the first, keeps them in
-   window.__ERRORS, and can be dismissed. The detail is selectable because the whole point
-   is that somebody can read it back. */
 const BUILD = "v14.01 2026-10-01";
 
 /* ============================================================================
