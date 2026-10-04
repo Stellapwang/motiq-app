@@ -9471,6 +9471,12 @@ function runTrial(seq,c){
     // red circle's location on the way round.
     // Scaled to THIS template's turns, not to the examiner's number on its own: see
     // advanceGate. At 12 x 5 these are the numbers the gate has always used.
+    //
+    // DECLARED HERE, which it stopped being when the readout moved out to showGate and took
+    // this line with it. Every frame after the rings test then threw ReferenceError: GATE is
+    // not defined, out of the animation loop -- so the loop died, the readout froze on its
+    // last values, and the spiral could never advance however well it was drawn.
+    const GATE=advanceGate(geomTurns(byId(TRIAL.task)));
     if(!RUN.angle || RUN.angle.bandsDrawn < GATE.rings){ RUN.endZoneSince=null; return; }
     // Laps are signed crossings of the template's own end ray, so a five-turn spiral crosses
     // five times whether it is drawn at 60 mm or 90 mm. That is what makes the gate
