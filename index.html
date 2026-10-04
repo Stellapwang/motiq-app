@@ -262,6 +262,10 @@
      padding:12px 18px; background:#fdecec; color:#8c2020; border-bottom:1px solid #e9b7b7;
      font-size:17px; line-height:1.5; text-align:center; }
   #adminbar .spacer { flex:0 1 auto; }
+  #gatehud { font-size:13px; color:#8a9099; white-space:nowrap; flex:0 0 auto;
+             font-variant-numeric:tabular-nums; }
+  #gatehud b { color:var(--ink); font-weight:600; }
+  #gatehud .ok { color:var(--ok); }
   @media (max-width:820px){
     #adminbar button { font-size:15px; padding:8px 12px; min-width:0; }
   }
@@ -1158,6 +1162,11 @@
   <div id="adminbar">
     <div id="ctrl" style="display:flex;gap:12px"></div>
     <div id="hud"></div>
+    <!-- WHY THE SPIRAL HAS NOT ENDED YET. Four things gate it and all four were invisible,
+         so "the automatic end did not work" had no way to become "it is 2.3 of the 2.6 laps
+         it needs". Examiner shorthand, in the examiner's own bar, small and grey: the
+         participant is looking down at the spiral, not up at a toolbar. -->
+    <div id="gatehud"></div>
     <div id="recdot"></div>
     <div id="levelmeter"><div id="levelbar"><i></i></div><span id="leveltxt"></span></div>
     <div class="spacer"></div>
@@ -7786,6 +7795,7 @@ function openTrial(showInstruction){
   STROKES=[]; TAPS=[]; TAPFLASH=null; HOVER=[];
   TRIAL.voiceFailure=null;
   if($("contactwarn")) $("contactwarn").innerHTML="";
+  if($("gatehud")) $("gatehud").innerHTML="";
   // The trial owns the stage from here, so the overlay no longer does.
   stageOn(true); STAGE_RAISED_BY_OVERLAY=false;
   layout(); drawScene();
@@ -8271,8 +8281,21 @@ const practiceSkippable = c => !isDualTask(c);
 // is SPR_P12T3 on the stylus and SPR_P10T3 on the small finger set -- where it coincides
 // with that condition's test template, because the test template is already three turns.
 // The screen says so rather than pretending the practice is smaller than it is.
+/* A SUSTAINED-SPIRAL PRACTICE RUNS THE TASK'S OWN WINDOW, not a 20-second one.
+
+   20 seconds is the description's figure for the AUDIO practice -- "a 20-second sequence
+   containing three targets" -- and for the dual task, which it also fixes at 20. It says
+   nothing of the kind for PEN_SPR60: "one practice sequence per hand", ended by the
+   examiner. Borrowing the audio number for it was mine, and it is too short: the pass gate
+   alone requires four seconds, and an older adult tracing a three-turn spiral carefully and
+   then holding a second in the red circle can easily take longer than twenty. The window
+   closed before the spiral could end, so no new template ever appeared -- which from the
+   other side of the glass is exactly "the automatic end did not work".
+
+   With the task's own window the practice obeys the same clock as the trial, and the
+   examiner presses END after a spiral or two, which is what one sequence means. */
 const practiceWindowS = c => isDualTask(c) ? AV_PRACTICE.durS
-                           : (c.sustainedS ? AV_PRACTICE.durS : null);
+                           : (c.sustainedS ? c.sustainedS : null);
 // What the examiner says, from the task description.
 function practiceScript(c, hand, step){
   const H=hand==="none" ? null : physHand(hand).toUpperCase();
@@ -8353,6 +8376,10 @@ function showPracticeIntro(c, seq){
           :" — three turns, the small spiral"}.</p>`:""}
     ${c.audio?`<p style="font-size:16px;color:#5d6570">${AV_PRACTICE.durS} s containing
       ${AV_PRACTICE.targets} targets.</p>`:""}
+    ${c.spiral && c.sustainedS
+      ? `<p style="font-size:17px;color:#5d6570">Press <b>END</b> once they have done one or
+         two spirals — the practice runs on the same clock as the trial and will not stop on
+         its own before then.</p>` : ""}
     <p class="note" style="margin-top:12px">Nothing here is saved. Run it again as often as
     the participant needs.</p>`, btns);
 }
@@ -9314,8 +9341,53 @@ function runTrial(seq,c){
     drawScene();
   };
   // Checked every frame while a sustained window is open.
+  /* WHY THE SPIRAL HAS NOT ENDED YET, written every frame BEFORE any of the gates can
+     return early. Four conditions hold a pass open -- laps, rings, a minimum duration and
+     the hold -- and all four were invisible, so "the automatic end did not work" had no way
+     to become "it is at 2.3 of the 2.6 laps it needs" or "the pen is not in the circle".
+
+     Written first on purpose: an earlier version sat below the minimum-duration check and
+     therefore said nothing at all for the first four seconds of every pass, which is
+     precisely when an examiner looks at it. */
+  /* ONE DEFINITION OF IN THE CIRCLE, used by the detector and by the readout. The readout
+     first inferred it from endZoneSince, which is only set once the LAP GATE is open -- so a
+     pen resting exactly on the end point was reported as "not in the red circle" while the
+     real reason the pass had not ended was that it was 2.4 of the 2.6 laps in. Telling the
+     examiner the wrong one of four conditions is worse than telling them nothing. */
+  const penInEndZone = () => !!(RUN && RUN.endMM && RUN.penMM && strokeFor.size>0 &&
+    Math.hypot(RUN.penMM.x-RUN.endMM.x, RUN.penMM.y-RUN.endMM.y)
+      <= endZoneDiaMM(geomPitch(byId(TRIAL.task)))/2);
+  const showGate=()=>{
+    const gh=$("gatehud"); if(!gh) return;
+    if(!RUN || !RUN.sustained || !SPIRAL){ gh.innerHTML=""; return; }
+    // THE WINDOW CAN CLOSE WHILE THE TRIAL IS STILL OPEN -- a spiral keeps recording until
+    // the examiner presses END. The readout used to freeze on its last value there, which
+    // reads as the app having stopped rather than the window having finished.
+    if(RUN.windowEndedAt!=null){
+      gh.innerHTML=`<b>window finished</b> · press END`; return; }
+    if(RUN.windowStart==null){
+      gh.innerHTML=`waiting for the first contact in the green circle`; return; }
+    const GATE=advanceGate(geomTurns(byId(TRIAL.task)));
+    const laps=RUN.angle?RUN.angle.lapsSwept:0, rings=RUN.angle?RUN.angle.bandsDrawn:0;
+    const since=RUN.passStartedAt?(performance.now()-RUN.passStartedAt)/1000:0;
+    const holdFor=RUN.endZoneSince!=null ? (performance.now()-RUN.endZoneSince)/1000 : null;
+    const bit=(ok,txt)=>ok?`<span class="ok">${txt}</span>`:txt;
+    if(!RUN.passStarted){
+      gh.innerHTML=`pass ${RUN.pass} · <b>waiting for the green circle</b>`; return; }
+    gh.innerHTML = `pass ${RUN.pass} · `+
+      bit(laps>=GATE.openAt, `laps <b>${laps.toFixed(1)}</b>/${GATE.openAt.toFixed(1)}`)+" · "+
+      bit(rings>=GATE.rings, `rings <b>${rings}</b>/${GATE.rings}`)+" · "+
+      bit(since>=MIN_PASS_MS/1000, `<b>${since.toFixed(0)}</b>/${(MIN_PASS_MS/1000).toFixed(0)}s`)+
+      " · "+(holdFor!=null
+        ? `<b class="ok">hold ${holdFor.toFixed(1)}</b>/${(END_ZONE_HOLD_MS/1000).toFixed(0)}s`
+        : strokeFor.size===0 ? "pen up"
+        : penInEndZone() ? "<b>in the circle</b>, waiting on the figures above"
+        : "not in the red circle");
+  };
   const checkAdvance=()=>{
-    if(!RUN || !RUN.sustained || !inWindow() || !SPIRAL) return;
+    if(!RUN || !RUN.sustained || !SPIRAL) return;
+    showGate();                       // before the window test: see the window-ended branch
+    if(!inWindow()) return;
     // Nothing can end that has not started. This is the guard that makes the rest of the
     // rule mean what it says.
     if(!RUN.passStarted){ RUN.endZoneSince=null; return; }
@@ -9347,7 +9419,6 @@ function runTrial(seq,c){
     // red circle's location on the way round.
     // Scaled to THIS template's turns, not to the examiner's number on its own: see
     // advanceGate. At 12 x 5 these are the numbers the gate has always used.
-    const GATE=advanceGate(geomTurns(byId(TRIAL.task)));
     if(!RUN.angle || RUN.angle.bandsDrawn < GATE.rings){ RUN.endZoneSince=null; return; }
     // Laps are signed crossings of the template's own end ray, so a five-turn spiral crosses
     // five times whether it is drawn at 60 mm or 90 mm. That is what makes the gate
@@ -9363,9 +9434,7 @@ function runTrial(seq,c){
     // zone. A hold asks a different question -- is the pen in there NOW -- and an overshoot
     // is no longer something the detector has to catch, because the participant is told what
     // to do about one: come back and hold inside the circle.
-    const inZone = !!(RUN.endMM && RUN.penMM && strokeFor.size>0 &&
-      Math.hypot(RUN.penMM.x-RUN.endMM.x, RUN.penMM.y-RUN.endMM.y)
-        <= endZoneDiaMM(geomPitch(byId(TRIAL.task)))/2);
+    const inZone = penInEndZone();
     // A LIFT COUNTS AS LEAVING, which is why inZone requires the pen to be down. Lifting
     // never ends a spiral -- the one thing the ending rule says twice -- and a pen off the
     // glass is not inside the circle, so the only reading consistent with both sentences is
