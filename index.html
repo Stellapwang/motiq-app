@@ -1242,7 +1242,12 @@ function __report(kind, message, file, line, col, stack){
         '<button id="bfcopy" style="font-size:15px;padding:9px 16px;border-radius:7px;'+
           'border:0;background:#fff;color:#8c2020;font-weight:600">Copy the full report</button>'+
         '<button id="bfhide" style="font-size:15px;padding:9px 16px;border-radius:7px;'+
-          'border:1px solid #fff;background:transparent;color:#fff">Hide</button></div>'+
+          'border:1px solid #fff;background:transparent;color:#fff">Hide</button>'+
+        '<a href="?reset" style="font-size:15px;padding:9px 16px;border-radius:7px;'+
+          'border:1px solid #fff;color:#fff;text-decoration:none">Start clean</a></div>'+
+      '<div style="font-size:12px;opacity:.85;margin:-2px 0 8px">'+
+        'Start clean discards the session saved on this device and reloads. '+
+        'Trials already saved are kept.</div>'+
       '<div style="font:12px/1.4 ui-monospace,Menlo,monospace;white-space:pre-wrap;'+
         'background:rgba(0,0,0,.28);padding:8px;border-radius:6px;user-select:text;'+
         '-webkit-user-select:text">'+esc(full)+'</div>';
@@ -12092,15 +12097,37 @@ function noteTrialResize(){
 // the app will not start.
 if(/[?&]reset\b/.test(location.search)){ clearState(); }
 
-onLanguageChange();
-renderPlan(); renderAudioTable(); renderSaved(); renderScreens(); renderStatus();
-renderSecureNote(); onVoiceConsentChange(); renderAudioStore(); renderSetupNote();
-renderZoomBanner();
+/* EACH START-UP STEP STANDS ON ITS OWN.
+
+   These ran as one chain, so the first one to throw took every step after it -- including
+   snapshotShippedFields and the restoreState block that sets BOOTED and arms saving. A
+   single failing widget therefore left the app half-built: rendered, unresponsive, and
+   unable to save anything the examiner did next. That is the shape of "the app hit an error
+   and may not respond", and several of these steps read storage that a long-running device
+   is exactly where it goes wrong: renderSaved and renderScreens read localStorage,
+   renderAudioStore reads IndexedDB, and one unreadable record would stop the lot.
+
+   Now a step that fails is reported BY NAME and the rest still run. The app comes up with
+   one panel missing instead of with nothing working, and the banner says which. */
+const bootStep=(name,fn)=>{ try{ fn(); }
+  catch(e){ try{ __report("start-up: "+name, e && e.message, "", 0, 0, e && e.stack); }catch(_){} } };
+bootStep("language", onLanguageChange);
+bootStep("plan table", renderPlan);
+bootStep("audio table", renderAudioTable);
+bootStep("saved trials", renderSaved);
+bootStep("screening records", renderScreens);
+bootStep("status", renderStatus);
+bootStep("secure-origin note", renderSecureNote);
+bootStep("voice consent", onVoiceConsentChange);
+bootStep("audio store", renderAudioStore);
+bootStep("setup note", renderSetupNote);
+bootStep("zoom banner", renderZoomBanner);
+bootStep("spoken digits", ()=>{ if(typeof renderStandinNote==="function") renderStandinNote(); });
 
 // THE BUILD'S OWN PROTOCOL VALUES, captured before restoreState() overlays a saved session
 // on top -- the same reason AUDIO_SHIPPED is taken where it is. Without it there is no way
 // to put a setting back to what this build ships, because by then nothing remembers.
-snapshotShippedFields();
+bootStep("shipped values", snapshotShippedFields);
 
 // Nothing below start-up should be able to leave a blank page.
 // restoreState() reads first, THEN saving is armed. Both branches arm it: a session that
