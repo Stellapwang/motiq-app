@@ -1203,19 +1203,46 @@
    deep before anyone thinks to open a console that an iPad does not have.
 
    So the first thing this script does is arrange to be visible when it fails. */
+window.__ERRORS=[];
 window.addEventListener("error", e => {
   try{
-    if(document.getElementById("bootfail")) return;
-    const d=document.createElement("div"); d.id="bootfail";
-    d.style.cssText="position:fixed;inset:0 0 auto 0;z-index:9999;background:#8c2020;"+
-      "color:#fff;font:14px/1.45 system-ui;padding:12px 16px;white-space:pre-wrap";
-    d.textContent="The app hit an error and may not respond.\n"+
-      (e.message||e.error||"unknown")+"\nat "+(e.filename||"").split("/").pop()+
-      " line "+e.lineno+":"+e.colno+"\nBuild "+(typeof BUILD!=="undefined"?BUILD:"?")+
-      "\n"+navigator.userAgent;
-    (document.body||document.documentElement).appendChild(d);
+    const rec={ message:String(e.message||e.error||"unknown"),
+                file:String(e.filename||"").split("/").pop(),
+                line:e.lineno, col:e.colno,
+                at:new Date().toISOString() };
+    window.__ERRORS.push(rec);
+    let d=document.getElementById("bootfail");
+    if(!d){
+      d=document.createElement("div"); d.id="bootfail";
+      d.style.cssText="position:fixed;left:0;right:0;top:0;z-index:9999;background:#8c2020;"+
+        "color:#fff;font:13px/1.45 system-ui;padding:10px 12px;max-height:45vh;overflow:auto;"+
+        "-webkit-overflow-scrolling:touch";
+      (document.body||document.documentElement).appendChild(d);
+    }
+    const all=window.__ERRORS;
+    d.innerHTML =
+      '<div style="font-weight:700;margin-bottom:4px">The app hit an error and may not respond.</div>'+
+      '<div style="font:12px/1.4 ui-monospace,Menlo,monospace;white-space:pre-wrap;'+
+        'background:rgba(0,0,0,.25);padding:8px;border-radius:6px;user-select:text;'+
+        '-webkit-user-select:text">'+
+        all.map((r,k)=>(k+1)+". "+r.message+"\n   "+r.file+" line "+r.line+":"+r.col)
+           .join("\n").replace(/[<>&]/g,c=>({"<":"&lt;",">":"&gt;","&":"&amp;"}[c]))+
+        "\n   build "+(typeof BUILD!=="undefined"?BUILD:"?")+
+        "\n   "+navigator.userAgent+"</div>"+
+      '<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">'+
+        '<button onclick="this.closest(\'#bootfail\').remove()" '+
+          'style="font-size:13px;padding:7px 14px;border-radius:7px;border:1px solid #fff;'+
+          'background:transparent;color:#fff">Hide</button>'+
+        '<span style="font-size:12px;opacity:.85;align-self:center">'+
+          'The text above is selectable — send it to Claude.</span></div>';
   }catch(_){}
 });
+/* AN ERROR MUST NOT ALSO TAKE THE SCREEN. The first version of this banner was a fixed
+   block with no way out, so a non-fatal error -- and most are -- covered the examiner bar
+   and cost them the trial controls on top of whatever went wrong. It is capped at 45% of
+   the height, scrolls, lists every error rather than only the first, keeps them in
+   window.__ERRORS, and can be dismissed. The detail is selectable because the whole point
+   is that somebody can read it back. */
 const BUILD = "v14.01 2026-10-01";
 
 /* ============================================================================
