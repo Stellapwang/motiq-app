@@ -2353,6 +2353,13 @@ function spiralPathMM(pitch,turns){ return pitch*Math.PI*turns*turns; }
 /* ------------------------------------------------------------------ pages */
 const PAGE_IDS=[1,2,3,4,5,6];          // element ids, in the order the tabs present them
 function goPage(n){
+  /* A PAGE IS NEVER SHOWN UNDER THE STAGE. The stage is a fixed full-viewport layer, so if
+     it is up while a page is displayed the page is unreachable -- visible through nothing,
+     simply covered. Nothing legitimately navigates to a page mid-trial: every route out of
+     one lowers the stage first. Asserting it here means that however the stage comes to be
+     stuck, touching any tab frees the app instead of leaving the examiner with a screen
+     that will not respond. */
+  if(!RUN && $("stage") && $("stage").classList.contains("on")) stageOn(false);
   PAGE_IDS.forEach(i=>$("pg"+i).classList.toggle("hidden", i!==n));
   PAGE_IDS.forEach(i=>$("s"+i).classList.toggle("on", i===n));
   // The screening canvases size themselves from clientWidth, which is not final in the
@@ -7566,8 +7573,15 @@ function showOverlay(bodyHTML, buttons){
 
      It is guarded here rather than only at the new caller, because an overlay nobody can
      see is never the intended outcome, and the next screen added before openTrial would
-     have failed the same silent way. */
-  if(!$("stage").classList.contains("on")) stageOn(true);
+     have failed the same silent way.
+
+     AND IT HAS TO BE PUT BACK. #stage is position:fixed, inset:0, z-index:60 -- a layer over
+     the whole viewport. hideOverlay only hides the OVERLAY, so raising the stage here and
+     not lowering it left a blank full-screen panel over the app with every control beneath
+     it unreachable: the page looks like itself, and nothing can be tapped. The flag records
+     that the overlay is the only reason the stage is up, so hideOverlay can take it back
+     down and a trial that genuinely wants the stage keeps it. */
+  if(!$("stage").classList.contains("on")){ stageOn(true); STAGE_RAISED_BY_OVERLAY=true; }
   // Rebuild the shell if a caller replaced the overlay's innerHTML wholesale. Without
   // this, display is already "flex" when the next line throws, so the *previous*
   // overlay content is left on screen with no way forward.
@@ -7598,7 +7612,14 @@ function updateOvMore(){
   const more = b.scrollHeight - b.clientHeight - b.scrollTop > 8;
   m.classList.toggle("hidden", !more);
 }
-function hideOverlay(){ $("overlay").style.display="none"; }
+let STAGE_RAISED_BY_OVERLAY=false;
+function hideOverlay(){
+  $("overlay").style.display="none";
+  // Only when the overlay was the sole reason it went up, and only when no trial is using
+  // it. openTrial raises the stage for itself and clears the flag.
+  if(STAGE_RAISED_BY_OVERLAY && !RUN) stageOn(false);
+  STAGE_RAISED_BY_OVERLAY=false;
+}
 (function(){ const b=$("ovBody"); if(b) b.addEventListener("scroll", updateOvMore, {passive:true}); })();
 window.addEventListener("resize", ()=>{ if($("overlay") && $("overlay").style.display==="flex") updateOvMore(); });
 
@@ -7701,7 +7722,8 @@ function openTrial(showInstruction){
   }
   STROKES=[]; TAPS=[]; TAPFLASH=null; HOVER=[];
   TRIAL.voiceFailure=null;
-  stageOn(true);
+  // The trial owns the stage from here, so the overlay no longer does.
+  stageOn(true); STAGE_RAISED_BY_OVERLAY=false;
   layout(); drawScene();
 
   const finishOpen=()=> showInstruction ? showInstructionScreen(seq,c) : readyTrial(seq,c);
