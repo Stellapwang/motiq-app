@@ -298,6 +298,15 @@ the word. And **"pass after repeat" is gone** -- it was defined as all six corre
 second presentation, and with the fixed six replaced by on-demand buttons there is no second
 presentation for it to mean.
 
+**The two stimulus kinds no longer share an interval floor.** Tones keep the
+specification's 600 ms; digits run a **750 ms** floor as of 2026-10-04, with the scale solved
+again to 250.0 so the mean stays 1000 ms. The reason is the slot: the spec requires at least
+150 ms of silence between words, so a 600 ms floor caps a spoken digit at 450 ms, and fitting
+an English digit into that meant speaking it 25% faster than normal. A 750 ms floor gives a
+600 ms slot and the voice runs at its normal rate. Measured over 400 seeds each, both streams
+present 60.4 stimuli in a 60-second trial, so the pair stays comparable on rate; what differs
+is that the digit stream cannot produce a gap under 750 ms.
+
 **Practice is administered to the participant and is not saved.** It runs **10 s with three
 targets** on the auditory conditions. Three targets in ten seconds is a 27.8% target rate
 against 19.9% in the trial, so the practice is denser than what follows; two would match.
@@ -310,18 +319,22 @@ practised separately. What this gives up: the dual task is the only condition wh
 participant can do each half correctly in isolation and still not do the task, and that is
 now found out inside the sixty seconds that count.
 
-**The save screen asks one question.** On the tone conditions, "How many high beeps in
-total?", left blank when the participant gives no number. On the digit conditions there is no
-running total to ask for, so the one field is the examiner's count of "yes" responses
-instead. The reported total is scored in three levels against the trial's target count
--- plausible, grossly discrepant, no number -- not as a continuous error.
+**The save screen asks one question, and only on the tone conditions.** "How many high
+beeps in total?", left blank when the participant gives no number. It is scored in three
+levels against the trial's target count -- plausible, grossly discrepant, no number -- not as
+a continuous error.
 
-The counting aloud is not in that field and never was: it is in the voice recording, which
-the specification calls the primary record, captured in the same file as the stimulus. The
-examiner's own observed count, a quality rating and a free-text note were on this screen
-until 2026-10-04 and are null on every trial from this build. The dual tasks keep the
-task-switching flag, which is the only record of a participant who did one half by abandoning
-the other.
+**The digit conditions ask nothing at all.** VOC_VDGT goes straight to the save controls;
+PEN_VDGT stops only for the dual-task switching flag. The auditory-verbal spec has the
+examiner record "the number of yes responses heard" there; the task description does not, and
+the decision of 2026-10-04 is that nobody keeps a running tally on those trials. That is what
+the pair is for -- the digit task removes the count the tone task requires, and a field
+asking for one puts the load back on the examiner's side of the table.
+
+The counting aloud is in the voice recording, which the specification calls the primary
+record, captured in the same file as the stimulus. The examiner's own observed count, a
+quality rating and a free-text note were on this screen until 2026-10-04 and are null on
+every trial from this build.
 
 ---
 

@@ -1755,7 +1755,28 @@ let ORPHANED_AUDIO=null;
    If the minimum, the mean, the maximum or the discard rule is ever changed, this
    constant has to be recalculated, or the stream quietly stops averaging what the
    specification says it averages. */
-const AV_GAP = { minMs:600, meanMs:1000, maxMs:3500, scaleMs:402.1, maxDrawMs:2900 };
+/* TWO FLOORS, ONE MEAN. The tones keep the specification's 600 ms. The digits were moved to
+   750 ms on 2026-10-04 because a spoken word cannot be rushed into the slot a 600 ms floor
+   leaves: the silence between words must be at least 150 ms, so a 600 ms floor caps the word
+   at 450 ms, and fitting an English digit into that meant speaking it 25% faster than normal
+   -- which is what "short and rushed" was. A 750 ms floor gives a 600 ms slot and the voice
+   runs at its normal rate.
+
+   EVERYTHING ELSE IS UNCHANGED between the two: the 1000 ms mean, the 3500 ms maximum, the
+   exponential-above-floor shape and the discard-and-redraw rule. So both still produce about
+   60 stimuli in a 60-second trial. What differs is the shape below the mean -- the digit
+   stream cannot produce a gap under 750 ms, where the tone stream can.
+
+   THE SCALE IS DERIVED, NEVER TYPED. Each is the value that makes the finished gaps average
+   1000 ms given that floor, that maximum and that discard rule, solved to three decimals and
+   rounded: 402.1 gives 1000.0 at a 600 ms floor, 250.0 gives 999.95 at a 750 ms floor. Change
+   any of the floor, mean, maximum or discard rule and the scale has to be solved again. */
+const AV_GAP_TONES  = { minMs:600, meanMs:1000, maxMs:3500, scaleMs:402.1, maxDrawMs:2900 };
+const AV_GAP_DIGITS = { minMs:750, meanMs:1000, maxMs:3500, scaleMs:250.0, maxDrawMs:2750 };
+const avGapLaw = kind => kind==="digits" ? AV_GAP_DIGITS : AV_GAP_TONES;
+// The tone law under its old name, for the many places that pre-date the split and describe
+// the tone stream. Anything that depends on WHICH stream asks avGapLaw(kind) instead.
+const AV_GAP = AV_GAP_TONES;
 /* About the 3500 ms maximum. The exponential has no natural upper limit, so
    without a maximum an occasional gap runs past four seconds, which does not
    sound like a long gap -- it sounds like the iPad has stopped working. The
@@ -1917,7 +1938,8 @@ function buildAudioDefaults(){
       // specification states them, and the 402.1 scale that makes the mean come out right
       // is tied to this exact minimum, mean and discard rule. They are surfaced on the
       // Parameters page as a statement of what is in force, not as three boxes to type in.
-      floorMs:AV_GAP.minMs, meanMs:AV_GAP.meanMs, maxMs:AV_GAP.maxMs,
+      floorMs:avGapLaw(avKind(id)).minMs, meanMs:avGapLaw(avKind(id)).meanMs,
+      maxMs:avGapLaw(avKind(id)).maxMs,
       lead: drawing ? 1000 : 500,
       durS: c ? (c.lengthS ?? c.sustainedS ?? 60) : 60,
       stream:cfg.stream, respond:cfg.respond, kind:avKind(id),
@@ -5062,10 +5084,15 @@ function renderNextUpParams(){
       <b>${Math.round(bindingLimitMs(c.id,AUDIO_DEFAULTS[c.id]))} ms</b> — the longest response
       that can still be attributed to the right tone. It follows from the floor.</div>
     <div class="r4">${pAudio(c.id,"tone","Tone (ms)",10,30,200)}</div>
-    <div class="note" style="margin:4px 0 0">Gap law: ${AV_GAP.minMs} ms minimum,
-      ${AV_GAP.meanMs} ms mean, ${AV_GAP.maxMs} ms maximum. Fixed by the specification and
-      not editable — the scale constant that makes the mean come out right is tied to these
-      three numbers and to the discard rule. ${avTargetDescription(c.id)}</div>
+    <div class="note" style="margin:4px 0 0">Gap law: ${avGapLaw(avKind(c.id)).minMs} ms
+      minimum, ${avGapLaw(avKind(c.id)).meanMs} ms mean, ${avGapLaw(avKind(c.id)).maxMs} ms
+      maximum.${avKind(c.id)==="digits"
+        ? ` The digit floor is ${AV_GAP_DIGITS.minMs} ms rather than the tones'
+            ${AV_GAP_TONES.minMs}, so a spoken word has a ${digitSlotCeilingMs()} ms slot and
+            does not have to be hurried. The mean and maximum are the same as the tones', so
+            both streams present about the same number of stimuli.`
+        : ``} Not editable — the scale constant that makes the mean come out right is tied to
+      these three numbers and to the discard rule. ${avTargetDescription(c.id)}</div>
     <div class="r4">${pNum("fstd","Standard (Hz)",50)}
       ${pNum("ftgt","Target (Hz)",50)}${pNum("lvl","Tone level (0–1)",0.05,0.05,1)}</div></div>`);
   if(!groups.length){ host.innerHTML=`<div class="note">This task uses no adjustable
@@ -5338,7 +5365,8 @@ function nextIds(pid,task,H){
 // the draw. At the specified values that is 2000 ms against the 1200 the old rule gave --
 // which was discarding slow but genuine responses as unattributable.
 function bindingLimitMs(taskId,a){
-  return (a && a.hasTargets) ? AV_PLACE.minTargetGapMs : AV_GAP.minMs;
+  return (a && a.hasTargets) ? AV_PLACE.minTargetGapMs
+                            : avGapLaw(avKind(taskId)).minMs;
 }
 // One sentence naming the fixed target counts a task's trials use, for the panels that
 // used to show an editable probability.
@@ -5412,8 +5440,9 @@ function renderAudioTable(){
       step="${step}" onchange="streamSet('${k}','${f}',+this.value)">`;
     h+=`<tr><td><b>${lab[0]}</b><br><span class="note" style="margin:0">${lab[1]}</span></td>
       <td><span class="note" style="margin:0">${g.tasks.join("<br>")}</span></td>
-      <td class="num">${AV_GAP.minMs}</td>
-      <td class="num">${AV_GAP.meanMs}</td>
+      <td class="num">${[...new Set([...g.kinds].map(kind=>avGapLaw(kind).minMs))]
+        .sort((x,y)=>x-y).join(" / ")}</td>
+      <td class="num">${AV_GAP_TONES.meanMs}</td>
       <td><span class="note" style="margin:0">${a.hasTargets
           ? [...g.kinds].map(kind=>{ const t=AV_TARGET_COUNTS[kind];
               return t ? `${kind}: ${t.single.join(", ")} single, ${t.dual.join(", ")} dual`
@@ -6320,13 +6349,14 @@ function hash32(str){ let h=5381; for(let i=0;i<str.length;i++) h=((h<<5)+h+str.
 // One gap, drawn and redrawn until it is inside the law. The loop bound is a
 // runaway guard and nothing more: at these settings a draw survives 99.93% of the
 // time, so reaching even ten iterations is not something the distribution does.
-function avGapMs(rng, stats){
+function avGapMs(rng, stats, law){
+  const L = law || AV_GAP_TONES;
   for(let k=0;k<4096;k++){
-    const x = -AV_GAP.scaleMs*Math.log(1-rng());
-    if(x<=AV_GAP.maxDrawMs) return AV_GAP.minMs+x;
+    const x = -L.scaleMs*Math.log(1-rng());
+    if(x<=L.maxDrawMs) return L.minMs+x;
     if(stats) stats.redraws++;
   }
-  throw new Error("The gap draw did not converge — check AV_GAP.");
+  throw new Error("The gap draw did not converge — check the gap law.");
 }
 
 /* Place `want` targets among the stimuli, honoring the separation and both dead
@@ -6404,7 +6434,8 @@ function makeSequence(opts){
   const respond=opts.respond||"tap", kind=opts.kind||"tones";
   const det = want==null;
   const durMs=durationS*1000;
-  if(durMs < AV_GAP.minMs*4)
+  const LAW = avGapLaw(kind);
+  if(durMs < LAW.minMs*4)
     throw new Error(`A ${durationS} s window is too short for this stream.`);
   if(!det && want<1) throw new Error("A target count below 1 is not a stream.");
 
@@ -6413,7 +6444,7 @@ function makeSequence(opts){
   const rng=mulberry32(seed);
   for(let attempt=0; attempt<AV_PLACE.maxAttempts; attempt++){
     const on=[0], gp=[];
-    for(;;){ const g=avGapMs(rng,stats), nxt=on[on.length-1]+g;
+    for(;;){ const g=avGapMs(rng,stats,LAW), nxt=on[on.length-1]+g;
       if(nxt>durMs) break; gp.push(g); on.push(nxt); }
     if(on.length<4){ stats.regenerations++; continue; }
     if(det){ onsets=on; gaps=gp; pos=[]; break; }
@@ -6449,11 +6480,11 @@ function makeSequence(opts){
       no_target_first_ms:AV_PLACE.noTargetFirstMs,
       no_target_last_ms:AV_PLACE.noTargetLastMs,
       min_target_gap_spec_ms:AV_PLACE.minTargetGapMs },
-    gapLaw:{ min_ms:AV_GAP.minMs, mean_ms:AV_GAP.meanMs, max_ms:AV_GAP.maxMs,
-             scale_ms:AV_GAP.scaleMs, discard_above_ms:AV_GAP.maxDrawMs,
+    gapLaw:{ min_ms:LAW.minMs, mean_ms:LAW.meanMs, max_ms:LAW.maxMs,
+             scale_ms:LAW.scaleMs, discard_above_ms:LAW.maxDrawMs,
              redraws:stats.redraws, rescaled:false },
     distribution:"floor + exponential, discard and redraw above the maximum",
-    floorMs:AV_GAP.minMs, meanMs:AV_GAP.meanMs,
+    floorMs:LAW.minMs, meanMs:LAW.meanMs,
     adjacentTargetsAllowed:false, minTargetGapTones,
     minISI:gaps.length?Math.min(...gaps):null,
     maxISI:gaps.length?Math.max(...gaps):null,
@@ -6537,14 +6568,14 @@ const DIGIT_SET = {
   // The measured slot length, in ms. Must be <= minimum interval - 150. Stated
   // here as the ceiling the recordings have to fit, and replaced by the measured
   // value when they are installed.
-  slotMs:AV_GAP.minMs-150,
+  slotMs:AV_GAP_DIGITS.minMs-150,
   digits:[1,2,3,4,5],
   target:2,
   rms_matched:null,
   // digit -> data URI. Empty until recordings are installed.
   samples:{}
 };
-const digitSlotCeilingMs = () => AV_GAP.minMs-150;
+const digitSlotCeilingMs = () => AV_GAP_DIGITS.minMs-150;
 
 /* ===========================================================================
    THE SPEECH STAND-IN
@@ -6600,7 +6631,7 @@ const digitSlotCeilingMs = () => AV_GAP.minMs-150;
    It is still not the same guarantee a recording gives -- two devices offering a voice of
    the same NAME can still differ in version -- so the record carries the voice, the user
    agent and the measured onsets, and says in words that the stimulus is synthesized. */
-const DIGIT_VOICE={ name:"Samantha", lang:"en-US", rate:1.25,
+const DIGIT_VOICE={ name:"Samantha", lang:"en-US", rate:1.0,
   declared_iso:"2026-10-01",
   note:"the device's speech synthesis, with this voice named by the study, standing in for "+
        "the five digits the specification asks to be recorded once by one speaker" };
@@ -6685,8 +6716,10 @@ function speakDigitAt(digit, whenMs, onSpoken){
       const u=new SpeechSynthesisUtterance(DIGIT_WORD[digit]||String(digit));
       const v=standinVoice(); if(v) u.voice=v;
       u.lang=(v&&v.lang)||"en-US";
-      // Faster than default, so a word is likelier to finish inside the slot.
-      u.rate=1.25; u.volume=Math.max(0, Math.min(1, +$("lvl").value*2));
+      // NORMAL RATE. It was 1.25 so a word would fit the 450 ms slot a 600 ms floor
+      // leaves, and that is what made the digits sound rushed. The digit floor is 750 ms as
+      // of 2026-10-04, the slot is 600 ms, and the voice no longer has to hurry.
+      u.rate=DIGIT_VOICE.rate; u.volume=Math.max(0, Math.min(1, +$("lvl").value*2));
       window.speechSynthesis.speak(u);
     }catch(e){}
   };
@@ -6778,7 +6811,7 @@ function digitSetProblem(){
   if(!(DIGIT_SET.slotMs>0)) return "the digit slot length has not been measured";
   if(DIGIT_SET.slotMs>digitSlotCeilingMs())
     return `the digit slot is ${DIGIT_SET.slotMs} ms, which leaves under 150 ms of `+
-           `silence at the ${AV_GAP.minMs} ms minimum interval`;
+           `silence at the ${AV_GAP_DIGITS.minMs} ms minimum interval`;
   return null;
 }
 function digitBuffersReady(){
@@ -10205,12 +10238,20 @@ const AV_SWITCH = [
    addressed dual tasks, the auditory-verbal spec asks for it there, and it is the only
    record of a participant who did one half by abandoning the other. */
 const avEntrySpec = c => ({
-  observe: c.count ? null : (c.avObserve || null),   // digits: what the examiner heard
-  report:  !!c.count,                                 // tones: what the participant reports
+  /* THE DIGIT CONDITIONS ASK NOTHING. The auditory-verbal spec has the examiner record "the
+     number of yes responses heard" for them; the task description does not, and the decision
+     of 2026-10-04 is that nobody -- participant or examiner -- keeps a running tally on those
+     trials. That is the point of the pair: the digit task removes the count the tone task
+     requires, so a field asking for one puts the load back on the examiner's side of the
+     table. The yes responses are in the voice recording either way. */
+  observe: false,
+  report:  !!c.count,          // tones only: the participant's own total
   switch:  isDualTask(c)
 });
-// Does this trial need the entry screen at all?
-const needsAvEntry = c => !!(c && c.audio && c.respond==="speak" && c.avObserve);
+/* Does this trial need the entry screen at all? VOC_VDGT now needs nothing and goes straight
+   to the save controls; PEN_VDGT still stops for the one dual-task question. */
+const needsAvEntry = c => !!(c && c.audio && c.respond==="speak"
+                             && (avEntrySpec(c).report || avEntrySpec(c).switch));
 
 function askExaminerEntry(seq){
   const c=RUN.c, spec=avEntrySpec(c);
@@ -10228,13 +10269,6 @@ function askExaminerEntry(seq){
         style="max-width:190px;font-size:34px;text-align:center"
         oninput="window.__avEntry('repNum',this.value)">
       <div class="note" style="margin:10px auto 0">Leave blank if they do not give a number.</div>
-    </div>`);
-    if(spec.observe) rows.push(`<div style="text-align:center;max-width:560px;margin:0 auto 22px">
-      <div style="font-size:26px;margin:4px 0 14px">How many “yes” responses did you hear?</div>
-      <input id="obsInput" type="number" min="0" max="500" value="${E.observed_count??""}"
-        style="max-width:190px;font-size:34px;text-align:center"
-        oninput="window.__avEntry('obsNum',this.value)">
-      <div class="note" style="margin:10px auto 0">Leave blank if you could not follow it.</div>
     </div>`);
     // ---- the dual-task flag ----------------------------------------------------------
     if(spec.switch) rows.push(`<div style="text-align:left;max-width:560px;margin:0 auto 18px">
@@ -10275,10 +10309,6 @@ function askExaminerEntry(seq){
     if(what==="repNum"){
       if(v===""){ E.reported_kind=null; E.reported_value=null; }
       else { E.reported_kind="integer"; E.reported_value=+v; }
-      return; }
-    if(what==="obsNum"){
-      if(v===""){ E.observed_count=null; E.observed_entered=false; }
-      else { E.observed_count=+v; E.observed_entered=true; }
       return; }
     if(what==="switch"){ E.task_switch=v; render(); return; }
   };
@@ -11111,7 +11141,7 @@ function buildRecord(){
         entry_screen_version:"one_count_2026_10_04",
         observed_count: E.observed_unable ? null : (E.observed_count??null),
         observed_unable_to_track: !!E.observed_unable,
-        observed_of: c.avObserve || null,
+        observed_of: null,   // nothing is asked of the examiner about the count
         // Present and false on every digit condition, because "this condition has no field
         // 2" is a fact about the condition and an empty field is not the same statement.
         has_participant_report: !!c.count,
