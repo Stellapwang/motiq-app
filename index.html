@@ -5925,10 +5925,21 @@ const advanceLapsFor  = t => Math.max(1, Math.round((+t||0)*advanceFraction()));
 // geometry -- 5 turns with advturns at 5 -- these come out 5, 4 and 5 minus the slack, which
 // is exactly what they were before any scaling existed. Nothing about the shipped stylus
 // conditions moves; the scaling only has an effect where the template is short.
-function advanceGate(t){
+/* THE PRACTICE SPIRAL ENDS ON THE MAJORITY OF ITS TEMPLATE, the trial on 88% of its own.
+
+   A trial is a measurement and the gate is tight so that a pass means the spiral was
+   actually traced to its end. A practice run is teaching one rule -- draw it, then hold
+   still in the red circle until it disappears -- and a gate that demands 88% of the template
+   before the red circle will respond teaches the rule late, or not at all inside the window.
+   At 0.6 the end zone comes alive once more than half the spiral has been swept, which is
+   what "the majority" means, with enough margin above a half that a spiral abandoned exactly
+   halfway does not open it. The rings test is untouched, so circling in one spot still
+   advances nothing. */
+const PRACTICE_GATE_FRACTION = 0.6;
+function advanceGate(t, practice){
   const laps=advanceLapsFor(t);
-  return { laps, rings:Math.max(2, laps-1),
-           openAt:+(laps*END_GATE_TURN_FRACTION).toFixed(4) };
+  const frac = practice ? PRACTICE_GATE_FRACTION : END_GATE_TURN_FRACTION;
+  return { laps, rings:Math.max(2, laps-1), openAt:+(laps*frac).toFixed(4) };
 }
 // The most a perfect tracing can bank, given that nothing below the start zone is counted.
 function bankableRad(turns, outerR, gateR){
@@ -7419,7 +7430,7 @@ function drawScene(){
         // in, so it should arm on being NEAR THE CIRCLE, not on a count that a tremulous hand
         // may never quite reach. Being a cue and not the trigger, arming a touch early costs
         // nothing.
-        const G=advanceGate(geomTurns(byId(TRIAL.task)));
+        const G=advanceGate(geomTurns(byId(TRIAL.task)), !!(TRIAL&&TRIAL.practice));
         const gateOpen = RUN.angle.bandsDrawn >= G.rings && RUN.angle.lapsSwept >= G.openAt;
         const d=Math.hypot(RUN.penMM.x-RUN.endMM.x, RUN.penMM.y-RUN.endMM.y);
         // Reach chosen so the circle lights up about 30 deg of the final turn out -- the
@@ -8469,8 +8480,13 @@ const practiceSkippable = c => !isDualTask(c);
 
    With the task's own window the practice obeys the same clock as the trial, and the
    examiner presses END after a spiral or two, which is what one sequence means. */
+/* A SUSTAINED-SPIRAL PRACTICE RUNS 30 SECONDS PER HAND, not the trial's full minute. Long
+   enough for two or three spirals at an older adult's pace, short enough that two hands of
+   practice cost one minute of the session rather than two. Before this it borrowed the
+   task's own window, which made the practice as long as the trial it was practising. */
+const SPIRAL_PRACTICE_S = 30;
 const practiceWindowS = c => isDualTask(c) ? AV_PRACTICE.durS
-                           : (c.sustainedS ? c.sustainedS : null);
+                           : (c.sustainedS ? SPIRAL_PRACTICE_S : null);
 // What the examiner says, from the task description.
 function practiceScript(c, hand, step){
   const H=hand==="none" ? null : physHand(hand).toUpperCase();
@@ -8922,8 +8938,14 @@ function readyTrial(seq,c,justInstructed,autoStart){
   const cc0 = byId(TRIAL.task) || {};
   const taskHasHand = !!(cc0.spiral || cc0.tap || cc0.pent);
   const handNow = taskHasHand ? (TRIAL.drawHand || TRIAL.tapHand || "both") : null;
-  const changed = !justInstructed && taskHasHand && LAST_HAND && handNow!==LAST_HAND
-                  && TRIAL.task===LAST_TASK;
+  /* AND NOT ON A PRACTICE ROW. The practice screen the examiner has just read already says
+     which hand -- "Now try it with your LEFT hand" -- so the banner repeats it, and because
+     PRACTICE starts the run in the same click, the banner went up OVER a practice that was
+     already running: the template drawn, the clock going, and a full-screen panel in front
+     of it saying to use the other hand. That is what "the left hand practice is glitched"
+     was. The banner is for a hand that changes BETWEEN TRIALS, where nothing else says so. */
+  const changed = !justInstructed && !TRIAL.practice && taskHasHand && LAST_HAND
+                  && handNow!==LAST_HAND && TRIAL.task===LAST_TASK;
   if(changed){
     // Name the effector, not just the side: "the right hand" is ambiguous when the task
     // is drawn with a fingertip.
@@ -9606,7 +9628,7 @@ function runTrial(seq,c){
       gh.innerHTML=`<b>window finished</b> · press END`; return; }
     if(RUN.windowStart==null){
       gh.innerHTML=`waiting for the first contact in the green circle`; return; }
-    const GATE=advanceGate(geomTurns(byId(TRIAL.task)));
+    const GATE=advanceGate(geomTurns(byId(TRIAL.task)), !!(TRIAL&&TRIAL.practice));
     const laps=RUN.angle?RUN.angle.lapsSwept:0, rings=RUN.angle?RUN.angle.bandsDrawn:0;
     const since=RUN.passStartedAt?(performance.now()-RUN.passStartedAt)/1000:0;
     const holdFor=RUN.endZoneSince!=null ? (performance.now()-RUN.endZoneSince)/1000 : null;
@@ -9663,7 +9685,7 @@ function runTrial(seq,c){
     // this line with it. Every frame after the rings test then threw ReferenceError: GATE is
     // not defined, out of the animation loop -- so the loop died, the readout froze on its
     // last values, and the spiral could never advance however well it was drawn.
-    const GATE=advanceGate(geomTurns(byId(TRIAL.task)));
+    const GATE=advanceGate(geomTurns(byId(TRIAL.task)), !!(TRIAL&&TRIAL.practice));
     if(!RUN.angle || RUN.angle.bandsDrawn < GATE.rings){ RUN.endZoneSince=null; return; }
     // Laps are signed crossings of the template's own end ray, so a five-turn spiral crosses
     // five times whether it is drawn at 60 mm or 90 mm. That is what makes the gate

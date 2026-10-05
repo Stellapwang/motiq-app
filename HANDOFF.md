@@ -308,7 +308,12 @@ present 60.4 stimuli in a 60-second trial, so the pair stays comparable on rate;
 is that the digit stream cannot produce a gap under 750 ms.
 
 **Practice is administered to the participant and is not saved.** It runs **10 s with three
-targets** on the auditory conditions. Three targets in ten seconds is a 27.8% target rate
+targets** on the auditory conditions and **30 s per hand** on the sustained spiral. The
+spiral practice ends a pass on the **majority** of its three-turn template -- 1.8 turns swept,
+against 4.4 of 5 on the trial -- and then the same one-second hold inside the red circle. The
+looser gate is deliberate: a practice run is teaching the hold, and a gate that will not
+respond until 88% of the template has been swept teaches it late or not at all inside the
+window. The rings test is identical, so circling in one spot still advances nothing. Three targets in ten seconds is a 27.8% target rate
 against 19.9% in the trial, so the practice is denser than what follows; two would match.
 Three is the specified figure.
 
