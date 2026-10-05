@@ -1109,8 +1109,10 @@
       <div id="savedBody"></div>
       <div id="savedMeter"></div>
       <div class="btnrow">
-        <button onclick="exportAllCSV()">Export all as one CSV</button>
-        <button class="ghost" onclick="exportAllJSON()">Export all as JSON</button>
+        <button onclick="exportThenClear()">EXPORT EVERYTHING, then clear</button>
+        <button class="ghost" onclick="exportEverything(l=>alert('Exported '+l+'.'))">Export everything, keep it</button>
+        <button class="ghost" onclick="exportAllCSV()">CSV only</button>
+        <button class="ghost" onclick="exportAllJSON()">JSON only</button>
         <button class="ghost" onclick="showCSVText()">Show CSV as text</button>
         <button class="ghost" onclick="renderSaved()">Refresh</button>
         <button class="ghost" onclick="delAllTrials()">Delete all</button>
@@ -7378,10 +7380,38 @@ const drawCy = () => (L.pentOn && L.pentVertical && L.copyCy!=null) ? L.copyCy :
 const toCanvas=(x,y)=>({x:L.cx+x*L.p,y:drawCy()-y*L.p});
 const toMM=(x,y)=>({x:(x-L.cx)/L.p,y:(drawCy()-y)/L.p});
 
+/* WHAT A LISTENING TASK PUTS ON ITS OWN SCREEN.
+
+   "The screen displays no count, no target indicator and no feedback of any kind" rules out
+   anything that changes with what the participant has done. A standing line saying what the
+   task is changes with nothing: it is the same at the first beep and the last, it names no
+   number, and it marks no stimulus. What it replaces is a blank white rectangle for sixty
+   seconds, which tells a participant who has lost the thread nothing at all.
+
+   The same line stands during the practice run, so pressing PRACTICE no longer opens what
+   looks like an empty screen. */
+function listeningLine(c){
+  if(!c || !c.audio || c.spiral || c.tap || c.pent) return null;
+  if(avKind(c.id)==="digits") return "Say “yes” when you hear 2";
+  if(c.countOf==="all") return "Count every beep";
+  if(c.count) return "Count the high beeps";
+  return null;
+}
 function drawScene(){
   const g=L.g, c=byId(TRIAL.task);
   g.clearRect(0,0,L.W,L.H); g.fillStyle="#fff"; g.fillRect(0,0,L.W,L.H);
   g.textAlign="center";
+  {
+    const line=listeningLine(c);
+    if(line){
+      g.save();
+      g.fillStyle="#1f2933";
+      g.font=`600 ${Math.round(Math.min(L.W,L.H)*0.072)}px -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif`;
+      g.textBaseline="middle";
+      g.fillText(line, L.ux0+L.uw/2, L.uy0+L.uh/2);
+      g.restore();
+    }
+  }
   if(L.splitX!==null){ g.strokeStyle="#c9ced6"; g.lineWidth=1; g.setLineDash([5,5]);
     g.beginPath(); g.moveTo(L.splitX,L.uy0+L.topPad); g.lineTo(L.splitX,L.uy0+L.uh); g.stroke();
     g.setLineDash([]); }
@@ -7689,7 +7719,8 @@ function storageGuard(){
   const u=storageUsed(), pct=storagePct();
   if(pct<70) return true;
   return confirm(`Storage is ${pct.toFixed(0)}% full (${u.n} trials, ${(u.bytes/1024/1024).toFixed(1)} MB).\n\n` +
-    `Saving may fail soon. Export from Results and data, then delete, before continuing.\n\n` +
+    `Saving may fail soon. Go to Results and data and press EXPORT EVERYTHING, then clear, ` +
+    `before continuing.\n\n` +
     `Continue anyway?`);
 }
 
@@ -7700,7 +7731,8 @@ function storageWarnBeforeSave(){
   const u=storageUsed(), pct=storagePct();
   if(pct<80) return true;
   return confirm(`Storage is ${pct.toFixed(0)}% full (${u.n} trials, ${(u.bytes/1024/1024).toFixed(1)} MB).\n\n` +
-    `This save may fail. Export and clear first if you can.\n\nTry saving anyway?`);
+    `This save may fail. Press EXPORT EVERYTHING on Results and data first if you can.\n\n`+
+    `Try saving anyway?`);
 }
 
 let LAST_TASK=null, LAST_HAND=null;      // what the participant was last shown
@@ -9867,7 +9899,14 @@ function runTrial(seq,c){
   const cfgA=cfgL;
   const fluencyWinMs = (c.verbal && TRIAL.verbal && TRIAL.verbal.fluency_window_s)
     ? TRIAL.verbal.fluency_window_s*1000 : null;
-  const loop=()=>{ drawScene();
+  const loop=()=>{
+    /* THE LOOP OUTLIVES THE TRIAL BY ONE FRAME. Leaving a running trial -- EXIT, or anything
+       that sets RUN to null -- can land between the cancelAnimationFrame and the frame that
+       was already scheduled, and every line below reads RUN. It threw
+       "Cannot read properties of null (reading 'meter')" straight into the error banner,
+       which is a real fault in the one place an examiner is already walking away from. */
+    if(!RUN){ cancelAnimationFrame(RAF); return; }
+    drawScene();
     noteTrialScale();
     noteRouteSample();
     if(RUN.meter){ const db=RUN.meter.read(); RUN.levels.push(db); updateLevelMeter(db); }
@@ -11406,31 +11445,35 @@ function showRescueOverlay(errName){
   const body=()=>`<h3>Storage is full</h3>
     <p>This trial could not be written to the device (${errName}). It is <b>held in memory</b>
     and is included in an export — but a reload loses it.</p>
+    <p style="font-size:17px"><b>The participant does not repeat anything.</b> The trial on
+    screen is finished and is still in memory; CLEAR AND SAVE empties the device and writes
+    that same trial straight back to it. Nothing is re-administered.</p>
     <p style="font-size:16px;color:#5d6570">${u.n} trial${u.n===1?"":"s"} stored,
-    ${(u.bytes/1024/1024).toFixed(1)} MB. Export, then clear, then retry.</p>
-    <p style="font-size:16px;color:#5d6570">Voice clips are not in this store and are not
-    affected by clearing it.</p>
+    ${(u.bytes/1024/1024).toFixed(1)} MB.</p>
     <div id="rescueNote" style="font-size:16px;margin-top:6px">${
       RESCUE_EXPORTED
-        ? `<span style="color:var(--ok)">Exported. Now clear and retry.</span>`
-        : `Export first — the file includes this trial.`}</div>
+        ? `<span style="color:var(--ok)">Exported. Now press CLEAR AND SAVE.</span>`
+        : `Export first — the files include this trial.`}</div>`+
+    `<div style="font-size:16px;color:#5d6570;margin-top:10px">Voice clips are exported with
+     the rest and cleared with it.</div>
     <textarea id="rescueBox" class="hidden" rows="8" readonly
       style="width:100%;margin-top:12px;font:12px/1.4 ui-monospace,Menlo,monospace"></textarea>`;
 
   const markExported=()=>{ RESCUE_EXPORTED=true;
     const n=$("rescueNote");
-    if(n) n.innerHTML=`<span style="color:var(--ok)">Exported. Now clear and retry.</span>`; };
+    if(n) n.innerHTML=`<span style="color:var(--ok)">Exported. Now press CLEAR AND SAVE.</span>`; };
 
   showOverlay(body(), [
-    { label:"Export CSV", onClick:()=>{ exportAllCSV(); markExported(); } },
-    { label:"Export JSON", ghost:true, onClick:()=>{ exportAllJSON(); markExported(); } },
+    { label:"EXPORT EVERYTHING", onClick:()=>{
+        exportEverything(l=>{ markExported(); alert("Exported "+l+".\n\nCheck the files are "+
+          "in your Downloads, then press CLEAR AND SAVE."); }); } },
     { label:"Show as text", ghost:true, onClick:()=>{
         // downloads can be blocked; this is the copy-and-paste fallback, rendered here
         // on the stage rather than on page 6 where the trial screen would hide it
         const recs=listTrials().map(t=>getTrial(t.key)).filter(Boolean);
         const b=$("rescueBox"); b.classList.remove("hidden");
         b.value=csvText(recs); b.focus(); b.select(); markExported(); } },
-    { label:"Clear and retry", ghost:true, onClick:()=>{
+    { label:"CLEAR AND SAVE", ghost:true, onClick:()=>{
         if(!RESCUE_EXPORTED &&
            !confirm("You have not exported in this recovery.\n\nClearing destroys every saved trial on this device. Continue?")) return;
         if(!confirm("Delete every saved trial on this device and retry the save?\n\nThe trial on screen is re-saved from memory straight afterwards. Voice clips and screening records are NOT deleted.")) return;
@@ -11927,6 +11970,61 @@ function exportAllJSON(){
       note:"the voice clip store could not be read, so audio_index is empty; the clips may still exist on the device.",
       trials, screening, audio_index:[]
     },null,2),"application/json");
+  });
+}
+/* EVERYTHING, IN ONE PRESS, and then the device is empty.
+
+   There were four export buttons and a fifth for the clips, and an examiner at the end of a
+   session had to know that trials, screening, the JSON and the audio are four separate
+   things in three separate stores. They are not four decisions. This writes all of them,
+   reports what it wrote, and then offers to clear -- which is the only moment when clearing
+   is safe, because it is the only moment when something has just been written.
+
+   CLEARING IS STILL CONFIRMED, and that is deliberate against the instruction to clear
+   automatically. A download can fail silently -- Safari refuses a second download, the
+   sheet is dismissed, the file lands somewhere nobody looks -- and a silent failure
+   followed by an automatic wipe is how a whole session disappears. The confirm is the
+   examiner saying they can see the files. */
+function exportEverything(then){
+  const trials=listTrials().map(t=>getTrial(t.key)).filter(Boolean);
+  const screening=listScreens().map(t=>getScreen(t.key)).filter(Boolean);
+  if(!trials.length && !screening.length){ alert("Nothing saved to export."); return; }
+  const wrote=[];
+  if(trials.length){ save(`${fileStem()}.csv`, csvText(trials), "text/csv");
+                     wrote.push(`${trials.length} trial${trials.length===1?"":"s"} as CSV`); }
+  if(screening.length){ setTimeout(()=>save(`${fileStem()}_screening.csv`,
+      screenCSVText(screening), "text/csv"), 400);
+    wrote.push(`${screening.length} screening record${screening.length===1?"":"s"} as CSV`); }
+  setTimeout(()=>{ exportAllJSON(); wrote.push("the full JSON"); }, 800);
+  idbAll().then(list=>{
+    const clips=(list||[]).filter(r=>r.blob);
+    // Spaced out: Safari refuses a burst of downloads, and a refused clip is a lost
+    // recording that the CSV still claims exists.
+    clips.forEach((r,i)=>setTimeout(()=>{ try{ saveBlob(audioFileName(r), r.blob); }catch(e){} },
+      1200 + i*450));
+    setTimeout(()=>{
+      const line = wrote.join(", ") + (clips.length
+        ? `, and ${clips.length} voice clip${clips.length===1?"":"s"}` : ", and no voice clips");
+      if(then) then(line, trials.length, clips.length);
+    }, 1400 + clips.length*450);
+  }).catch(()=>{ if(then) then(wrote.join(", ")+" (the clip store could not be read)",
+                              trials.length, 0); });
+}
+// The whole device, after an export has just happened. Trials, screening and clips.
+function clearEverything(){
+  listTrials().forEach(t=>{ try{ localStorage.removeItem(t.key); }catch(e){} delete MEM[t.key]; });
+  listScreens().forEach(t=>{ try{ localStorage.removeItem(t.key); }catch(e){} });
+  return idbAll().then(list=>Promise.all((list||[]).map(r=>idbDel(r.audio_id))))
+                 .catch(()=>null)
+                 .then(()=>{ renderSaved(); if(typeof renderAudioStore==="function") renderAudioStore(); });
+}
+function exportThenClear(){
+  exportEverything((line, nTrials, nClips)=>{
+    alert("Exported "+line+".\n\nCheck the files are in your Downloads before clearing.");
+    if(!confirm(`Clear the device now?\n\nThis deletes every saved trial, every screening `+
+                `record and every voice clip on this iPad. Do it only if you can see the `+
+                `files you just exported.`)) return;
+    clearEverything().then(()=>alert("Cleared. The device is empty and ready for the next participant."));
   });
 }
 function showCSVText(){ const r=listTrials().map(t=>getTrial(t.key)).filter(Boolean);
