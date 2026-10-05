@@ -1372,7 +1372,7 @@ const CATALOGUE = [
   // job is to show the participant can do the task at all without competing motor demand,
   // and to put the audibility check and the practice before the dual task rather than
   // inside it.
-  { id:"VOC_VODD", label:"Counting the high tones aloud, no drawing", order:30, tier:"core", spiral:0, tap:0, audio:1, zones:0, hands:"none", repeats:1, lengthS:60,
+  { id:"VOC_VODD", label:"Counting the high tones aloud", order:30, tier:"core", spiral:0, tap:0, audio:1, zones:0, hands:"none", repeats:1, lengthS:60,
                    count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1,
                    avObserve:"final_count" },
   // THE SAME STREAM WITH DIFFERENT MATERIALS AND A DIFFERENT RESPONSE. Digits are spoken
@@ -1380,7 +1380,7 @@ const CATALOGUE = [
   // is one "yes" per target instead of a running total -- which means there is no number to
   // ask the participant for at the end, and no count for them to lose. The pair therefore
   // separates the monitoring load from the counting load, which the tone task alone cannot.
-  { id:"VOC_VDGT", label:"Saying yes to the number two, no drawing", order:40, tier:"core", spiral:0, tap:0, audio:1, zones:0, hands:"none", repeats:1, lengthS:60,
+  { id:"VOC_VDGT", label:"Saying yes to the number two", order:40, tier:"core", spiral:0, tap:0, audio:1, zones:0, hands:"none", repeats:1, lengthS:60,
                    count:0, respond:"speak", voice:1,
                    avObserve:"yes_responses" },
 
@@ -8480,19 +8480,18 @@ function skipRemainingPractice(taskId){
 function practiceResult(){
   const c=RUN.c, step=TRIAL.practice.step, of=TRIAL.practice.of;
   const seq=RUN&&RUN.seq;
-  const played = seq ? countedHeard(seq, RUN?RUN.streamCutMs:null, c.countOf||"targets") : null;
-  // THE DESCRIPTION ASKS THE QUESTION AFTER THE DUAL-TASK PRACTICE, and this is the one
-  // place in the battery where the examiner may act on the answer: practice is where a
-  // misunderstanding is supposed to be found and corrected. During a test trial no field is
-  // shown as correct and the count is never displayed; here it is, deliberately, because an
-  // examiner who cannot tell whether the participant understood cannot decide to run it again.
-  const ask = (c.count && seq)
-    ? `<p style="font-size:21px">“How many high beeps did you count in total?”</p>
-       <p style="font-size:17px;color:#5d6570">There were <b>${played}</b>. This is practice,
-       so you may tell them and run it again — nothing about the test trials shows a count.</p>`
-    : (seq && avKind(c.id)==="digits"
-      ? `<p style="font-size:17px;color:#5d6570">There were <b>${played}</b> twos. This is
-         practice, so you may correct a misunderstanding and run it again.</p>` : "");
+  /* NOTHING ON THIS SCREEN THAT THE TASK DESCRIPTION DOES NOT PUT THERE.
+
+     It used to print the correct count and a sentence of my own about what the examiner
+     might do with it -- "There were 3 twos. This is practice, so you may correct a
+     misunderstanding and run it again." The description's practice section is a script and
+     three controls; it says nothing about a result screen, a count, or telling the
+     participant anything afterwards.
+
+     The count is not merely unasked-for, it is the answer. An examiner who has just read it
+     prompts the next run differently, and on the digit conditions there is no total to
+     report at all, so the number was describing something the task never asks about. */
+  const ask = "";
   const more = step<of;
   const advance=()=>{
     if(QUEUE[QPOS] && isPracticeRow(QUEUE[QPOS])) QUEUE[QPOS].status="done";
