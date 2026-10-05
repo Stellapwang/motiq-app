@@ -6011,7 +6011,31 @@ function makeAngleAccumulator(direction, minR, bandMM, nBands, endAngle){
       // Where this pen started relative to the template's END RAY, fixed on the first
       // counted sample. Laps are counted as crossings of that ray, so the offset has to be
       // known before any crossing can be.
-      if(w===null) w = s*(a - (endAngle==null?a:endAngle));
+      /* WRAPPED INTO ONE TURN, which it was not, and that is a whole turn stolen from every
+         left-handed spiral.
+
+         w is "how far round from the template's end ray the pen was when counting began,
+         measured in the drawing direction". By definition that is somewhere in [0, 1) turns.
+         But `a` comes from atan2 and is wrapped into (-pi, pi], while endAngle is a fixed
+         constant, so the raw difference can land a full turn outside that interval -- and
+         whether it does depends on the sign, which is the drawing direction.
+
+         Measured on the 12 mm template with the start zone at 8 mm, where counting begins a
+         third of a turn out:
+             right hand, cw  :  w = +2.094 rad = +0.333 turns   correct
+             left  hand, ccw :  w = -4.189 rad = -0.667 turns   a full turn short
+
+         So a PERFECT left-handed tracing banked turns-1: 2.0 laps on the three-turn practice
+         template and 4.0 on the five-turn trial, against gates of 2.64 and 4.40. Neither
+         could ever open. The right hand, on the same drawing, reached 3.0 and 5.0 and
+         advanced normally -- which is exactly the report: the left hand does not auto-end.
+
+         Wrapping makes both hands give +0.333, and lapsSwept lands on the template's own
+         turn count for a clean trace either way. */
+      if(w===null){
+        const raw = s*(a - (endAngle==null?a:endAngle));
+        w = ((raw % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
+      }
       if(last!==null){
         let d=a-last;
         // Unwrap: a step larger than half a turn is the atan2 discontinuity, not motion.
