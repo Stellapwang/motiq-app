@@ -1971,6 +1971,22 @@ AUDIO_SHIPPED=JSON.parse(JSON.stringify(AUDIO_DEFAULTS));
 // and someone with a motor impairment tends to protect the motor task -- which would show up
 // as a group difference in dual-task cost that is really a difference in strategy.
 const PRIORITIZATION = "Do your best on both. Don't let either one slip.";
+/* Sections 5.1 and 6.1, word for word. Split into lines only so the screen can emphasise the
+   sentence that names both halves; the words and their order are the document's. */
+const DUAL_INSTRUCTION = {
+  PEN_VODD:[
+    "Now you’ll do both things at the same time.",
+    "**Keep tracing spirals for one minute, just as you did before and at the same time, count the high beeps out loud.**",
+    "Keep your drawing arm and hand lifted.",
+    "Don’t stop drawing to count, and don’t stop counting to draw.",
+    "Go at a comfortable pace."],
+  PEN_VDGT:[
+    "Now you’ll do both things at the same time.",
+    "**Keep tracing spirals for one minute, just as you did before — and at the same time, say “yes” every time you hear the number two.**",
+    "Keep your drawing arm and hand lifted.",
+    "Don’t stop drawing to answer, and don’t stop answering to draw.",
+    "Go at a comfortable pace."]
+};
 // Matches instructionFor()'s own test, so what the record claims and what was shown on
 // screen cannot drift apart.
 const isDualTask = c => !!(c && c.spiral && (c.tap || c.audio || c.verbal));
@@ -2154,6 +2170,22 @@ function instructionFor(taskId, opts){
              mode, implement:impl,
              length:"Ends when the administrator stops it." };
   }
+  /* A FUNCTION, NOT A CONST, because two branches read it and one of them returns early.
+     As a const below the early return it was in its own temporal dead zone; moved above the
+     branch, it read AUDIO_ORIENT_WORD, which is declared further down the file, and threw
+     on that instead. A function declaration is hoisted to the top of this function and
+     reads the table when it is CALLED. */
+  const AUDIO_ORIENT_WORD = {
+    landscape_home_right:"landscape, with the home edge to your right",
+    landscape_home_left:"landscape, with the home edge to your left",
+    portrait:"upright, in portrait" };
+  function orientLineNow(){
+    if(!c.audio || (opts&&opts.practice)) return null;
+    const orient=$("audioorient")?$("audioorient").value:"unstated";
+    return AUDIO_ORIENT_WORD[orient]
+      ? `Keep the iPad ${AUDIO_ORIENT_WORD[orient]}, so your hand does not cover the speaker.`
+      : null;
+  }
   const sustained = !!(TRIAL && TRIAL.task===taskId && TRIAL.sustainedS>0)
                  || !!(PLAN && PLAN[taskId] && PLAN[taskId].sustainedS>0);
   // Declared after `sustained`, because the continuity rule's wording depends on it.
@@ -2163,11 +2195,24 @@ function instructionFor(taskId, opts){
       lines.push("**Use the tip of your index finger. No pen for this one.**");
     rules.forEach(l=>lines.push(l));
     if(sustained) keepGoingLines(tool).forEach(l=>lines.push(l));
+  } else if(dualTask && DUAL_INSTRUCTION[taskId]){
+    /* THE DOCUMENT'S OWN PARAGRAPH, sections 5.1 and 6.1, which say to REPLACE the PEN_SPR60
+       instruction rather than add to it. What stood here rebuilt the same idea out of the
+       spiral rules plus the audio lines plus a prioritisation line of mine, and the result
+       was eleven bullets where the description has five sentences. The drawing rules are
+       still one tap away on the same screen. */
+    DUAL_INSTRUCTION[taskId].forEach(l=>lines.push(l));
+    /* The orientation line survives the replacement. Section 5.1 replaces the PEN_SPR60
+       instruction; the orientation sentence comes from the auditory-verbal spec, which asks
+       the instruction screen to state it "so that the drawing hand does not cover the
+       speaker" -- a risk that exists only on the conditions that draw AND listen, which is
+       these two. Dropping it here would remove it from the only place it matters. */
+    { const ol=orientLineNow(); if(ol) lines.push(ol); }
+    return { id:taskId, title:c.label, lines,
+             drawingRules: rules, rulesShownInline:false, figure:false,
+             mode, implement:impl, verbatim:true,
+             length:"About 60 seconds." };
   } else if(dualTask){
-    // Short on screen; the identical rules are one click away. See drawingRules().
-    // The dual tasks were reduced to "exactly as before", which assumes the participant is
-    // still holding four rules from a screen they saw several minutes and several trials ago.
-    // The two that decay first -- accuracy under load, and not lifting -- are repeated.
     lines.push(`**Trace the spiral with your ${tool}, exactly as before.**`);
     lines.push(`Accurately, at a comfortable speed, without lifting the ${tool}.`);
     if(sustained) keepGoingLines(tool).forEach(l=>lines.push(l));
@@ -2209,20 +2254,9 @@ function instructionFor(taskId, opts){
      Taken from the Delivery panel rather than written here, because where the speakers are
      is a property of the device model and a sentence hard-coded from a guess about the
      hardware is worse than one the examiner set. */
-  const AUDIO_ORIENT_WORD = {
-    landscape_home_right:"landscape, with the home edge to your right",
-    landscape_home_left:"landscape, with the home edge to your left",
-    portrait:"upright, in portrait" };
   // Held back and appended last. It is a handling instruction rather than part of the task,
   // and pushed where it is computed it landed ABOVE "tap the circle every time you hear a
   // beep" on TAP_TONE -- which puts how to hold the iPad in front of what to do with it.
-  const orientLine = (()=>{
-    if(!c.audio || (opts&&opts.practice)) return null;
-    const orient=$("audioorient")?$("audioorient").value:"unstated";
-    return AUDIO_ORIENT_WORD[orient]
-      ? `Keep the iPad ${AUDIO_ORIENT_WORD[orient]}, so your hand does not cover the speaker.`
-      : null;
-  })();
   const a = AUDIO_DEFAULTS[taskId];
   let handOver = null;
   if(c.audio){
@@ -2322,7 +2356,7 @@ function instructionFor(taskId, opts){
       : "Use a <b>strong voice</b>, loud enough to be heard across the room.");
   }
   // Last, because it is about holding the device rather than about the task.
-  if(orientLine) lines.push(orientLine);
+  { const ol=orientLineNow(); if(ol) lines.push(ol); }
   // Then the hand-over to the audibility check, after everything else, because the screen
   // it introduces is the next thing that happens.
   if(handOver) lines.push(handOver);
@@ -8467,10 +8501,11 @@ function practiceRecap(c){
   // The two auditory dual tasks have no practice as of 2026-10-04 and this line is all that
   // stands between the instruction screen and the trial, so they are admitted explicitly.
   if(!practicePlan(c).length && !NO_PRACTICE_DUAL.has(c.id)) return null;
+  // Sections 5.3 and 6.2, word for word. The wording here was mine for half a day.
   if(isDualTask(c))
     return avKind(c.id)==="digits"
-      ? "Now we’ll do both together. Keep drawing the spirals, and say “yes” every time you hear the number two. Don’t stop one to do the other."
-      : "Now we’ll do both together. Keep drawing the spirals, and count the high beeps out loud at the same time. Don’t stop one to do the other.";
+      ? "Both at once for one minute — keep tracing spirals and say “yes” when you hear the number two."
+      : "Both at once for one minute — keep tracing spirals and keep counting the high beeps out loud.";
   if(c.audio && !c.spiral)
     return avKind(c.id)==="digits"
       ? "Now we’ll do it for one minute. Say “yes” when you hear the number two, and nothing for the other numbers."
@@ -10246,7 +10281,15 @@ const avEntrySpec = c => ({
      table. The yes responses are in the voice recording either way. */
   observe: false,
   report:  !!c.count,          // tones only: the participant's own total
-  switch:  isDualTask(c)
+  /* NO TASK-SWITCHING FLAG. The auditory-verbal spec asks for one on the dual conditions;
+     section 5.5 of the task description says the dual save screen is "Same as VOC_VODD",
+     which is one question and nothing else, and the task description governs.
+
+     What goes with it, since it cannot be recovered: a participant who did the dual task by
+     abandoning half of it -- stopping the drawing whenever they counted, or the reverse --
+     produces a clean spiral and a clean count that were never concurrent, and the pen trace
+     shows the pause without saying why. */
+  switch:  false
 });
 /* Does this trial need the entry screen at all? VOC_VDGT now needs nothing and goes straight
    to the save controls; PEN_VDGT still stops for the one dual-task question. */

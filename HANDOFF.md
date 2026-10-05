@@ -313,11 +313,15 @@ against 19.9% in the trial, so the practice is denser than what follows; two wou
 Three is the specified figure.
 
 **The two auditory dual tasks have no practice and no check.** PEN_VODD and PEN_VDGT go from
-the instruction screen to one restated line -- "keep drawing, and count at the same time,
-don't stop one to do the other" -- and then into the trial. By then both halves have been
-practised separately. What this gives up: the dual task is the only condition where a
+the instruction screen to the recap line and then into the trial. By then both halves have
+been practised separately. What this gives up: the dual task is the only condition where a
 participant can do each half correctly in isolation and still not do the task, and that is
 now found out inside the sixty seconds that count.
+
+**This is a deliberate departure from section 5.2**, which specifies a 10-second dual-task
+practice on the dominant hand with no SKIP control, and a question afterwards. It was removed
+by decision of 2026-10-04 and the decision was re-confirmed after 5.2 was read. The document
+is the stale half here, not the build.
 
 **The save screen asks one question, and only on the tone conditions.** "How many high
 beeps in total?", left blank when the participant gives no number. It is scored in three
