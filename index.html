@@ -1177,7 +1177,7 @@
     <div class="spacer"></div>
 
     <div id="reminder"></div>
-    <button id="quit" onclick="backToSession()">Exit</button>
+    <button id="quit" onclick="backToSession()">EXIT</button>
   </div>
   <!-- THE RULE, KEPT ON THE TASK SCREEN. The zone labels say which finger, and on the
        bimanual tasks that is only half of it: what distinguishes TAP_BMIN from TAP_BANT is
@@ -1380,7 +1380,7 @@ const CATALOGUE = [
   // is one "yes" per target instead of a running total -- which means there is no number to
   // ask the participant for at the end, and no count for them to lose. The pair therefore
   // separates the monitoring load from the counting load, which the tone task alone cannot.
-  { id:"VOC_VDGT", label:"Saying yes to the number two", order:40, tier:"core", spiral:0, tap:0, audio:1, zones:0, hands:"none", repeats:1, lengthS:60,
+  { id:"VOC_VDGT", label:"Saying yes to the number two", order:50, tier:"core", spiral:0, tap:0, audio:1, zones:0, hands:"none", repeats:1, lengthS:60,
                    count:0, respond:"speak", voice:1,
                    avObserve:"yes_responses" },
 
@@ -1388,7 +1388,7 @@ const CATALOGUE = [
   // FOUR TRIALS, ALTERNATING HANDS, starting with the dominant one: D, ND, D, ND. The hand
   // alternates rather than being fixed to the dominant side because the dual-task cost is
   // wanted for both hands, and the four trial indices are what AV_TARGET_COUNTS is keyed on.
-  { id:"PEN_VODD", label:"Spiral + counting the high tones aloud", order:50, tier:"core", spiral:1, tap:0, audio:1, zones:0, hands:"each", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
+  { id:"PEN_VODD", label:"Spiral + counting the high tones aloud", order:40, tier:"core", spiral:1, tap:0, audio:1, zones:0, hands:"each", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
                    selfPaceable:1, fixedS:60, count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1,
                    avObserve:"final_count" },
   { id:"PEN_VDGT", label:"Spiral + saying yes to the number two", order:60, tier:"core", spiral:1, tap:0, audio:1, zones:0, hands:"each", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
@@ -7811,8 +7811,10 @@ function showTaskStartScreen(cont){
          <code>${templateNameFor(c, TRIAL.drawHand||TRIAL.tapHand, true)}</code>${
          c.spiral && practicePlan(c).length
            ? ` · practice on <code>${practiceTemplateName(geomPitch(c), TRIAL.drawHand)}</code>`:""}</p>` : ""}`,
-    [{ label:"Next", onClick:()=>{ hideOverlay(); cont(); } },
-     { label:"Back", ghost:true, onClick:()=>backToSession() }]);
+    /* The start screen's previous screen IS the session, so BACK and EXIT would be the same
+       control. EXIT is the one that names what happens. */
+    [{ label:"NEXT", onClick:()=>{ hideOverlay(); cont(); } },
+     { label:"EXIT", ghost:true, onClick:()=>backToSession() }]);
 }
 
 /* THE END-OF-TASK SCREEN. NEXT goes to the next task in the session, EXIT returns to the
@@ -7834,9 +7836,9 @@ function showTaskEndScreen(taskId){
       ? `Next in the session: <b>${nextTask}</b> — ${esc((byId(nextTask)||{}).label||"")}`
       : "That is the last task in the session."}</p>`,
     [ nextTask
-        ? { label:"Next", onClick:()=>{ hideOverlay(); runCurrent(); } }
-        : { label:"Finish", onClick:()=>{ hideOverlay(); sessionComplete(); } },
-      { label:"Exit", ghost:true, onClick:()=>backToSession() }]);
+        ? { label:"NEXT", onClick:()=>{ hideOverlay(); runCurrent(); } }
+        : { label:"FINISH", onClick:()=>{ hideOverlay(); sessionComplete(); } },
+      { label:"EXIT", ghost:true, onClick:()=>backToSession() }]);
 }
 
 // Every overlay goes through here: body scrolls, buttons stay pinned.
@@ -7910,7 +7912,7 @@ function sessionComplete(){
     <p>${done} trial${done===1?"":"s"} saved${skipped?`, ${skipped} skipped`:""}.</p>
     <p style="font-size:17px;color:#5d6570">Export before clearing this device.</p>`,
     [{label:"Export data", onClick:()=>{ stageOn(false); RUN=null; goPage(6); }},
-     {label:"Exit", ghost:true, onClick:()=>{ stageOn(false); RUN=null; goPage(3); }}]);
+     {label:"EXIT", ghost:true, onClick:()=>{ stageOn(false); RUN=null; goPage(3); }}]);
 }
 
 // The stream a trial will actually use. durS follows the plan: a fixed-length trial
@@ -8046,7 +8048,7 @@ function openTrial(showInstruction){
            TRIAL.voiceFailure={ reason:"microphone_not_granted",
              detail:"Microphone access was not granted before the trial was started." };
            hideOverlay(); afterMic(); } },
-       { label:"Abandon", ghost:true, onClick:()=>{
+       { label:"EXIT", ghost:true, onClick:()=>{
            if(gate.settled) return; gate.settled=true;
            hideOverlay(); stageOn(false); RUN=null; goPage(3); } }]);
     let p; try{ p=RECORDER.prepare(); }catch(e){ p=Promise.reject(e); }
@@ -8069,7 +8071,7 @@ function micFailOverlay(detail, cont){
     changes.</p>`,
     [{ label:"Run without recording", onClick:()=>{ hideOverlay(); cont(); } },
      { label:"Try again", ghost:true, onClick:()=>{ hideOverlay(); openTrial(TRIAL.task!==LAST_TASK); } },
-     { label:"Abandon", ghost:true, onClick:()=>{ hideOverlay(); stageOn(false); RUN=null; goPage(3); } }]);
+     { label:"EXIT", ghost:true, onClick:()=>{ hideOverlay(); stageOn(false); RUN=null; goPage(3); } }]);
 }
 
 // PEN_MATH and PEN_WORD: which prompt, and the exact words used. Both go into the record,
@@ -8102,7 +8104,7 @@ function showVerbalSetup(c, done){
         TRIAL.verbal=v; TRIAL.verbalType=type;
         hideOverlay(); done();
       }},
-     { label:"Exit", ghost:true, onClick:()=>backToSession() }]);
+     { label:"EXIT", ghost:true, onClick:()=>backToSession() }]);
   verbalTypeChanged();
 }
 function verbalTypeChanged(){
@@ -8202,9 +8204,9 @@ function showInstructionScreen(seq,c,returnToReady){
   showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em;
       margin:0 0 14px">${TRIAL.task} · ${esc(c.label)}</div>` + instructionHTML(ins) + rulesNote + soundBtns + palmNote + voiceNote +
     `<p style="font-size:16px;color:#5d6570;margin-top:10px">${ins.length}</p>`,
-    [{label:"Ready", onClick:()=>{ hideOverlay(); LAST_TASK=TRIAL.task;
+    [{label:"NEXT", onClick:()=>{ hideOverlay(); LAST_TASK=TRIAL.task;
         readyTrial(returnToReady?returnToReady.seq:seq, c, true); }},
-     {label:"Exit", ghost:true, onClick:()=>backToSession()}]);
+     {label:"EXIT", ghost:true, onClick:()=>backToSession()}]);
 }
 
 // One short line, in the participant's words, for the whole trial. Only where the screen
@@ -8635,15 +8637,32 @@ function practiceResult(){
     if(nxt && nxt.task===c.id && !isPracticeRow(nxt)){ showPracticeRecap(c); return; }
     runCurrent();
   };
+  /* NOTHING WAS DRAWN, AND THE SCREEN HAS TO SAY SO. A practice nobody started ends on
+     the no-response ceiling after half a minute, and until now it showed the identical
+     "Practice run finished" that a completed one shows. From the other side of the glass
+     that is "I pressed PRACTICE and it went straight to the end screen" -- which is exactly
+     what happens on the non-dominant hand, where swapping the pen over and settling an older
+     adult's weaker hand is what eats the half minute. */
+  const nothing = !!(RUN && RUN.noResponseCeiling) ||
+                  !!(RUN && RUN.windowStart==null && c.spiral);
+  const head = nothing
+    ? `<h3 style="font-size:26px;color:#8c2020">Nothing was drawn</h3>
+       <p style="font-size:18px;color:#5d6570;max-width:520px;margin:6px auto 0">The pen never
+       touched down inside the green circle, so the practice timed out without starting.
+       Press <b>REPEAT</b> to run it again.</p>`
+    : `<h3 style="font-size:26px">Practice run finished</h3>`;
+  /* ONE NEXT, WHATEVER COMES NEXT. It said "Next practice" on one row and "Go to the trials"
+     on another -- two names for the control the description calls NEXT, and on the last
+     practice the second name read as "the only way out of here is into the trials". */
   showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em;
       margin:0 0 14px">${TRIAL.task} · practice ${step} of ${of} · not saved</div>
-    <h3 style="font-size:26px">Practice run finished</h3>${ask}`,
-    [{ label: more ? "Next practice" : "Go to the trials", onClick:advance },
-     { label:"Run it again", ghost:true, onClick:()=>{
+    ${head}${ask}`,
+    [{ label:"NEXT", onClick:advance },
+     { label:"REPEAT", ghost:!nothing, onClick:()=>{
          hideOverlay(); RUN=null; TRIAL.introDone=true; openTrial(false); } },
-     { label:"Instruction", ghost:true,
+     { label:"INSTRUCTION", ghost:true,
        onClick:()=>showInstructionScreen(null, c, {practice:true}) },
-     { label:"Exit", ghost:true, onClick:()=>backToSession() }]);
+     { label:"EXIT", ghost:true, onClick:()=>backToSession() }]);
 }
 function showPracticeRecap(c){
   const recap=practiceRecap(c);
@@ -8656,8 +8675,10 @@ function showPracticeRecap(c){
       margin:0 0 14px">${c.id} · before the first trial</div>
     <h3 style="font-size:24px">Read this, then start</h3>
     <p style="font-size:22px;line-height:1.5">“${recap}”</p>`,
-    [{ label:"Ready", onClick:()=>{ hideOverlay(); runCurrent(); } },
-     { label:"Practice again", ghost:true, onClick:()=>{
+    /* BACK here is the practice -- the screen before this one -- which is exactly what
+       "practice again" meant under a name that was mine. */
+    [{ label:"NEXT", onClick:()=>{ hideOverlay(); runCurrent(); } },
+     { label:"BACK", ghost:true, onClick:()=>{
          // Back to this task's practice rows, re-opened as pending, and the cursor with them.
          let first=-1;
          QUEUE.forEach((q,i)=>{ if(q.task!==c.id || !isPracticeRow(q)) return;
@@ -8666,7 +8687,7 @@ function showPracticeRecap(c){
          PRACTICE_DONE.delete(c.id); PRACTICE_SKIPPED.delete(c.id);
          renderQueue(); saveState();
          hideOverlay(); runCurrent(); } },
-     { label:"Exit", ghost:true, onClick:()=>backToSession() }]);
+     { label:"EXIT", ghost:true, onClick:()=>backToSession() }]);
 }
 
 /* ===========================================================================
@@ -8851,9 +8872,11 @@ function showCheckAndPractice(c, seq, form){
       const btns=[];
       if(done && practice) btns.push({ label:"PRACTICE", onClick:runPractice });
       if(done) btns.push({ label:"NEXT", ghost:practice, onClick:onward });
-      btns.push({ label:"Instruction", ghost:true,
+      /* INSTRUCTION already IS "back to the previous screen" here, so a separate BACK would
+         be the same control twice. EXIT is the one that does something different. */
+      btns.push({ label:"INSTRUCTION", ghost:true,
         onClick:()=>showInstructionScreen(seq, c, practice?{practice:true}:{seq}) });
-      btns.push({ label:"Back", ghost:true, onClick:()=>backToSession() });
+      btns.push({ label:"EXIT", ghost:true, onClick:()=>backToSession() });
       return btns;
     })());
   };
@@ -8909,7 +8932,7 @@ function audibilityFailed(kind){
     <p style="font-size:17px;color:#5d6570">Headphones raise the level but do not correct
     impaired frequency discrimination or word intelligibility, so retrying with headphones is
     not a way past this. Run the conditions that need no sound and leave the rest.</p>`,
-    [{ label:"Back to the session", onClick:()=>{ hideOverlay(); backToSession(); } }]);
+    [{ label:"EXIT", onClick:()=>{ hideOverlay(); backToSession(); } }]);
 }
 
 function readyTrial(seq,c,justInstructed,autoStart){
@@ -8947,9 +8970,9 @@ function readyTrial(seq,c,justInstructed,autoStart){
             letter-spacing:.04em;margin:0 0 14px">${c.id} · before the first trial</div>
           <h3 style="font-size:24px">Read this, then start</h3>
           <p style="font-size:22px;line-height:1.5">“${recap}”</p>`,
-          [{ label:"Ready", onClick:()=>{ hideOverlay(); readyTrial(seq,c,false); } },
-           { label:"Instruction", ghost:true, onClick:()=>showInstructionScreen(seq,c,{seq}) },
-           { label:"Exit", ghost:true, onClick:()=>backToSession() }]);
+          [{ label:"NEXT", onClick:()=>{ hideOverlay(); readyTrial(seq,c,false); } },
+           { label:"INSTRUCTION", ghost:true, onClick:()=>showInstructionScreen(seq,c,{seq}) },
+           { label:"EXIT", ghost:true, onClick:()=>backToSession() }]);
         return;
       }
     }
@@ -9002,8 +9025,8 @@ function readyTrial(seq,c,justInstructed,autoStart){
       : `Now tap with the <b>${handNow.toUpperCase()}</b> index finger`;
     showOverlay(`<h3 style="font-size:34px;line-height:1.3">${what}</h3>
       <p style="font-size:19px;color:#5d6570">${TRIAL.task} · ${positionWord()}</p>`,
-      [{label:"Ready", onClick:hideOverlay},
-       {label:"Exit", ghost:true, onClick:()=>backToSession()}]);
+      [{label:"NEXT", onClick:hideOverlay},
+       {label:"EXIT", ghost:true, onClick:()=>backToSession()}]);
   } else hideOverlay();
 
   // WHAT TO SAY, ON THE SCREEN THE EXAMINER IS LOOKING AT WHEN THEY HAVE TO SAY IT. In
@@ -9036,12 +9059,12 @@ function readyTrial(seq,c,justInstructed,autoStart){
   // or speak has not been lost to a timer.
   if(autoStart){ start.onclick(); return; }
 
-  const ins=document.createElement("button"); ins.textContent="Instruction";
+  const ins=document.createElement("button"); ins.textContent="INSTRUCTION";
   ins.className="ghost"; ins.style.minWidth="0";
   ins.onclick=()=>showInstructionScreen(seq,c,{seq});
   $("ctrl").appendChild(ins);
 
-  const lst=document.createElement("button"); lst.textContent="List";
+  const lst=document.createElement("button"); lst.textContent="LIST";
   lst.className="ghost"; lst.style.minWidth="0";
   lst.onclick=()=>showQueueOverlay(seq,c);
   $("ctrl").appendChild(lst);
@@ -9064,7 +9087,7 @@ function showQueueOverlay(seq,c){
           (i===QPOS?"<b>now</b>":"")}</td></tr>`).join("");
   showOverlay(`<h3>Trial list</h3>
     <div style="width:min(90vw,620px)"><table style="font-size:16px">${rows}</table></div>`,
-    [{label:"Back", onClick:hideOverlay},
+    [{label:"BACK", onClick:hideOverlay},
      {label: isPracticeRow(QUEUE[QPOS])?"Skip this practice":"Skip this trial", ghost:true,
       onClick:()=>{
         if(isPracticeRow(QUEUE[QPOS])){ hideOverlay(); skipCurrent();
@@ -9813,7 +9836,7 @@ function runTrial(seq,c){
   $("ctrl").innerHTML="";
   const eb=document.createElement("button"); eb.textContent="END";
   eb.onclick=()=>stopTrial(false); $("ctrl").appendChild(eb);
-  const rb=document.createElement("button"); rb.textContent="Reset"; rb.className="ghost";
+  const rb=document.createElement("button"); rb.textContent="RESET"; rb.className="ghost";
   rb.onclick=()=>resetTrial(); $("ctrl").appendChild(rb);
   // Examiner intervention marker. A reminder to a participant who has gone quiet, or an
   // interruption in the room, changes the load the trial was measuring -- a trial where one
@@ -9825,7 +9848,7 @@ function runTrial(seq,c){
   // "Event" named nothing and "Log event" named a filing action rather than a thing. What it
   // marks is anything that happened which was not the task -- a reminder to a participant who
   // has gone quiet, a phone going off, somebody walking in.
-  ev.textContent="Interruption"; ev.title="Timestamp something that was not the task: a prompt to the participant, or an interruption in the room";
+  ev.textContent="INTERRUPTION"; ev.title="Timestamp something that was not the task: a prompt to the participant, or an interruption in the room";
   ev.onclick=()=>markExaminerEvent(); $("ctrl").appendChild(ev);
   // EXCEPTION PATH, for one case: a participant who stops short and never reaches the end
   // zone. Deliberately not the normal way to advance -- an examiner pressing at every
@@ -9834,7 +9857,7 @@ function runTrial(seq,c){
   // by the button is identifiable afterwards rather than indistinguishable from a clean one.
   if(sustained){
     const nx=document.createElement("button"); nx.id="nextpass"; nx.className="ghost";
-    nx.textContent="Next spiral";
+    nx.textContent="NEXT SPIRAL";
     nx.title="Only for a participant who has stopped short of the end zone";
     nx.onclick=()=>advancePass("examiner"); $("ctrl").appendChild(nx);
   }
@@ -10396,7 +10419,7 @@ function askExaminerEntry(seq){
     const missing=[];
     if(spec.switch && !E.task_switch) missing.push("the task-switching answer");
     const btns=[];
-    btns.push({ label:"Save the trial", ghost:!!missing.length, onClick:()=>{
+    btns.push({ label:"SAVE", ghost:!!missing.length, onClick:()=>{
         if(missing.length){ alert("Still to complete: "+missing.join(", ")+"."); return; }
         hideOverlay();
         E.done=true;
@@ -10404,7 +10427,7 @@ function askExaminerEntry(seq){
         // record all read reportedCount and it still means the same thing.
         RUN.reportedCount = E.reported_kind==="integer" ? E.reported_value : null;
         finish(); } });
-    btns.push({ label:"Exit", ghost:true, onClick:()=>{
+    btns.push({ label:"EXIT", ghost:true, onClick:()=>{
         if(!confirm("Leave without recording this trial?\n\nThe trial is lost, including "+
                     "what you heard and anything the participant said.")) return;
         backToSession(); } });
@@ -10470,7 +10493,7 @@ function showEndControls(seq,c,pts,rate,att,tp){
   // LIST, not Exit. The trial list is where an examiner goes to pick a different task or to
   // see what is left, and it was reachable DURING a trial but not after one -- so the only
   // route to it from here was to leave the stage altogether.
-  const ls=document.createElement("button"); ls.textContent="List"; ls.className="ghost";
+  const ls=document.createElement("button"); ls.textContent="LIST"; ls.className="ghost";
   ls.style.minWidth="0"; ls.onclick=()=>showQueueOverlay(seq,c); $("ctrl").appendChild(ls);
   // "Show the drawing" and "Exit" are gone.
   //
@@ -11415,7 +11438,7 @@ function showRescueOverlay(errName){
         renderSaved(); RESCUE_EXPORTED=false; hideOverlay();
         const sb=[...$("ctrl").querySelectorAll("button")].find(b=>/^SAVE/.test(b.textContent));
         if(sb){ sb.disabled=false; sb.textContent="SAVE"; saveTrial(sb); } } },
-    { label:"Back", ghost:true, onClick:hideOverlay }
+    { label:"BACK", ghost:true, onClick:hideOverlay }
   ]);
 }
 
