@@ -1884,13 +1884,18 @@ function taskTrialOrdinal(){
 // record says so -- an examiner who adds a fifth dual trial gets a defined
 // stimulus sequence and a field that admits it was not one of the four.
 function avTargetCount(task, ordinal){
-  if(!avHasTargets(task)) return { count:null, source:"every_stimulus" };
   const kind=avKind(task), tbl=AV_TARGET_COUNTS[kind];
-  if(!tbl) return { count:null, source:"no_table" };
+  // Answer-all streams still carry the high tone; what differs is that every stimulus is
+  // responded to. Their count comes from the same table, so the sound a participant hears on
+  // "tap to every tone" is the sound they hear on "tap the high tones".
+  const answerAll = !avHasTargets(task);
+  if(!tbl || kind!=="tones" && answerAll) return { count:null, source:"every_stimulus", answerAll };
+  if(!tbl) return { count:null, source:"no_table", answerAll };
   const c=byId(task), dual=isDualTask(c);
   const list=dual?tbl.dual:tbl.single;
   const i=(ordinal-1)%list.length;
-  return { count:list[i], source:(ordinal-1)<list.length?"specified":"cycled",
+  return { count:list[i], answerAll,
+           source: answerAll ? "pitch_only" : ((ordinal-1)<list.length?"specified":"cycled"),
            table:dual?"dual":"single", table_index:i+1 };
 }
 
@@ -1903,7 +1908,10 @@ const STREAMS = {
   // AV_TARGET_COUNTS fixes how many targets each trial contains. What is left here is the
   // one thing that genuinely differs between streams -- whether the participant answers
   // every stimulus or only the rare one.
-  every:   { hasTargets:false, tone:100, label:"Respond to every stimulus" },
+  // hasTargets is about the RESPONSE RULE, not about the materials: an "every" stream
+  // carries the same two pitches and the same fixed high-tone counts as the oddball, and the
+  // participant answers all of them. Set twoPitch:false to go back to one pitch.
+  every:   { hasTargets:false, twoPitch:true, tone:100, label:"Respond to every stimulus" },
   oddball: { hasTargets:true,  tone:100, label:"Respond only to the target" }
 };
 // The floor is 600 ms on every stream and no longer depends on the response channel; see
@@ -2280,6 +2288,9 @@ function instructionFor(taskId, opts){
       // tap" pre-empts a mistake nobody on a voice-only task was about to make.
       if(c.countOf==="all"){
         lines.push(`**${also?"At the same time, count":"Count"} every beep OUT LOUD: one, two, three, and so on.**`);
+        // The stream carries a high beep as well as a low one, so "every beep" needs saying.
+        // Without this a participant hears two kinds and assumes only one of them counts.
+        lines.push("Some beeps are higher than others. Count all of them.");
       } else if(also){
         lines.push("**At the same time, count the HIGH beeps out loud, one, two, three, and keep going up.**");
         lines.push("Most of the beeps are low. Say nothing for those.");
@@ -2313,6 +2324,7 @@ function instructionFor(taskId, opts){
       lines.push("The low beeps are more common. Ignore them.");
     } else {
       lines.push(`**${also?"At the same time, tap":"Tap"} the circle with your ${sideWord}index finger every time you hear a beep.**`);
+      lines.push("Some beeps are higher than others. Tap for all of them.");
     }
   }
 
@@ -6501,7 +6513,13 @@ function avPlaceTargets(onsets, durMs, want, rng){
 function makeSequence(opts){
   const durationS=opts.durationS, want=opts.targetCount, seed=opts.seed>>>0;
   const respond=opts.respond||"tap", kind=opts.kind||"tones";
-  const det = want==null;
+  /* WHETHER EVERY STIMULUS IS ANSWERED, and whether the stream CONTAINS a rare one, are
+     two different questions, and conflating them is why "tapping to every tone" played a
+     single pitch for fifty seconds. The participant answers everything on that task -- that
+     is `answerAll` -- but the stream it is compared against is the two-pitch oddball, and a
+     comparison between "respond to all" and "respond to the rare one" is only about the
+     response rule if the sound is the same in both. */
+  const det = !!opts.answerAll || want==null;
   const durMs=durationS*1000;
   const LAW = avGapLaw(kind);
   if(durMs < LAW.minMs*4)
@@ -6516,7 +6534,7 @@ function makeSequence(opts){
     for(;;){ const g=avGapMs(rng,stats,LAW), nxt=on[on.length-1]+g;
       if(nxt>durMs) break; gp.push(g); on.push(nxt); }
     if(on.length<4){ stats.regenerations++; continue; }
-    if(det){ onsets=on; gaps=gp; pos=[]; break; }
+    if(want==null){ onsets=on; gaps=gp; pos=[]; break; }
     const p=avPlaceTargets(on,durMs,want,rng);
     if(p){ onsets=on; gaps=gp; pos=p; break; }
     stats.regenerations++;
@@ -7970,10 +7988,13 @@ function openTrial(showInstruction){
     // A PRACTICE SEQUENCE IS NOT A TRIAL INDEX. It takes the three targets the description
     // asks for and its own seed, so it is identical for every participant and is never
     // mistaken for trial 1 -- which it would be if it read the table.
-    const tc = TRIAL.practice ? { count:AV_PRACTICE.targets, source:"practice" }
-                              : avTargetCount(TRIAL.task, ord);
+    const answerAll = !avHasTargets(TRIAL.task);
+    const tc = TRIAL.practice
+      ? { count:(avKind(TRIAL.task)==="tones"||!answerAll) ? AV_PRACTICE.targets : null,
+          source:"practice", answerAll }
+      : avTargetCount(TRIAL.task, ord);
     try{ seq=makeSequence({ durationS:cfg.durS, targetCount:tc.count, seed:drawSeed(),
-                            respond:cfg.respond, kind:avKind(TRIAL.task),
+                            respond:cfg.respond, kind:avKind(TRIAL.task), answerAll,
                             countSource:tc.source, ordinal:TRIAL.practice?null:ord });
          // Which word each non-target slot plays. Seeded from the sequence seed, so the
          // same trial index presents the same words to every participant.
@@ -10352,7 +10373,7 @@ function askExaminerEntry(seq){
     const rows=[];
     // ---- the count -----------------------------------------------------------------
     if(spec.report) rows.push(`<div style="text-align:center;max-width:560px;margin:0 auto 22px">
-      <div style="font-size:26px;margin:4px 0 14px">“How many high beeps in total?”</div>
+      <div style="font-size:26px;margin:4px 0 14px">“How many ${c.countOf==="all"?"beeps":"high beeps"} in total?”</div>
       <input id="repInput" type="number" min="0" max="500"
         value="${E.reported_kind==="integer"?E.reported_value:""}"
         style="max-width:190px;font-size:34px;text-align:center"
