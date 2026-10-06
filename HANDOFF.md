@@ -328,6 +328,17 @@ practice on the dominant hand with no SKIP control, and a question afterwards. I
 by decision of 2026-10-04 and the decision was re-confirmed after 5.2 was read. The document
 is the stale half here, not the build.
 
+**Storage has two limits and both have to be watched.** Trial records live in the browser's
+string store, capped around 5 MB, and that is what a failed SAVE runs into. Voice clips live
+in IndexedDB and are measured by `navigator.storage.estimate()`, which on Safari can report
+one per cent of a multi-gigabyte quota while the 5 MB is already full. One 60-second Opus
+clip is about 1.7 MB against about 20 KB for a trial record, so the clips are two orders of
+magnitude bigger -- and until 2026-10-05 neither the warning nor the "clear" counted them at
+all. An examiner saw "storage is full", exported, cleared, and the warning returned on the
+next task, because the clear had freed half a megabyte of records while tens of megabytes of
+recordings stayed. The warning now fires on whichever limit is tighter, names both, and
+clearing takes the clips with it.
+
 **The save screen asks one question, and only on the tone conditions.** "How many high
 beeps in total?", left blank when the participant gives no number. It is scored in three
 levels against the trial's target count -- plausible, grossly discrepant, no number -- not as

@@ -7706,21 +7706,80 @@ function hideStopSign(){
   if($("zones")) $("zones").classList.remove("off");
 }
 
+/* WHAT IS ACTUALLY FILLING THE DEVICE IS THE AUDIO, AND IT WAS NEVER COUNTED.
+
+   The warning and the "clear" both looked only at trial records: a few tens of kilobytes
+   each, so a whole session of them is well under a megabyte. One 60-second Opus clip is
+   about 1.7 MB -- measured on a real export -- and a session with the voice conditions holds
+   dozens. The clips are two orders of magnitude bigger than the thing being measured.
+
+   So an examiner saw "storage is full", exported, cleared, and the warning came straight
+   back on the next task: the clear had freed half a megabyte of trials while tens of
+   megabytes of recordings stayed exactly where they were. That is the report, and it was
+   right.
+
+   Three things change. The clip total is counted. The real browser figure is read from
+   navigator.storage.estimate() where the platform offers it, rather than assumed to be 5 MB.
+   And clearing takes the clips with it. */
+let AUDIO_BYTES=0, AUDIO_N=0, QUOTA=null;     // last known; refreshed after every save
+function refreshAudioBytes(){
+  return idbAll().then(l=>{
+    const rs=l||[];
+    AUDIO_N=rs.length;
+    AUDIO_BYTES=rs.reduce((a,r)=>a+(r.bytes || (r.blob?r.blob.size:0) || 0),0);
+    return AUDIO_BYTES;
+  }).catch(()=>AUDIO_BYTES);
+}
+function refreshQuota(){
+  if(!(navigator.storage && navigator.storage.estimate)) return Promise.resolve(null);
+  return navigator.storage.estimate().then(e=>{ QUOTA=e; return e; }).catch(()=>null);
+}
 function storageUsed(){
   const ts=listTrials();
-  return { n:ts.length, bytes:ts.reduce((a,b)=>a+b.size,0) };
+  const trialBytes=ts.reduce((a,b)=>a+b.size,0);
+  return { n:ts.length, bytes:trialBytes,
+           audioN:AUDIO_N, audioBytes:AUDIO_BYTES,
+           totalBytes:trialBytes+AUDIO_BYTES,
+           quotaUsed: QUOTA?QUOTA.usage:null, quotaTotal: QUOTA?QUOTA.quota:null };
 }
-// A full battery fills browser storage. Warn before the next trial, not after a save
-// has already failed. Voice clips are NOT in this figure: they are in IndexedDB, which
-// is exactly why they are there.
-function storagePct(){ return 100*storageUsed().bytes/(5*1024*1024); }
+/* TWO LIMITS, AND THE WARNING HAS TO WATCH BOTH, because either can be the one that bites
+   and they are measured in different units.
+
+   The string store that trial records live in has its own hard cap of roughly 5 MB, and it
+   is what a failed SAVE runs into. navigator.storage.estimate() does not describe it: Safari
+   can report one per cent of a multi-gigabyte quota while that 5 MB is already full, so
+   trusting the estimate alone would have thrown away the only warning that predicts a save
+   failure. The estimate is what describes the clips, which are where the megabytes are.
+
+   So the figure is whichever of the two is tighter, and the readout names both. */
+const mb = b => (b/1024/1024).toFixed(1)+" MB";
+function storageLocalPct(){ return 100*storageUsed().bytes/(5*1024*1024); }
+function storageSitePct(){
+  const u=storageUsed();
+  return u.quotaTotal ? 100*u.quotaUsed/u.quotaTotal
+                      : 100*u.totalBytes/(50*1024*1024);
+}
+function storagePct(){ return Math.max(storageLocalPct(), storageSitePct()); }
+function storageLine(){
+  const u=storageUsed();
+  const lp=storageLocalPct(), sp=storageSitePct();
+  const trials=`${u.n} trial${u.n===1?"":"s"} ${mb(u.bytes)} of the ~5 MB record store `+
+               `(${lp.toFixed(0)}%)`;
+  const clips=`${u.audioN} voice clip${u.audioN===1?"":"s"} ${mb(u.audioBytes)}`;
+  const site=u.quotaTotal ? ` · device: ${mb(u.quotaUsed)} of ${mb(u.quotaTotal)} `+
+                            `(${sp.toFixed(0)}%)` : "";
+  return `${trials}, ${clips}${site}\n` +
+         (lp>=sp ? "The record store is the tighter of the two — exporting and clearing the "+
+                   "trials is what frees it."
+                 : "The voice clips are the tighter of the two — clearing takes them with it.");
+}
 
 function storageGuard(){
-  const u=storageUsed(), pct=storagePct();
+  const pct=storagePct();
   if(pct<70) return true;
-  return confirm(`Storage is ${pct.toFixed(0)}% full (${u.n} trials, ${(u.bytes/1024/1024).toFixed(1)} MB).\n\n` +
+  return confirm(`Storage is ${pct.toFixed(0)}% full.\n\n${storageLine()}\n\n` +
     `Saving may fail soon. Go to Results and data and press EXPORT EVERYTHING, then clear, ` +
-    `before continuing.\n\n` +
+    `before continuing — clearing now takes the voice clips with it, which is where the space is.\n\n` +
     `Continue anyway?`);
 }
 
@@ -7728,9 +7787,9 @@ function storageGuard(){
 // the threshold mid-trial, and finding out at SAVE -- with a finished trial on screen
 // and nowhere to put it -- is the failure this exists to prevent.
 function storageWarnBeforeSave(){
-  const u=storageUsed(), pct=storagePct();
+  const pct=storagePct();
   if(pct<80) return true;
-  return confirm(`Storage is ${pct.toFixed(0)}% full (${u.n} trials, ${(u.bytes/1024/1024).toFixed(1)} MB).\n\n` +
+  return confirm(`Storage is ${pct.toFixed(0)}% full.\n\n${storageLine()}\n\n` +
     `This save may fail. Press EXPORT EVERYTHING on Results and data first if you can.\n\n`+
     `Try saving anyway?`);
 }
@@ -11477,10 +11536,25 @@ function showRescueOverlay(errName){
         if(!RESCUE_EXPORTED &&
            !confirm("You have not exported in this recovery.\n\nClearing destroys every saved trial on this device. Continue?")) return;
         if(!confirm("Delete every saved trial on this device and retry the save?\n\nThe trial on screen is re-saved from memory straight afterwards. Voice clips and screening records are NOT deleted.")) return;
-        listTrials().forEach(t=>{ try{ localStorage.removeItem(t.key); }catch(e){} delete MEM[t.key]; });
-        renderSaved(); RESCUE_EXPORTED=false; hideOverlay();
-        const sb=[...$("ctrl").querySelectorAll("button")].find(b=>/^SAVE/.test(b.textContent));
-        if(sb){ sb.disabled=false; sb.textContent="SAVE"; saveTrial(sb); } } },
+        /* The clips go too. Clearing only the trial records freed well under a megabyte
+           while tens of megabytes of recordings stayed, so the next save hit the same wall
+           and the examiner saw the warning return. The trial on screen keeps its own clip:
+           it is still in RUN and is written again by the save below. */
+        const before = storageUsed();
+        clearEverything().then(()=>{
+          RESCUE_EXPORTED=false; hideOverlay();
+          const sb=[...$("ctrl").querySelectorAll("button")].find(b=>/^SAVE/.test(b.textContent));
+          if(sb){ sb.disabled=false; sb.textContent="SAVE"; saveTrial(sb); }
+          refreshQuota().then(()=>{
+            const freed = before.totalBytes - storageUsed().totalBytes;
+            // Said out loud, because a clear that frees nothing used to be silent.
+            if(freed < 1024*1024)
+              alert(`Cleared, but only ${mb(Math.max(0,freed))} was freed.\n\n`+
+                    `If the warning returns, the space is being held by something other than `+
+                    `this app — close other Safari tabs for this site, or clear the site data `+
+                    `in Settings.`);
+          });
+        }); } },
     { label:"BACK", ghost:true, onClick:hideOverlay }
   ]);
 }
@@ -11871,6 +11945,8 @@ function renderSaved(){
 /* ------------------------------------------------------- voice clip store */
 let AUDIO_INDEX=[];
 function renderAudioStore(){
+  // Keeps the figure the warnings use in step with what the store actually holds.
+  refreshAudioBytes().then(()=>refreshQuota());
   if(!$("audioBody")) return;
   idbAll().then(list=>{
     AUDIO_INDEX=(list||[]).map(r=>({ audio_id:r.audio_id, trial_id:r.trial_id,
@@ -12016,6 +12092,8 @@ function clearEverything(){
   listScreens().forEach(t=>{ try{ localStorage.removeItem(t.key); }catch(e){} });
   return idbAll().then(list=>Promise.all((list||[]).map(r=>idbDel(r.audio_id))))
                  .catch(()=>null)
+                 .then(()=>refreshAudioBytes())
+                 .then(()=>refreshQuota())
                  .then(()=>{ renderSaved(); if(typeof renderAudioStore==="function") renderAudioStore(); });
 }
 function exportThenClear(){
@@ -12479,6 +12557,7 @@ bootStep("spoken digits", ()=>{ if(typeof renderStandinNote==="function") render
 // on top -- the same reason AUDIO_SHIPPED is taken where it is. Without it there is no way
 // to put a setting back to what this build ships, because by then nothing remembers.
 bootStep("shipped values", snapshotShippedFields);
+bootStep("storage figures", ()=>{ refreshAudioBytes(); refreshQuota(); });
 
 // Nothing below start-up should be able to leave a blank page.
 // restoreState() reads first, THEN saving is armed. Both branches arm it: a session that
