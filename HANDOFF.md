@@ -19,7 +19,7 @@ Three sources, in order of what they are good for:
 | `DECISIONS.md` | Why each rule is the shape it is. What was tried first and how it failed. Generated from the commit history. |
 | `SCOPE.md`, `CLAUDE.md` | Project constraints and working rules the build inherits. |
 
-Line numbers below are **as of BUILD v14.01 (2026-10-04)** where they have been rechecked
+Line numbers below are **as of BUILD v14.02 (2026-10-04)** where they have been rechecked
 and older where they have not. They drift. Each entry also gives a search string that does
 not, and the search string is the one to use.
 
@@ -277,36 +277,84 @@ the battery without them reimplements a different battery.
 
 | What | Search for |
 |---|---|
-| The audibility check, both forms | `THE AUDIBILITY CHECK` |
+| The audibility check and practice, one screen | `function showCheckAndPractice(` |
 | Practice, inside the session | `PRACTICE, INSIDE THE SESSION` |
 | The examiner entry screen | `THE EXAMINER ENTRY SCREEN` |
 | What the examiner says before each trial | `const TRIAL_SCRIPTS` |
 | The start and end-of-task screens | `function showTaskStartScreen(` |
 
-**The audibility check runs in two forms, and that is a departure from the specification as
-written.** It says the check runs once per session at the first auditory condition, which is
-right for a session with one kind of stimulus. This battery has two, and they ask different
-questions: tones ask whether two pitches can be told apart, digits whether five spoken words
-can be understood. Presbycusis takes the high frequencies consonants live in, so a
-participant can pass pitch discrimination and still not tell "two" from "three". The tone
-form runs once at the first tone condition, the digit form once at the first digit
-condition. **A failed check takes every condition of that stimulus kind out of the session**,
-each skipped trial carrying the reason.
+**The audibility check covers the tones only, and shares a screen with the practice.** Two
+buttons play one low beep and one high beep on demand, as often as the examiner wants; the
+outcome is **pass or fail**, recorded on the same screen. It runs once per session, at
+whichever tone condition the session reaches first -- normally VOC_VODD, and PEN_VODD when
+VOC_VODD is not in the list. **A failed check takes every tone condition out of the
+session**, each skipped trial carrying the reason, and can be cleared and run again.
 
-**Practice is administered to the participant and is not saved.** Seven conditions have one.
-What is practised is not the movement but the rule -- the hold, the single-word response, and
-on a dual task that neither half may stop while the other is done. There is **no SKIP
-control on the dual tasks**, which is the specification being deliberate: the dual task is
-the only place a participant can do both halves correctly in isolation and still not do the
-task. The practice screens are also the only place in the battery where the correct count is
-shown, because practice is where a misunderstanding is supposed to be found.
+Two things were deliberately given up here on 2026-10-04 and cannot be recovered from the
+data afterwards. **The digit conditions are not checked at all**: telling two pure tones
+apart and understanding a spoken "two" are different abilities, and presbycusis takes the
+high frequencies consonants live in, so a participant can pass the beeps and still mishear
+the word. And **"pass after repeat" is gone** -- it was defined as all six correct on the
+second presentation, and with the fixed six replaced by on-demand buttons there is no second
+presentation for it to mean.
 
-**The examiner entry screen enforces an order, and the order is the measurement.** Field 1
-is what the examiner HEARD; field 2 is what the participant claims. Field 2 is unreachable
-until field 1 is in, and field 1 cannot be edited afterwards -- both are judgments about the
-same quantity and the second arrives with the answer attached. The two are never merged in
-the record. The reported total is scored in three levels against the trial's target count,
-not as a continuous error.
+**The two stimulus kinds no longer share an interval floor.** Tones keep the
+specification's 600 ms; digits run a **750 ms** floor as of 2026-10-04, with the scale solved
+again to 250.0 so the mean stays 1000 ms. The reason is the slot: the spec requires at least
+150 ms of silence between words, so a 600 ms floor caps a spoken digit at 450 ms, and fitting
+an English digit into that meant speaking it 25% faster than normal. A 750 ms floor gives a
+600 ms slot and the voice runs at its normal rate. Measured over 400 seeds each, both streams
+present 60.4 stimuli in a 60-second trial, so the pair stays comparable on rate; what differs
+is that the digit stream cannot produce a gap under 750 ms.
+
+**Practice is administered to the participant and is not saved.** It runs **10 s with three
+targets** on the auditory conditions and **30 s per hand** on the sustained spiral. The
+spiral practice ends a pass on the **majority** of its three-turn template -- 1.8 turns swept,
+against 4.4 of 5 on the trial -- and then the same one-second hold inside the red circle. The
+looser gate is deliberate: a practice run is teaching the hold, and a gate that will not
+respond until 88% of the template has been swept teaches it late or not at all inside the
+window. The rings test is identical, so circling in one spot still advances nothing. Three targets in ten seconds is a 27.8% target rate
+against 19.9% in the trial, so the practice is denser than what follows; two would match.
+Three is the specified figure.
+
+**The two auditory dual tasks have no practice and no check.** PEN_VODD and PEN_VDGT go from
+the instruction screen to the recap line and then into the trial. By then both halves have
+been practised separately. What this gives up: the dual task is the only condition where a
+participant can do each half correctly in isolation and still not do the task, and that is
+now found out inside the sixty seconds that count.
+
+**This is a deliberate departure from section 5.2**, which specifies a 10-second dual-task
+practice on the dominant hand with no SKIP control, and a question afterwards. It was removed
+by decision of 2026-10-04 and the decision was re-confirmed after 5.2 was read. The document
+is the stale half here, not the build.
+
+**Storage has two limits and both have to be watched.** Trial records live in the browser's
+string store, capped around 5 MB, and that is what a failed SAVE runs into. Voice clips live
+in IndexedDB and are measured by `navigator.storage.estimate()`, which on Safari can report
+one per cent of a multi-gigabyte quota while the 5 MB is already full. One 60-second Opus
+clip is about 1.7 MB against about 20 KB for a trial record, so the clips are two orders of
+magnitude bigger -- and until 2026-10-05 neither the warning nor the "clear" counted them at
+all. An examiner saw "storage is full", exported, cleared, and the warning returned on the
+next task, because the clear had freed half a megabyte of records while tens of megabytes of
+recordings stayed. The warning now fires on whichever limit is tighter, names both, and
+clearing takes the clips with it.
+
+**The save screen asks one question, and only on the tone conditions.** "How many high
+beeps in total?", left blank when the participant gives no number. It is scored in three
+levels against the trial's target count -- plausible, grossly discrepant, no number -- not as
+a continuous error.
+
+**The digit conditions ask nothing at all.** VOC_VDGT goes straight to the save controls;
+PEN_VDGT stops only for the dual-task switching flag. The auditory-verbal spec has the
+examiner record "the number of yes responses heard" there; the task description does not, and
+the decision of 2026-10-04 is that nobody keeps a running tally on those trials. That is what
+the pair is for -- the digit task removes the count the tone task requires, and a field
+asking for one puts the load back on the examiner's side of the table.
+
+The counting aloud is in the voice recording, which the specification calls the primary
+record, captured in the same file as the stimulus. The examiner's own observed count, a
+quality rating and a free-text note were on this screen until 2026-10-04 and are null on
+every trial from this build.
 
 ---
 

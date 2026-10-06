@@ -167,8 +167,13 @@
   .tapdot.lit { background:#1d5fa8; border-color:#1d5fa8; color:#fff; }
   /* The instruction can be taller than the screen. Content scrolls; the action button
      sits in a bar pinned to the bottom so it can never be pushed out of reach. */
+  /* OPAQUE, not 98%. Two per cent of a 150-point END cue is still legible, so every screen
+     that opens after a trial had "END — you can stop counting" showing faintly through its
+     own text: on the recap screen that is the previous trial's ending sitting behind the
+     line the examiner is about to read. There is nothing underneath the overlay that is
+     ever worth seeing through it. */
   #overlay { position:absolute; inset:0; display:flex; flex-direction:column;
-             background:rgba(255,255,255,.98); z-index:3; }
+             background:#fff; z-index:3; }
   /* justify-content:center centres the column -- right while it fits, WRONG the moment it
      does not: an overflowing centered column has its top pushed outside the scroll area, and
      scrolling cannot bring it back. The instruction screen lost its first line that way,
@@ -1104,8 +1109,10 @@
       <div id="savedBody"></div>
       <div id="savedMeter"></div>
       <div class="btnrow">
-        <button onclick="exportAllCSV()">Export all as one CSV</button>
-        <button class="ghost" onclick="exportAllJSON()">Export all as JSON</button>
+        <button onclick="exportThenClear()">EXPORT EVERYTHING, then clear</button>
+        <button class="ghost" onclick="exportEverything(l=>alert('Exported '+l+'.'))">Export everything, keep it</button>
+        <button class="ghost" onclick="exportAllCSV()">CSV only</button>
+        <button class="ghost" onclick="exportAllJSON()">JSON only</button>
         <button class="ghost" onclick="showCSVText()">Show CSV as text</button>
         <button class="ghost" onclick="renderSaved()">Refresh</button>
         <button class="ghost" onclick="delAllTrials()">Delete all</button>
@@ -1172,7 +1179,7 @@
     <div class="spacer"></div>
 
     <div id="reminder"></div>
-    <button id="quit" onclick="backToSession()">Exit</button>
+    <button id="quit" onclick="backToSession()">EXIT</button>
   </div>
   <!-- THE RULE, KEPT ON THE TASK SCREEN. The zone labels say which finger, and on the
        bimanual tasks that is only half of it: what distinguishes TAP_BMIN from TAP_BANT is
@@ -1268,7 +1275,7 @@ window.addEventListener("unhandledrejection", e => {
   const r=e && e.reason;
   __report("promise", (r && (r.message||r.name)) || r, "", 0, 0, r && r.stack);
 });
-const BUILD = "v14.01 2026-10-04";
+const BUILD = "v14.02 2026-10-04";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1367,7 +1374,7 @@ const CATALOGUE = [
   // job is to show the participant can do the task at all without competing motor demand,
   // and to put the audibility check and the practice before the dual task rather than
   // inside it.
-  { id:"VOC_VODD", label:"Counting the high tones aloud, no drawing", order:30, tier:"core", spiral:0, tap:0, audio:1, zones:0, hands:"none", repeats:1, lengthS:60,
+  { id:"VOC_VODD", label:"Counting the high tones aloud", order:30, tier:"core", spiral:0, tap:0, audio:1, zones:0, hands:"none", repeats:1, lengthS:60,
                    count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1,
                    avObserve:"final_count" },
   // THE SAME STREAM WITH DIFFERENT MATERIALS AND A DIFFERENT RESPONSE. Digits are spoken
@@ -1375,7 +1382,7 @@ const CATALOGUE = [
   // is one "yes" per target instead of a running total -- which means there is no number to
   // ask the participant for at the end, and no count for them to lose. The pair therefore
   // separates the monitoring load from the counting load, which the tone task alone cannot.
-  { id:"VOC_VDGT", label:"Saying yes to the number two, no drawing", order:40, tier:"core", spiral:0, tap:0, audio:1, zones:0, hands:"none", repeats:1, lengthS:60,
+  { id:"VOC_VDGT", label:"Saying yes to the number two", order:50, tier:"core", spiral:0, tap:0, audio:1, zones:0, hands:"none", repeats:1, lengthS:60,
                    count:0, respond:"speak", voice:1,
                    avObserve:"yes_responses" },
 
@@ -1383,7 +1390,7 @@ const CATALOGUE = [
   // FOUR TRIALS, ALTERNATING HANDS, starting with the dominant one: D, ND, D, ND. The hand
   // alternates rather than being fixed to the dominant side because the dual-task cost is
   // wanted for both hands, and the four trial indices are what AV_TARGET_COUNTS is keyed on.
-  { id:"PEN_VODD", label:"Spiral + counting the high tones aloud", order:50, tier:"core", spiral:1, tap:0, audio:1, zones:0, hands:"each", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
+  { id:"PEN_VODD", label:"Spiral + counting the high tones aloud", order:40, tier:"core", spiral:1, tap:0, audio:1, zones:0, hands:"each", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
                    selfPaceable:1, fixedS:60, count:1, countMode:"aloud", countOf:"targets", respond:"speak", voice:1,
                    avObserve:"final_count" },
   { id:"PEN_VDGT", label:"Spiral + saying yes to the number two", order:60, tier:"core", spiral:1, tap:0, audio:1, zones:0, hands:"each", repeats:2, lengthS:null, implement:"pen", sustainedS:60,
@@ -1750,7 +1757,28 @@ let ORPHANED_AUDIO=null;
    If the minimum, the mean, the maximum or the discard rule is ever changed, this
    constant has to be recalculated, or the stream quietly stops averaging what the
    specification says it averages. */
-const AV_GAP = { minMs:600, meanMs:1000, maxMs:3500, scaleMs:402.1, maxDrawMs:2900 };
+/* TWO FLOORS, ONE MEAN. The tones keep the specification's 600 ms. The digits were moved to
+   750 ms on 2026-10-04 because a spoken word cannot be rushed into the slot a 600 ms floor
+   leaves: the silence between words must be at least 150 ms, so a 600 ms floor caps the word
+   at 450 ms, and fitting an English digit into that meant speaking it 25% faster than normal
+   -- which is what "short and rushed" was. A 750 ms floor gives a 600 ms slot and the voice
+   runs at its normal rate.
+
+   EVERYTHING ELSE IS UNCHANGED between the two: the 1000 ms mean, the 3500 ms maximum, the
+   exponential-above-floor shape and the discard-and-redraw rule. So both still produce about
+   60 stimuli in a 60-second trial. What differs is the shape below the mean -- the digit
+   stream cannot produce a gap under 750 ms, where the tone stream can.
+
+   THE SCALE IS DERIVED, NEVER TYPED. Each is the value that makes the finished gaps average
+   1000 ms given that floor, that maximum and that discard rule, solved to three decimals and
+   rounded: 402.1 gives 1000.0 at a 600 ms floor, 250.0 gives 999.95 at a 750 ms floor. Change
+   any of the floor, mean, maximum or discard rule and the scale has to be solved again. */
+const AV_GAP_TONES  = { minMs:600, meanMs:1000, maxMs:3500, scaleMs:402.1, maxDrawMs:2900 };
+const AV_GAP_DIGITS = { minMs:750, meanMs:1000, maxMs:3500, scaleMs:250.0, maxDrawMs:2750 };
+const avGapLaw = kind => kind==="digits" ? AV_GAP_DIGITS : AV_GAP_TONES;
+// The tone law under its old name, for the many places that pre-date the split and describe
+// the tone stream. Anything that depends on WHICH stream asks avGapLaw(kind) instead.
+const AV_GAP = AV_GAP_TONES;
 /* About the 3500 ms maximum. The exponential has no natural upper limit, so
    without a maximum an occasional gap runs past four seconds, which does not
    sound like a long gap -- it sounds like the iPad has stopped working. The
@@ -1780,9 +1808,16 @@ const AV_TARGET_COUNTS = {
   if(bad.length) throw new Error("AV_TARGET_COUNTS uses a count of 10 ("+bad.join(", ")+
     "); 10 is the number a participant guesses, so no trial may use it.");
 })();
-// Practice is 20 s with three targets, for every auditory condition. Short enough
-// not to be a trial, long enough to contain the thing being practised.
-const AV_PRACTICE = { durS:20, targets:3 };
+/* PRACTICE IS 10 s WITH THREE TARGETS, from the revised task description.
+
+   Three targets in ten seconds is a 27.8% target rate, measured over 1000 seeds, against
+   19.9% in the 60-second trial. The practice therefore teaches a denser oddball than the
+   one that follows; two targets would give 19.0% and match it. Three is the specified
+   figure and is what runs -- this note exists so the difference is a known one rather than
+   a discovered one. Placement under AV_PLACE succeeds on every seed tried: the first target
+   lands between 2.0 and 3.8 s and the last between 6.1 and 8.0 s, so the sequence is not
+   the same one every time. */
+const AV_PRACTICE = { durS:10, targets:3 };
 
 /* TARGET PLACEMENT. Applied when the sequence is generated, never during it.
    The 2000 ms separation is the response constraint: it is the gap a spoken
@@ -1851,13 +1886,18 @@ function taskTrialOrdinal(){
 // record says so -- an examiner who adds a fifth dual trial gets a defined
 // stimulus sequence and a field that admits it was not one of the four.
 function avTargetCount(task, ordinal){
-  if(!avHasTargets(task)) return { count:null, source:"every_stimulus" };
   const kind=avKind(task), tbl=AV_TARGET_COUNTS[kind];
-  if(!tbl) return { count:null, source:"no_table" };
+  // Answer-all streams still carry the high tone; what differs is that every stimulus is
+  // responded to. Their count comes from the same table, so the sound a participant hears on
+  // "tap to every tone" is the sound they hear on "tap the high tones".
+  const answerAll = !avHasTargets(task);
+  if(!tbl || kind!=="tones" && answerAll) return { count:null, source:"every_stimulus", answerAll };
+  if(!tbl) return { count:null, source:"no_table", answerAll };
   const c=byId(task), dual=isDualTask(c);
   const list=dual?tbl.dual:tbl.single;
   const i=(ordinal-1)%list.length;
-  return { count:list[i], source:(ordinal-1)<list.length?"specified":"cycled",
+  return { count:list[i], answerAll,
+           source: answerAll ? "pitch_only" : ((ordinal-1)<list.length?"specified":"cycled"),
            table:dual?"dual":"single", table_index:i+1 };
 }
 
@@ -1870,7 +1910,10 @@ const STREAMS = {
   // AV_TARGET_COUNTS fixes how many targets each trial contains. What is left here is the
   // one thing that genuinely differs between streams -- whether the participant answers
   // every stimulus or only the rare one.
-  every:   { hasTargets:false, tone:100, label:"Respond to every stimulus" },
+  // hasTargets is about the RESPONSE RULE, not about the materials: an "every" stream
+  // carries the same two pitches and the same fixed high-tone counts as the oddball, and the
+  // participant answers all of them. Set twoPitch:false to go back to one pitch.
+  every:   { hasTargets:false, twoPitch:true, tone:100, label:"Respond to every stimulus" },
   oddball: { hasTargets:true,  tone:100, label:"Respond only to the target" }
 };
 // The floor is 600 ms on every stream and no longer depends on the response channel; see
@@ -1905,7 +1948,8 @@ function buildAudioDefaults(){
       // specification states them, and the 402.1 scale that makes the mean come out right
       // is tied to this exact minimum, mean and discard rule. They are surfaced on the
       // Parameters page as a statement of what is in force, not as three boxes to type in.
-      floorMs:AV_GAP.minMs, meanMs:AV_GAP.meanMs, maxMs:AV_GAP.maxMs,
+      floorMs:avGapLaw(avKind(id)).minMs, meanMs:avGapLaw(avKind(id)).meanMs,
+      maxMs:avGapLaw(avKind(id)).maxMs,
       lead: drawing ? 1000 : 500,
       durS: c ? (c.lengthS ?? c.sustainedS ?? 60) : 60,
       stream:cfg.stream, respond:cfg.respond, kind:avKind(id),
@@ -1937,6 +1981,22 @@ AUDIO_SHIPPED=JSON.parse(JSON.stringify(AUDIO_DEFAULTS));
 // and someone with a motor impairment tends to protect the motor task -- which would show up
 // as a group difference in dual-task cost that is really a difference in strategy.
 const PRIORITIZATION = "Do your best on both. Don't let either one slip.";
+/* Sections 5.1 and 6.1, word for word. Split into lines only so the screen can emphasise the
+   sentence that names both halves; the words and their order are the document's. */
+const DUAL_INSTRUCTION = {
+  PEN_VODD:[
+    "Now you’ll do both things at the same time.",
+    "**Keep tracing spirals for one minute, just as you did before and at the same time, count the high beeps out loud.**",
+    "Keep your drawing arm and hand lifted.",
+    "Don’t stop drawing to count, and don’t stop counting to draw.",
+    "Go at a comfortable pace."],
+  PEN_VDGT:[
+    "Now you’ll do both things at the same time.",
+    "**Keep tracing spirals for one minute, just as you did before — and at the same time, say “yes” every time you hear the number two.**",
+    "Keep your drawing arm and hand lifted.",
+    "Don’t stop drawing to answer, and don’t stop answering to draw.",
+    "Go at a comfortable pace."]
+};
 // Matches instructionFor()'s own test, so what the record claims and what was shown on
 // screen cannot drift apart.
 const isDualTask = c => !!(c && c.spiral && (c.tap || c.audio || c.verbal));
@@ -2120,6 +2180,22 @@ function instructionFor(taskId, opts){
              mode, implement:impl,
              length:"Ends when the administrator stops it." };
   }
+  /* A FUNCTION, NOT A CONST, because two branches read it and one of them returns early.
+     As a const below the early return it was in its own temporal dead zone; moved above the
+     branch, it read AUDIO_ORIENT_WORD, which is declared further down the file, and threw
+     on that instead. A function declaration is hoisted to the top of this function and
+     reads the table when it is CALLED. */
+  const AUDIO_ORIENT_WORD = {
+    landscape_home_right:"landscape, with the home edge to your right",
+    landscape_home_left:"landscape, with the home edge to your left",
+    portrait:"upright, in portrait" };
+  function orientLineNow(){
+    if(!c.audio || (opts&&opts.practice)) return null;
+    const orient=$("audioorient")?$("audioorient").value:"unstated";
+    return AUDIO_ORIENT_WORD[orient]
+      ? `Keep the iPad ${AUDIO_ORIENT_WORD[orient]}, so your hand does not cover the speaker.`
+      : null;
+  }
   const sustained = !!(TRIAL && TRIAL.task===taskId && TRIAL.sustainedS>0)
                  || !!(PLAN && PLAN[taskId] && PLAN[taskId].sustainedS>0);
   // Declared after `sustained`, because the continuity rule's wording depends on it.
@@ -2129,11 +2205,24 @@ function instructionFor(taskId, opts){
       lines.push("**Use the tip of your index finger. No pen for this one.**");
     rules.forEach(l=>lines.push(l));
     if(sustained) keepGoingLines(tool).forEach(l=>lines.push(l));
+  } else if(dualTask && DUAL_INSTRUCTION[taskId]){
+    /* THE DOCUMENT'S OWN PARAGRAPH, sections 5.1 and 6.1, which say to REPLACE the PEN_SPR60
+       instruction rather than add to it. What stood here rebuilt the same idea out of the
+       spiral rules plus the audio lines plus a prioritisation line of mine, and the result
+       was eleven bullets where the description has five sentences. The drawing rules are
+       still one tap away on the same screen. */
+    DUAL_INSTRUCTION[taskId].forEach(l=>lines.push(l));
+    /* The orientation line survives the replacement. Section 5.1 replaces the PEN_SPR60
+       instruction; the orientation sentence comes from the auditory-verbal spec, which asks
+       the instruction screen to state it "so that the drawing hand does not cover the
+       speaker" -- a risk that exists only on the conditions that draw AND listen, which is
+       these two. Dropping it here would remove it from the only place it matters. */
+    { const ol=orientLineNow(); if(ol) lines.push(ol); }
+    return { id:taskId, title:c.label, lines,
+             drawingRules: rules, rulesShownInline:false, figure:false,
+             mode, implement:impl, verbatim:true,
+             length:"About 60 seconds." };
   } else if(dualTask){
-    // Short on screen; the identical rules are one click away. See drawingRules().
-    // The dual tasks were reduced to "exactly as before", which assumes the participant is
-    // still holding four rules from a screen they saw several minutes and several trials ago.
-    // The two that decay first -- accuracy under load, and not lifting -- are repeated.
     lines.push(`**Trace the spiral with your ${tool}, exactly as before.**`);
     lines.push(`Accurately, at a comfortable speed, without lifting the ${tool}.`);
     if(sustained) keepGoingLines(tool).forEach(l=>lines.push(l));
@@ -2175,21 +2264,11 @@ function instructionFor(taskId, opts){
      Taken from the Delivery panel rather than written here, because where the speakers are
      is a property of the device model and a sentence hard-coded from a guess about the
      hardware is worse than one the examiner set. */
-  const AUDIO_ORIENT_WORD = {
-    landscape_home_right:"landscape, with the home edge to your right",
-    landscape_home_left:"landscape, with the home edge to your left",
-    portrait:"upright, in portrait" };
   // Held back and appended last. It is a handling instruction rather than part of the task,
   // and pushed where it is computed it landed ABOVE "tap the circle every time you hear a
   // beep" on TAP_TONE -- which puts how to hold the iPad in front of what to do with it.
-  const orientLine = (()=>{
-    if(!c.audio || (opts&&opts.practice)) return null;
-    const orient=$("audioorient")?$("audioorient").value:"unstated";
-    return AUDIO_ORIENT_WORD[orient]
-      ? `Keep the iPad ${AUDIO_ORIENT_WORD[orient]}, so your hand does not cover the speaker.`
-      : null;
-  })();
   const a = AUDIO_DEFAULTS[taskId];
+  let handOver = null;
   if(c.audio){
     // THE DIGIT TASKS ARE SPOKEN WORDS AND A SINGLE-WORD ANSWER, so they come before the
     // tone branches: they have targets and a voice response like the counting tasks, and
@@ -2211,9 +2290,27 @@ function instructionFor(taskId, opts){
       // tap" pre-empts a mistake nobody on a voice-only task was about to make.
       if(c.countOf==="all"){
         lines.push(`**${also?"At the same time, count":"Count"} every beep OUT LOUD: one, two, three, and so on.**`);
-      } else {
-        lines.push(`**${also?"At the same time, count":"Count"} the HIGH beeps out loud, one, two, three, and keep going up.**`);
+        // The stream carries a high beep as well as a low one, so "every beep" needs saying.
+        // Without this a participant hears two kinds and assumes only one of them counts.
+        lines.push("Some beeps are higher than others. Count all of them.");
+      } else if(also){
+        lines.push("**At the same time, count the HIGH beeps out loud, one, two, three, and keep going up.**");
         lines.push("Most of the beeps are low. Say nothing for those.");
+      } else {
+        /* THE TASK DESCRIPTION'S OWN WORDS, section 3.2, rather than a paraphrase of them.
+           What was here said the same thing in four bullets of my writing and dropped two
+           sentences entirely: the one that tells the participant how they will know to stop,
+           and the one that hands over to the audibility check. Both matter -- without the
+           first, a participant who loses the thread has nothing to listen for, and without
+           the second the next screen arrives unannounced. */
+        lines.push("You’ll hear a series of beeps. Most of them will be low beeps. Every now and then you’ll hear a higher beep.");
+        lines.push("**Each time you hear a higher beep, count it out loud, one, two, three… and keep going up.**");
+        lines.push("Say nothing for the low beeps.");
+        lines.push("Keep counting out loud until the screen says END.");
+        // Held back, not pushed: it hands over to the audibility check and has to be the
+        // last thing the examiner reads. Pushed here it sat above the voice and orientation
+        // lines, which are appended further down.
+        handOver = "First let’s make sure you can hear the difference.";
       }
       // ON THE DUAL TASK THIS IS THE LINE THAT MATTERS, and it is the one the task
       // description adds: a participant protecting the drawing stops counting, and a
@@ -2221,7 +2318,6 @@ function instructionFor(taskId, opts){
       // dual task, and nothing in the record would say which happened without the
       // task-switching field the examiner fills in afterwards.
       if(also) lines.push("Do not stop drawing to count, and do not stop counting to draw.");
-      lines.push("I will ask for your final number at the end.");
     } else if(c.ptgTargets || (AUDIO_DEFAULTS[taskId]&&AUDIO_DEFAULTS[taskId].hasTargets)){
       // Named on the tone tasks too, not only the unpaced ones: the circle is offset to the
       // tapping side on every one-zone task now, so the instruction and the screen should
@@ -2230,6 +2326,7 @@ function instructionFor(taskId, opts){
       lines.push("The low beeps are more common. Ignore them.");
     } else {
       lines.push(`**${also?"At the same time, tap":"Tap"} the circle with your ${sideWord}index finger every time you hear a beep.**`);
+      lines.push("Some beeps are higher than others. Tap for all of them.");
     }
   }
 
@@ -2273,7 +2370,10 @@ function instructionFor(taskId, opts){
       : "Use a <b>strong voice</b>, loud enough to be heard across the room.");
   }
   // Last, because it is about holding the device rather than about the task.
-  if(orientLine) lines.push(orientLine);
+  { const ol=orientLineNow(); if(ol) lines.push(ol); }
+  // Then the hand-over to the audibility check, after everything else, because the screen
+  // it introduces is the next thing that happens.
+  if(handOver) lines.push(handOver);
 
   return { id:taskId, title:c.label, lines,
            drawingRules: c.spiral ? rules : null,
@@ -5032,10 +5132,15 @@ function renderNextUpParams(){
       <b>${Math.round(bindingLimitMs(c.id,AUDIO_DEFAULTS[c.id]))} ms</b> — the longest response
       that can still be attributed to the right tone. It follows from the floor.</div>
     <div class="r4">${pAudio(c.id,"tone","Tone (ms)",10,30,200)}</div>
-    <div class="note" style="margin:4px 0 0">Gap law: ${AV_GAP.minMs} ms minimum,
-      ${AV_GAP.meanMs} ms mean, ${AV_GAP.maxMs} ms maximum. Fixed by the specification and
-      not editable — the scale constant that makes the mean come out right is tied to these
-      three numbers and to the discard rule. ${avTargetDescription(c.id)}</div>
+    <div class="note" style="margin:4px 0 0">Gap law: ${avGapLaw(avKind(c.id)).minMs} ms
+      minimum, ${avGapLaw(avKind(c.id)).meanMs} ms mean, ${avGapLaw(avKind(c.id)).maxMs} ms
+      maximum.${avKind(c.id)==="digits"
+        ? ` The digit floor is ${AV_GAP_DIGITS.minMs} ms rather than the tones'
+            ${AV_GAP_TONES.minMs}, so a spoken word has a ${digitSlotCeilingMs()} ms slot and
+            does not have to be hurried. The mean and maximum are the same as the tones', so
+            both streams present about the same number of stimuli.`
+        : ``} Not editable — the scale constant that makes the mean come out right is tied to
+      these three numbers and to the discard rule. ${avTargetDescription(c.id)}</div>
     <div class="r4">${pNum("fstd","Standard (Hz)",50)}
       ${pNum("ftgt","Target (Hz)",50)}${pNum("lvl","Tone level (0–1)",0.05,0.05,1)}</div></div>`);
   if(!groups.length){ host.innerHTML=`<div class="note">This task uses no adjustable
@@ -5050,7 +5155,12 @@ function renderNextUpParams(){
     exploration session” above.`}</div>
   </details>`;
 }
-const handWord=h=> h==="both"?"both":h==="dominant"?"dominant":"non-dominant";
+/* "none" IS A HAND VALUE AND IT IS NOT NON-DOMINANT. The queue stores hand:"none" for the
+   listening-and-speaking conditions, and this fell to the final branch, so the session page
+   announced "VOC_VODD — non-dominant · practice 1 of 1" for a task with no hand in it at
+   all. Same root as the hand banner in readyTrial: a fallback written for the two-sided
+   tasks answering for a task that has no side. */
+const handWord=h=> h==="none"?"no hand":h==="both"?"both":h==="dominant"?"dominant":"non-dominant";
 // dominant/non-dominant resolve to a physical side only at run time
 // Which physical side counts as dominant. For a right- or left-handed participant that is
 // their own answer. For an ambidextrous one there is no answer to read, so the examiner
@@ -5146,7 +5256,7 @@ function newSession(){
   // EXAMINER can hear the stimulus from where they are sitting. Carrying a pass forward
   // carries a claim about a setup that no longer exists.
   AUDIBILITY={ tones:null, digits:null }; AUDIBILITY_CLEARED=[];
-  PRACTICE_DONE=new Set(); PRACTICE_SKIPPED=new Set();
+  PRACTICE_DONE=new Set(); PRACTICE_SKIPPED=new Set(); RECAP_SHOWN=new Set();
   $("sessnum").value=sessNo()+1;
   renderStatus(); renderPlan(); renderQueue();
 }
@@ -5165,7 +5275,7 @@ function newVisit(){
   // EXAMINER can hear the stimulus from where they are sitting. Carrying a pass forward
   // carries a claim about a setup that no longer exists.
   AUDIBILITY={ tones:null, digits:null }; AUDIBILITY_CLEARED=[];
-  PRACTICE_DONE=new Set(); PRACTICE_SKIPPED=new Set();
+  PRACTICE_DONE=new Set(); PRACTICE_SKIPPED=new Set(); RECAP_SHOWN=new Set();
   $("visitno").value=visitNo()+1; $("sessnum").value=1;
   renderStatus(); renderPlan(); renderQueue();
 }
@@ -5193,7 +5303,7 @@ function newParticipant(){
   // not the device
   Object.keys(PENCHECK).forEach(k=>delete PENCHECK[k]);
   AUDIBILITY={ tones:null, digits:null }; AUDIBILITY_CLEARED=[];
-  PRACTICE_DONE=new Set(); PRACTICE_SKIPPED=new Set();
+  PRACTICE_DONE=new Set(); PRACTICE_SKIPPED=new Set(); RECAP_SHOWN=new Set();
   if($("soundok")) $("soundok").checked=false;
   if($("volstep")) $("volstep").value="0";
   if($("audioroute")) $("audioroute").value="speaker";
@@ -5303,7 +5413,8 @@ function nextIds(pid,task,H){
 // the draw. At the specified values that is 2000 ms against the 1200 the old rule gave --
 // which was discarding slow but genuine responses as unattributable.
 function bindingLimitMs(taskId,a){
-  return (a && a.hasTargets) ? AV_PLACE.minTargetGapMs : AV_GAP.minMs;
+  return (a && a.hasTargets) ? AV_PLACE.minTargetGapMs
+                            : avGapLaw(avKind(taskId)).minMs;
 }
 // One sentence naming the fixed target counts a task's trials use, for the panels that
 // used to show an editable probability.
@@ -5377,8 +5488,9 @@ function renderAudioTable(){
       step="${step}" onchange="streamSet('${k}','${f}',+this.value)">`;
     h+=`<tr><td><b>${lab[0]}</b><br><span class="note" style="margin:0">${lab[1]}</span></td>
       <td><span class="note" style="margin:0">${g.tasks.join("<br>")}</span></td>
-      <td class="num">${AV_GAP.minMs}</td>
-      <td class="num">${AV_GAP.meanMs}</td>
+      <td class="num">${[...new Set([...g.kinds].map(kind=>avGapLaw(kind).minMs))]
+        .sort((x,y)=>x-y).join(" / ")}</td>
+      <td class="num">${AV_GAP_TONES.meanMs}</td>
       <td><span class="note" style="margin:0">${a.hasTargets
           ? [...g.kinds].map(kind=>{ const t=AV_TARGET_COUNTS[kind];
               return t ? `${kind}: ${t.single.join(", ")} single, ${t.dual.join(", ")} dual`
@@ -5827,10 +5939,21 @@ const advanceLapsFor  = t => Math.max(1, Math.round((+t||0)*advanceFraction()));
 // geometry -- 5 turns with advturns at 5 -- these come out 5, 4 and 5 minus the slack, which
 // is exactly what they were before any scaling existed. Nothing about the shipped stylus
 // conditions moves; the scaling only has an effect where the template is short.
-function advanceGate(t){
+/* THE PRACTICE SPIRAL ENDS ON THE MAJORITY OF ITS TEMPLATE, the trial on 88% of its own.
+
+   A trial is a measurement and the gate is tight so that a pass means the spiral was
+   actually traced to its end. A practice run is teaching one rule -- draw it, then hold
+   still in the red circle until it disappears -- and a gate that demands 88% of the template
+   before the red circle will respond teaches the rule late, or not at all inside the window.
+   At 0.6 the end zone comes alive once more than half the spiral has been swept, which is
+   what "the majority" means, with enough margin above a half that a spiral abandoned exactly
+   halfway does not open it. The rings test is untouched, so circling in one spot still
+   advances nothing. */
+const PRACTICE_GATE_FRACTION = 0.6;
+function advanceGate(t, practice){
   const laps=advanceLapsFor(t);
-  return { laps, rings:Math.max(2, laps-1),
-           openAt:+(laps*END_GATE_TURN_FRACTION).toFixed(4) };
+  const frac = practice ? PRACTICE_GATE_FRACTION : END_GATE_TURN_FRACTION;
+  return { laps, rings:Math.max(2, laps-1), openAt:+(laps*frac).toFixed(4) };
 }
 // The most a perfect tracing can bank, given that nothing below the start zone is counted.
 function bankableRad(turns, outerR, gateR){
@@ -5902,7 +6025,31 @@ function makeAngleAccumulator(direction, minR, bandMM, nBands, endAngle){
       // Where this pen started relative to the template's END RAY, fixed on the first
       // counted sample. Laps are counted as crossings of that ray, so the offset has to be
       // known before any crossing can be.
-      if(w===null) w = s*(a - (endAngle==null?a:endAngle));
+      /* WRAPPED INTO ONE TURN, which it was not, and that is a whole turn stolen from every
+         left-handed spiral.
+
+         w is "how far round from the template's end ray the pen was when counting began,
+         measured in the drawing direction". By definition that is somewhere in [0, 1) turns.
+         But `a` comes from atan2 and is wrapped into (-pi, pi], while endAngle is a fixed
+         constant, so the raw difference can land a full turn outside that interval -- and
+         whether it does depends on the sign, which is the drawing direction.
+
+         Measured on the 12 mm template with the start zone at 8 mm, where counting begins a
+         third of a turn out:
+             right hand, cw  :  w = +2.094 rad = +0.333 turns   correct
+             left  hand, ccw :  w = -4.189 rad = -0.667 turns   a full turn short
+
+         So a PERFECT left-handed tracing banked turns-1: 2.0 laps on the three-turn practice
+         template and 4.0 on the five-turn trial, against gates of 2.64 and 4.40. Neither
+         could ever open. The right hand, on the same drawing, reached 3.0 and 5.0 and
+         advanced normally -- which is exactly the report: the left hand does not auto-end.
+
+         Wrapping makes both hands give +0.333, and lapsSwept lands on the template's own
+         turn count for a clean trace either way. */
+      if(w===null){
+        const raw = s*(a - (endAngle==null?a:endAngle));
+        w = ((raw % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
+      }
       if(last!==null){
         let d=a-last;
         // Unwrap: a step larger than half a turn is the atan2 discontinuity, not motion.
@@ -6285,13 +6432,14 @@ function hash32(str){ let h=5381; for(let i=0;i<str.length;i++) h=((h<<5)+h+str.
 // One gap, drawn and redrawn until it is inside the law. The loop bound is a
 // runaway guard and nothing more: at these settings a draw survives 99.93% of the
 // time, so reaching even ten iterations is not something the distribution does.
-function avGapMs(rng, stats){
+function avGapMs(rng, stats, law){
+  const L = law || AV_GAP_TONES;
   for(let k=0;k<4096;k++){
-    const x = -AV_GAP.scaleMs*Math.log(1-rng());
-    if(x<=AV_GAP.maxDrawMs) return AV_GAP.minMs+x;
+    const x = -L.scaleMs*Math.log(1-rng());
+    if(x<=L.maxDrawMs) return L.minMs+x;
     if(stats) stats.redraws++;
   }
-  throw new Error("The gap draw did not converge — check AV_GAP.");
+  throw new Error("The gap draw did not converge — check the gap law.");
 }
 
 /* Place `want` targets among the stimuli, honoring the separation and both dead
@@ -6367,9 +6515,16 @@ function avPlaceTargets(onsets, durMs, want, rng){
 function makeSequence(opts){
   const durationS=opts.durationS, want=opts.targetCount, seed=opts.seed>>>0;
   const respond=opts.respond||"tap", kind=opts.kind||"tones";
-  const det = want==null;
+  /* WHETHER EVERY STIMULUS IS ANSWERED, and whether the stream CONTAINS a rare one, are
+     two different questions, and conflating them is why "tapping to every tone" played a
+     single pitch for fifty seconds. The participant answers everything on that task -- that
+     is `answerAll` -- but the stream it is compared against is the two-pitch oddball, and a
+     comparison between "respond to all" and "respond to the rare one" is only about the
+     response rule if the sound is the same in both. */
+  const det = !!opts.answerAll || want==null;
   const durMs=durationS*1000;
-  if(durMs < AV_GAP.minMs*4)
+  const LAW = avGapLaw(kind);
+  if(durMs < LAW.minMs*4)
     throw new Error(`A ${durationS} s window is too short for this stream.`);
   if(!det && want<1) throw new Error("A target count below 1 is not a stream.");
 
@@ -6378,10 +6533,10 @@ function makeSequence(opts){
   const rng=mulberry32(seed);
   for(let attempt=0; attempt<AV_PLACE.maxAttempts; attempt++){
     const on=[0], gp=[];
-    for(;;){ const g=avGapMs(rng,stats), nxt=on[on.length-1]+g;
+    for(;;){ const g=avGapMs(rng,stats,LAW), nxt=on[on.length-1]+g;
       if(nxt>durMs) break; gp.push(g); on.push(nxt); }
     if(on.length<4){ stats.regenerations++; continue; }
-    if(det){ onsets=on; gaps=gp; pos=[]; break; }
+    if(want==null){ onsets=on; gaps=gp; pos=[]; break; }
     const p=avPlaceTargets(on,durMs,want,rng);
     if(p){ onsets=on; gaps=gp; pos=p; break; }
     stats.regenerations++;
@@ -6414,11 +6569,11 @@ function makeSequence(opts){
       no_target_first_ms:AV_PLACE.noTargetFirstMs,
       no_target_last_ms:AV_PLACE.noTargetLastMs,
       min_target_gap_spec_ms:AV_PLACE.minTargetGapMs },
-    gapLaw:{ min_ms:AV_GAP.minMs, mean_ms:AV_GAP.meanMs, max_ms:AV_GAP.maxMs,
-             scale_ms:AV_GAP.scaleMs, discard_above_ms:AV_GAP.maxDrawMs,
+    gapLaw:{ min_ms:LAW.minMs, mean_ms:LAW.meanMs, max_ms:LAW.maxMs,
+             scale_ms:LAW.scaleMs, discard_above_ms:LAW.maxDrawMs,
              redraws:stats.redraws, rescaled:false },
     distribution:"floor + exponential, discard and redraw above the maximum",
-    floorMs:AV_GAP.minMs, meanMs:AV_GAP.meanMs,
+    floorMs:LAW.minMs, meanMs:LAW.meanMs,
     adjacentTargetsAllowed:false, minTargetGapTones,
     minISI:gaps.length?Math.min(...gaps):null,
     maxISI:gaps.length?Math.max(...gaps):null,
@@ -6502,14 +6657,14 @@ const DIGIT_SET = {
   // The measured slot length, in ms. Must be <= minimum interval - 150. Stated
   // here as the ceiling the recordings have to fit, and replaced by the measured
   // value when they are installed.
-  slotMs:AV_GAP.minMs-150,
+  slotMs:AV_GAP_DIGITS.minMs-150,
   digits:[1,2,3,4,5],
   target:2,
   rms_matched:null,
   // digit -> data URI. Empty until recordings are installed.
   samples:{}
 };
-const digitSlotCeilingMs = () => AV_GAP.minMs-150;
+const digitSlotCeilingMs = () => AV_GAP_DIGITS.minMs-150;
 
 /* ===========================================================================
    THE SPEECH STAND-IN
@@ -6565,7 +6720,7 @@ const digitSlotCeilingMs = () => AV_GAP.minMs-150;
    It is still not the same guarantee a recording gives -- two devices offering a voice of
    the same NAME can still differ in version -- so the record carries the voice, the user
    agent and the measured onsets, and says in words that the stimulus is synthesized. */
-const DIGIT_VOICE={ name:"Samantha", lang:"en-US", rate:1.25,
+const DIGIT_VOICE={ name:"Samantha", lang:"en-US", rate:1.0,
   declared_iso:"2026-10-01",
   note:"the device's speech synthesis, with this voice named by the study, standing in for "+
        "the five digits the specification asks to be recorded once by one speaker" };
@@ -6650,8 +6805,10 @@ function speakDigitAt(digit, whenMs, onSpoken){
       const u=new SpeechSynthesisUtterance(DIGIT_WORD[digit]||String(digit));
       const v=standinVoice(); if(v) u.voice=v;
       u.lang=(v&&v.lang)||"en-US";
-      // Faster than default, so a word is likelier to finish inside the slot.
-      u.rate=1.25; u.volume=Math.max(0, Math.min(1, +$("lvl").value*2));
+      // NORMAL RATE. It was 1.25 so a word would fit the 450 ms slot a 600 ms floor
+      // leaves, and that is what made the digits sound rushed. The digit floor is 750 ms as
+      // of 2026-10-04, the slot is 600 ms, and the voice no longer has to hurry.
+      u.rate=DIGIT_VOICE.rate; u.volume=Math.max(0, Math.min(1, +$("lvl").value*2));
       window.speechSynthesis.speak(u);
     }catch(e){}
   };
@@ -6743,7 +6900,7 @@ function digitSetProblem(){
   if(!(DIGIT_SET.slotMs>0)) return "the digit slot length has not been measured";
   if(DIGIT_SET.slotMs>digitSlotCeilingMs())
     return `the digit slot is ${DIGIT_SET.slotMs} ms, which leaves under 150 ms of `+
-           `silence at the ${AV_GAP.minMs} ms minimum interval`;
+           `silence at the ${AV_GAP_DIGITS.minMs} ms minimum interval`;
   return null;
 }
 function digitBuffersReady(){
@@ -7223,10 +7380,38 @@ const drawCy = () => (L.pentOn && L.pentVertical && L.copyCy!=null) ? L.copyCy :
 const toCanvas=(x,y)=>({x:L.cx+x*L.p,y:drawCy()-y*L.p});
 const toMM=(x,y)=>({x:(x-L.cx)/L.p,y:(drawCy()-y)/L.p});
 
+/* WHAT A LISTENING TASK PUTS ON ITS OWN SCREEN.
+
+   "The screen displays no count, no target indicator and no feedback of any kind" rules out
+   anything that changes with what the participant has done. A standing line saying what the
+   task is changes with nothing: it is the same at the first beep and the last, it names no
+   number, and it marks no stimulus. What it replaces is a blank white rectangle for sixty
+   seconds, which tells a participant who has lost the thread nothing at all.
+
+   The same line stands during the practice run, so pressing PRACTICE no longer opens what
+   looks like an empty screen. */
+function listeningLine(c){
+  if(!c || !c.audio || c.spiral || c.tap || c.pent) return null;
+  if(avKind(c.id)==="digits") return "Say “yes” when you hear 2";
+  if(c.countOf==="all") return "Count every beep";
+  if(c.count) return "Count the high beeps";
+  return null;
+}
 function drawScene(){
   const g=L.g, c=byId(TRIAL.task);
   g.clearRect(0,0,L.W,L.H); g.fillStyle="#fff"; g.fillRect(0,0,L.W,L.H);
   g.textAlign="center";
+  {
+    const line=listeningLine(c);
+    if(line){
+      g.save();
+      g.fillStyle="#1f2933";
+      g.font=`600 ${Math.round(Math.min(L.W,L.H)*0.072)}px -apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif`;
+      g.textBaseline="middle";
+      g.fillText(line, L.ux0+L.uw/2, L.uy0+L.uh/2);
+      g.restore();
+    }
+  }
   if(L.splitX!==null){ g.strokeStyle="#c9ced6"; g.lineWidth=1; g.setLineDash([5,5]);
     g.beginPath(); g.moveTo(L.splitX,L.uy0+L.topPad); g.lineTo(L.splitX,L.uy0+L.uh); g.stroke();
     g.setLineDash([]); }
@@ -7317,7 +7502,7 @@ function drawScene(){
         // in, so it should arm on being NEAR THE CIRCLE, not on a count that a tremulous hand
         // may never quite reach. Being a cue and not the trigger, arming a touch early costs
         // nothing.
-        const G=advanceGate(geomTurns(byId(TRIAL.task)));
+        const G=advanceGate(geomTurns(byId(TRIAL.task)), !!(TRIAL&&TRIAL.practice));
         const gateOpen = RUN.angle.bandsDrawn >= G.rings && RUN.angle.lapsSwept >= G.openAt;
         const d=Math.hypot(RUN.penMM.x-RUN.endMM.x, RUN.penMM.y-RUN.endMM.y);
         // Reach chosen so the circle lights up about 30 deg of the final turn out -- the
@@ -7521,20 +7706,80 @@ function hideStopSign(){
   if($("zones")) $("zones").classList.remove("off");
 }
 
+/* WHAT IS ACTUALLY FILLING THE DEVICE IS THE AUDIO, AND IT WAS NEVER COUNTED.
+
+   The warning and the "clear" both looked only at trial records: a few tens of kilobytes
+   each, so a whole session of them is well under a megabyte. One 60-second Opus clip is
+   about 1.7 MB -- measured on a real export -- and a session with the voice conditions holds
+   dozens. The clips are two orders of magnitude bigger than the thing being measured.
+
+   So an examiner saw "storage is full", exported, cleared, and the warning came straight
+   back on the next task: the clear had freed half a megabyte of trials while tens of
+   megabytes of recordings stayed exactly where they were. That is the report, and it was
+   right.
+
+   Three things change. The clip total is counted. The real browser figure is read from
+   navigator.storage.estimate() where the platform offers it, rather than assumed to be 5 MB.
+   And clearing takes the clips with it. */
+let AUDIO_BYTES=0, AUDIO_N=0, QUOTA=null;     // last known; refreshed after every save
+function refreshAudioBytes(){
+  return idbAll().then(l=>{
+    const rs=l||[];
+    AUDIO_N=rs.length;
+    AUDIO_BYTES=rs.reduce((a,r)=>a+(r.bytes || (r.blob?r.blob.size:0) || 0),0);
+    return AUDIO_BYTES;
+  }).catch(()=>AUDIO_BYTES);
+}
+function refreshQuota(){
+  if(!(navigator.storage && navigator.storage.estimate)) return Promise.resolve(null);
+  return navigator.storage.estimate().then(e=>{ QUOTA=e; return e; }).catch(()=>null);
+}
 function storageUsed(){
   const ts=listTrials();
-  return { n:ts.length, bytes:ts.reduce((a,b)=>a+b.size,0) };
+  const trialBytes=ts.reduce((a,b)=>a+b.size,0);
+  return { n:ts.length, bytes:trialBytes,
+           audioN:AUDIO_N, audioBytes:AUDIO_BYTES,
+           totalBytes:trialBytes+AUDIO_BYTES,
+           quotaUsed: QUOTA?QUOTA.usage:null, quotaTotal: QUOTA?QUOTA.quota:null };
 }
-// A full battery fills browser storage. Warn before the next trial, not after a save
-// has already failed. Voice clips are NOT in this figure: they are in IndexedDB, which
-// is exactly why they are there.
-function storagePct(){ return 100*storageUsed().bytes/(5*1024*1024); }
+/* TWO LIMITS, AND THE WARNING HAS TO WATCH BOTH, because either can be the one that bites
+   and they are measured in different units.
+
+   The string store that trial records live in has its own hard cap of roughly 5 MB, and it
+   is what a failed SAVE runs into. navigator.storage.estimate() does not describe it: Safari
+   can report one per cent of a multi-gigabyte quota while that 5 MB is already full, so
+   trusting the estimate alone would have thrown away the only warning that predicts a save
+   failure. The estimate is what describes the clips, which are where the megabytes are.
+
+   So the figure is whichever of the two is tighter, and the readout names both. */
+const mb = b => (b/1024/1024).toFixed(1)+" MB";
+function storageLocalPct(){ return 100*storageUsed().bytes/(5*1024*1024); }
+function storageSitePct(){
+  const u=storageUsed();
+  return u.quotaTotal ? 100*u.quotaUsed/u.quotaTotal
+                      : 100*u.totalBytes/(50*1024*1024);
+}
+function storagePct(){ return Math.max(storageLocalPct(), storageSitePct()); }
+function storageLine(){
+  const u=storageUsed();
+  const lp=storageLocalPct(), sp=storageSitePct();
+  const trials=`${u.n} trial${u.n===1?"":"s"} ${mb(u.bytes)} of the ~5 MB record store `+
+               `(${lp.toFixed(0)}%)`;
+  const clips=`${u.audioN} voice clip${u.audioN===1?"":"s"} ${mb(u.audioBytes)}`;
+  const site=u.quotaTotal ? ` · device: ${mb(u.quotaUsed)} of ${mb(u.quotaTotal)} `+
+                            `(${sp.toFixed(0)}%)` : "";
+  return `${trials}, ${clips}${site}\n` +
+         (lp>=sp ? "The record store is the tighter of the two — exporting and clearing the "+
+                   "trials is what frees it."
+                 : "The voice clips are the tighter of the two — clearing takes them with it.");
+}
 
 function storageGuard(){
-  const u=storageUsed(), pct=storagePct();
+  const pct=storagePct();
   if(pct<70) return true;
-  return confirm(`Storage is ${pct.toFixed(0)}% full (${u.n} trials, ${(u.bytes/1024/1024).toFixed(1)} MB).\n\n` +
-    `Saving may fail soon. Export from Results and data, then delete, before continuing.\n\n` +
+  return confirm(`Storage is ${pct.toFixed(0)}% full.\n\n${storageLine()}\n\n` +
+    `Saving may fail soon. Go to Results and data and press EXPORT EVERYTHING, then clear, ` +
+    `before continuing — clearing now takes the voice clips with it, which is where the space is.\n\n` +
     `Continue anyway?`);
 }
 
@@ -7542,10 +7787,11 @@ function storageGuard(){
 // the threshold mid-trial, and finding out at SAVE -- with a finished trial on screen
 // and nowhere to put it -- is the failure this exists to prevent.
 function storageWarnBeforeSave(){
-  const u=storageUsed(), pct=storagePct();
+  const pct=storagePct();
   if(pct<80) return true;
-  return confirm(`Storage is ${pct.toFixed(0)}% full (${u.n} trials, ${(u.bytes/1024/1024).toFixed(1)} MB).\n\n` +
-    `This save may fail. Export and clear first if you can.\n\nTry saving anyway?`);
+  return confirm(`Storage is ${pct.toFixed(0)}% full.\n\n${storageLine()}\n\n` +
+    `This save may fail. Press EXPORT EVERYTHING on Results and data first if you can.\n\n`+
+    `Try saving anyway?`);
 }
 
 let LAST_TASK=null, LAST_HAND=null;      // what the participant was last shown
@@ -7656,8 +7902,10 @@ function showTaskStartScreen(cont){
          <code>${templateNameFor(c, TRIAL.drawHand||TRIAL.tapHand, true)}</code>${
          c.spiral && practicePlan(c).length
            ? ` · practice on <code>${practiceTemplateName(geomPitch(c), TRIAL.drawHand)}</code>`:""}</p>` : ""}`,
-    [{ label:"Next", onClick:()=>{ hideOverlay(); cont(); } },
-     { label:"Back", ghost:true, onClick:()=>backToSession() }]);
+    /* The start screen's previous screen IS the session, so BACK and EXIT would be the same
+       control. EXIT is the one that names what happens. */
+    [{ label:"NEXT", onClick:()=>{ hideOverlay(); cont(); } },
+     { label:"EXIT", ghost:true, onClick:()=>backToSession() }]);
 }
 
 /* THE END-OF-TASK SCREEN. NEXT goes to the next task in the session, EXIT returns to the
@@ -7679,9 +7927,9 @@ function showTaskEndScreen(taskId){
       ? `Next in the session: <b>${nextTask}</b> — ${esc((byId(nextTask)||{}).label||"")}`
       : "That is the last task in the session."}</p>`,
     [ nextTask
-        ? { label:"Next", onClick:()=>{ hideOverlay(); runCurrent(); } }
-        : { label:"Finish", onClick:()=>{ hideOverlay(); sessionComplete(); } },
-      { label:"Exit", ghost:true, onClick:()=>backToSession() }]);
+        ? { label:"NEXT", onClick:()=>{ hideOverlay(); runCurrent(); } }
+        : { label:"FINISH", onClick:()=>{ hideOverlay(); sessionComplete(); } },
+      { label:"EXIT", ghost:true, onClick:()=>backToSession() }]);
 }
 
 // Every overlay goes through here: body scrolls, buttons stay pinned.
@@ -7755,7 +8003,7 @@ function sessionComplete(){
     <p>${done} trial${done===1?"":"s"} saved${skipped?`, ${skipped} skipped`:""}.</p>
     <p style="font-size:17px;color:#5d6570">Export before clearing this device.</p>`,
     [{label:"Export data", onClick:()=>{ stageOn(false); RUN=null; goPage(6); }},
-     {label:"Exit", ghost:true, onClick:()=>{ stageOn(false); RUN=null; goPage(3); }}]);
+     {label:"EXIT", ghost:true, onClick:()=>{ stageOn(false); RUN=null; goPage(3); }}]);
 }
 
 // The stream a trial will actually use. durS follows the plan: a fixed-length trial
@@ -7833,10 +8081,13 @@ function openTrial(showInstruction){
     // A PRACTICE SEQUENCE IS NOT A TRIAL INDEX. It takes the three targets the description
     // asks for and its own seed, so it is identical for every participant and is never
     // mistaken for trial 1 -- which it would be if it read the table.
-    const tc = TRIAL.practice ? { count:AV_PRACTICE.targets, source:"practice" }
-                              : avTargetCount(TRIAL.task, ord);
+    const answerAll = !avHasTargets(TRIAL.task);
+    const tc = TRIAL.practice
+      ? { count:(avKind(TRIAL.task)==="tones"||!answerAll) ? AV_PRACTICE.targets : null,
+          source:"practice", answerAll }
+      : avTargetCount(TRIAL.task, ord);
     try{ seq=makeSequence({ durationS:cfg.durS, targetCount:tc.count, seed:drawSeed(),
-                            respond:cfg.respond, kind:avKind(TRIAL.task),
+                            respond:cfg.respond, kind:avKind(TRIAL.task), answerAll,
                             countSource:tc.source, ordinal:TRIAL.practice?null:ord });
          // Which word each non-target slot plays. Seeded from the sequence seed, so the
          // same trial index presents the same words to every participant.
@@ -7888,7 +8139,7 @@ function openTrial(showInstruction){
            TRIAL.voiceFailure={ reason:"microphone_not_granted",
              detail:"Microphone access was not granted before the trial was started." };
            hideOverlay(); afterMic(); } },
-       { label:"Abandon", ghost:true, onClick:()=>{
+       { label:"EXIT", ghost:true, onClick:()=>{
            if(gate.settled) return; gate.settled=true;
            hideOverlay(); stageOn(false); RUN=null; goPage(3); } }]);
     let p; try{ p=RECORDER.prepare(); }catch(e){ p=Promise.reject(e); }
@@ -7911,7 +8162,7 @@ function micFailOverlay(detail, cont){
     changes.</p>`,
     [{ label:"Run without recording", onClick:()=>{ hideOverlay(); cont(); } },
      { label:"Try again", ghost:true, onClick:()=>{ hideOverlay(); openTrial(TRIAL.task!==LAST_TASK); } },
-     { label:"Abandon", ghost:true, onClick:()=>{ hideOverlay(); stageOn(false); RUN=null; goPage(3); } }]);
+     { label:"EXIT", ghost:true, onClick:()=>{ hideOverlay(); stageOn(false); RUN=null; goPage(3); } }]);
 }
 
 // PEN_MATH and PEN_WORD: which prompt, and the exact words used. Both go into the record,
@@ -7944,7 +8195,7 @@ function showVerbalSetup(c, done){
         TRIAL.verbal=v; TRIAL.verbalType=type;
         hideOverlay(); done();
       }},
-     { label:"Exit", ghost:true, onClick:()=>backToSession() }]);
+     { label:"EXIT", ghost:true, onClick:()=>backToSession() }]);
   verbalTypeChanged();
 }
 function verbalTypeChanged(){
@@ -7996,16 +8247,18 @@ function showInstructionScreen(seq,c,returnToReady){
   const digits = avKind(TRIAL.task)==="digits";
   const btn = (fn,txt)=>`<button class="ghost" style="font-size:18px;padding:14px 26px;margin:4px"
         onclick="${fn}">${txt}</button>`;
-  const soundBtns = c.audio ? `<div style="margin-top:14px">` +
-      (digits
-        ? btn(`demoDigit(${DIGIT_SET.target})`,`Play the number ${DIGIT_WORD[DIGIT_SET.target]||DIGIT_SET.target}`)
-          + btn("demoDigits()","Play 1 to 5")
-        : twoTones
-        ? btn("demo('std')","Play the LOW beep") + btn("demo('tgt')","Play the HIGH beep")
-          + btn("demo('alt')","Count the high beep")
-        : btn("demo('std')","Play the beep")) +
-      `<div class="note" style="margin-top:6px">Play ${digits||twoTones?"these":"this"} before
-        starting.</div></div>` : ``;
+  /* NO STIMULUS BUTTONS ON THE INSTRUCTION SCREEN, as of 2026-10-04.
+
+     Five of them lived here -- Play the LOW beep, Play the HIGH beep, Count the high beep,
+     Play the number two, Play 1 to 5 -- and none of them is in the task description. They
+     were mine. The screen the participant reads is now only the words that are read to
+     them, and demonstrating the stimulus belongs to the screen after it, which is what the
+     audibility check is for. The digit conditions demonstrate nothing at all: their check
+     was removed, and a demonstration without a recorded outcome is a rehearsal.
+
+     The Device page keeps its own Play 1 to 5, which is an examiner check that all five
+     words speak before a session starts, not something a participant hears. */
+  const soundBtns = ``;
   /* WHY THIS CONDITION'S DATA IS HELD, on the screen the examiner reads immediately before
      running it. It used to be palm rejection only, named as a platform limit -- which was
      the only reason a condition could be held when it was written. The digit stand-in is a
@@ -8042,9 +8295,9 @@ function showInstructionScreen(seq,c,returnToReady){
   showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em;
       margin:0 0 14px">${TRIAL.task} · ${esc(c.label)}</div>` + instructionHTML(ins) + rulesNote + soundBtns + palmNote + voiceNote +
     `<p style="font-size:16px;color:#5d6570;margin-top:10px">${ins.length}</p>`,
-    [{label:"Ready", onClick:()=>{ hideOverlay(); LAST_TASK=TRIAL.task;
+    [{label:"NEXT", onClick:()=>{ hideOverlay(); LAST_TASK=TRIAL.task;
         readyTrial(returnToReady?returnToReady.seq:seq, c, true); }},
-     {label:"Exit", ghost:true, onClick:()=>backToSession()}]);
+     {label:"EXIT", ghost:true, onClick:()=>backToSession()}]);
 }
 
 // One short line, in the participant's words, for the whole trial. Only where the screen
@@ -8252,6 +8505,15 @@ function reminderText(){
    whether it ran, on each test trial that follows, because "this participant practised" and
    "the examiner skipped it" are different facts about every trial of that task.
    =========================================================================== */
+/* The conditions whose practice was removed on 2026-10-04. Named one by one rather than
+   derived from isDualTask: the exploratory dual tasks are not part of the specified battery
+   and keep theirs. */
+const NO_PRACTICE_DUAL = new Set(["PEN_VODD","PEN_VDGT"]);
+// Tasks whose instruction repeat has been read this session. On a task with practice the
+// recap is shown by practiceResult when the last practice row is done; a task with no
+// practice has nothing to hang it on, so readyTrial shows it before the first trial and
+// this is what keeps it from reappearing before the second.
+let RECAP_SHOWN=new Set();
 let PRACTICE_DONE=new Set();
 let PRACTICE_SKIPPED=new Set();
 // PRACTICE is gone with the cursor it held: the queue is the cursor now.
@@ -8260,9 +8522,19 @@ function practicePlan(c){
   if(!c) return [];
   if(c.tap && !c.spiral) return [];              // the tapping tasks are demonstrated, not practised
   if(c.pent) return [];                          // copying a figure cannot be practised without copying it
-  // THE DUAL TASKS GET ONE, ON THE DOMINANT HAND. Not one per hand: the thing being
-  // practised is doing both at once, which is not hand-specific, and a second practice run
-  // costs forty more seconds of a session that already runs long.
+  /* THE TWO AUDITORY DUAL TASKS GET NO PRACTICE, by decision of 2026-10-04. By the time
+     they run, both halves have been practised on their own -- the spiral on PEN_SPR60 and
+     the auditory response on VOC_VODD or VOC_VDGT -- and what stands in their place is a
+     restatement of the instruction naming both halves together.
+
+     Recorded here because it is the one thing the examiner cannot put back: the dual task
+     is the only condition where a participant can do each half correctly in isolation and
+     still not do the task, by stopping one to do the other. If that is going to be found
+     out, it is now found out inside the sixty seconds that count. */
+  if(NO_PRACTICE_DUAL.has(c.id)) return [];
+  // Any other dual task still gets one, on the dominant hand. Not one per hand: the thing
+  // being practised is doing both at once, which is not hand-specific, and a second
+  // practice run costs forty more seconds of a session that already runs long.
   if(isDualTask(c)) return ["dominant"];
   if(c.audio) return ["none"];                   // the voice-only conditions: one sequence
   if(c.spiral) return ["dominant","nondominant"];
@@ -8346,8 +8618,13 @@ const practiceSkippable = c => !isDualTask(c);
 
    With the task's own window the practice obeys the same clock as the trial, and the
    examiner presses END after a spiral or two, which is what one sequence means. */
+/* A SUSTAINED-SPIRAL PRACTICE RUNS 30 SECONDS PER HAND, not the trial's full minute. Long
+   enough for two or three spirals at an older adult's pace, short enough that two hands of
+   practice cost one minute of the session rather than two. Before this it borrowed the
+   task's own window, which made the practice as long as the trial it was practising. */
+const SPIRAL_PRACTICE_S = 30;
 const practiceWindowS = c => isDualTask(c) ? AV_PRACTICE.durS
-                           : (c.sustainedS ? c.sustainedS : null);
+                           : (c.sustainedS ? SPIRAL_PRACTICE_S : null);
 // What the examiner says, from the task description.
 function practiceScript(c, hand, step){
   const H=hand==="none" ? null : physHand(hand).toUpperCase();
@@ -8375,7 +8652,10 @@ function practiceRecap(c){
   // handed the counting recap -- unreachable today, because practiceRecap is only called
   // after a practice run and TAP_TONE has none, but a wrong string waiting for somebody to
   // give that task a practice is not better for being currently unreachable.
-  if(!practicePlan(c).length) return null;
+  // The two auditory dual tasks have no practice as of 2026-10-04 and this line is all that
+  // stands between the instruction screen and the trial, so they are admitted explicitly.
+  if(!practicePlan(c).length && !NO_PRACTICE_DUAL.has(c.id)) return null;
+  // Sections 5.3 and 6.2, word for word. The wording here was mine for half a day.
   if(isDualTask(c))
     return avKind(c.id)==="digits"
       ? "Both at once for one minute — keep tracing spirals and say “yes” when you hear the number two."
@@ -8402,39 +8682,10 @@ function practiceRecap(c){
   return null;
 }
 
-/* The practice screens, driven by the queue row rather than by a run of their own. The
-   earlier version held its own cursor in a PRACTICE object and walked the hands itself,
-   which is the same job the queue already does for trials -- and doing it twice is what kept
-   the practice out of the list, out of the sequence panel and out of both time estimates. */
-function showPracticeIntro(c, seq){
-  const step=TRIAL.practice.step, of=TRIAL.practice.of, hand=TRIAL.practice.hand;
-  const go=()=>{ TRIAL.introDone=true; hideOverlay(); readyTrial(seq, c, false); };
-  const btns=[{ label:"Next", onClick:go }];
-  if(practiceSkippable(c)) btns.push({ label:"Skip practice", ghost:true, onClick:()=>{
-      if(!confirm("Skip the practice for this task?\n\nEvery trial of this task will record "+
-                  "that practice was skipped.")) return;
-      hideOverlay(); skipRemainingPractice(c.id); } });
-  btns.push({ label:"Instruction", ghost:true,
-              onClick:()=>showInstructionScreen(seq, c, {practice:true}) });
-  btns.push({ label:"Back", ghost:true, onClick:()=>backToSession() });
-  const tpl = c.spiral ? practiceTemplateName(geomPitch(c), TRIAL.drawHand) : null;
-  const same = c.spiral && geomTurns_raw(c)<=PRACTICE_TURNS;
-  showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em;
-      margin:0 0 14px">${TRIAL.task} · practice ${step} of ${of}</div>
-    <h3 style="font-size:28px;line-height:1.3">Practice</h3>
-    <p style="font-size:22px;line-height:1.45">“${practiceScript(c, hand, step-1)}”</p>
-    ${tpl?`<p style="font-size:16px;color:#5d6570">Template <code>${tpl}</code>${
-      same?" — this condition's test template is already three turns, so the practice runs the same one"
-          :" — three turns, the small spiral"}.</p>`:""}
-    ${c.audio?`<p style="font-size:16px;color:#5d6570">${AV_PRACTICE.durS} s containing
-      ${AV_PRACTICE.targets} targets.</p>`:""}
-    ${c.spiral && c.sustainedS
-      ? `<p style="font-size:17px;color:#5d6570">Press <b>END</b> once they have done one or
-         two spirals — the practice runs on the same clock as the trial and will not stop on
-         its own before then.</p>` : ""}
-    <p class="note" style="margin-top:12px">Nothing here is saved. Run it again as often as
-    the participant needs.</p>`, btns);
-}
+/* showPracticeIntro lived here until 2026-10-04. It was the second of the two screens the
+   practice used to need; showCheckAndPractice is now the only one, and a dead screen that
+   still renders is how two versions of the same thing end up on the iPad. Its Skip button
+   is gone with it: NEXT without pressing PRACTICE is the skip, and records the same fact. */
 // SKIPPING TAKES THE WHOLE TASK'S PRACTICE, not the row in front of the examiner. "Skip
 // practice" is a decision about the task; skipping one hand and practising the other is not
 // a thing the description offers and is not what anybody pressing it means.
@@ -8451,19 +8702,18 @@ function skipRemainingPractice(taskId){
 function practiceResult(){
   const c=RUN.c, step=TRIAL.practice.step, of=TRIAL.practice.of;
   const seq=RUN&&RUN.seq;
-  const played = seq ? countedHeard(seq, RUN?RUN.streamCutMs:null, c.countOf||"targets") : null;
-  // THE DESCRIPTION ASKS THE QUESTION AFTER THE DUAL-TASK PRACTICE, and this is the one
-  // place in the battery where the examiner may act on the answer: practice is where a
-  // misunderstanding is supposed to be found and corrected. During a test trial no field is
-  // shown as correct and the count is never displayed; here it is, deliberately, because an
-  // examiner who cannot tell whether the participant understood cannot decide to run it again.
-  const ask = (c.count && seq)
-    ? `<p style="font-size:21px">“How many high beeps did you count in total?”</p>
-       <p style="font-size:17px;color:#5d6570">There were <b>${played}</b>. This is practice,
-       so you may tell them and run it again — nothing about the test trials shows a count.</p>`
-    : (seq && avKind(c.id)==="digits"
-      ? `<p style="font-size:17px;color:#5d6570">There were <b>${played}</b> twos. This is
-         practice, so you may correct a misunderstanding and run it again.</p>` : "");
+  /* NOTHING ON THIS SCREEN THAT THE TASK DESCRIPTION DOES NOT PUT THERE.
+
+     It used to print the correct count and a sentence of my own about what the examiner
+     might do with it -- "There were 3 twos. This is practice, so you may correct a
+     misunderstanding and run it again." The description's practice section is a script and
+     three controls; it says nothing about a result screen, a count, or telling the
+     participant anything afterwards.
+
+     The count is not merely unasked-for, it is the answer. An examiner who has just read it
+     prompts the next run differently, and on the digit conditions there is no total to
+     report at all, so the number was describing something the task never asks about. */
+  const ask = "";
   const more = step<of;
   const advance=()=>{
     if(QUEUE[QPOS] && isPracticeRow(QUEUE[QPOS])) QUEUE[QPOS].status="done";
@@ -8478,15 +8728,32 @@ function practiceResult(){
     if(nxt && nxt.task===c.id && !isPracticeRow(nxt)){ showPracticeRecap(c); return; }
     runCurrent();
   };
+  /* NOTHING WAS DRAWN, AND THE SCREEN HAS TO SAY SO. A practice nobody started ends on
+     the no-response ceiling after half a minute, and until now it showed the identical
+     "Practice run finished" that a completed one shows. From the other side of the glass
+     that is "I pressed PRACTICE and it went straight to the end screen" -- which is exactly
+     what happens on the non-dominant hand, where swapping the pen over and settling an older
+     adult's weaker hand is what eats the half minute. */
+  const nothing = !!(RUN && RUN.noResponseCeiling) ||
+                  !!(RUN && RUN.windowStart==null && c.spiral);
+  const head = nothing
+    ? `<h3 style="font-size:26px;color:#8c2020">Nothing was drawn</h3>
+       <p style="font-size:18px;color:#5d6570;max-width:520px;margin:6px auto 0">The pen never
+       touched down inside the green circle, so the practice timed out without starting.
+       Press <b>REPEAT</b> to run it again.</p>`
+    : `<h3 style="font-size:26px">Practice run finished</h3>`;
+  /* ONE NEXT, WHATEVER COMES NEXT. It said "Next practice" on one row and "Go to the trials"
+     on another -- two names for the control the description calls NEXT, and on the last
+     practice the second name read as "the only way out of here is into the trials". */
   showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em;
       margin:0 0 14px">${TRIAL.task} · practice ${step} of ${of} · not saved</div>
-    <h3 style="font-size:26px">Practice run finished</h3>${ask}`,
-    [{ label: more ? "Next practice" : "Go to the trials", onClick:advance },
-     { label:"Run it again", ghost:true, onClick:()=>{
+    ${head}${ask}`,
+    [{ label:"NEXT", onClick:advance },
+     { label:"REPEAT", ghost:!nothing, onClick:()=>{
          hideOverlay(); RUN=null; TRIAL.introDone=true; openTrial(false); } },
-     { label:"Instruction", ghost:true,
+     { label:"INSTRUCTION", ghost:true,
        onClick:()=>showInstructionScreen(null, c, {practice:true}) },
-     { label:"Exit", ghost:true, onClick:()=>backToSession() }]);
+     { label:"EXIT", ghost:true, onClick:()=>backToSession() }]);
 }
 function showPracticeRecap(c){
   const recap=practiceRecap(c);
@@ -8499,8 +8766,10 @@ function showPracticeRecap(c){
       margin:0 0 14px">${c.id} · before the first trial</div>
     <h3 style="font-size:24px">Read this, then start</h3>
     <p style="font-size:22px;line-height:1.5">“${recap}”</p>`,
-    [{ label:"Ready", onClick:()=>{ hideOverlay(); runCurrent(); } },
-     { label:"Practice again", ghost:true, onClick:()=>{
+    /* BACK here is the practice -- the screen before this one -- which is exactly what
+       "practice again" meant under a name that was mine. */
+    [{ label:"NEXT", onClick:()=>{ hideOverlay(); runCurrent(); } },
+     { label:"BACK", ghost:true, onClick:()=>{
          // Back to this task's practice rows, re-opened as pending, and the cursor with them.
          let first=-1;
          QUEUE.forEach((q,i)=>{ if(q.task!==c.id || !isPracticeRow(q)) return;
@@ -8509,7 +8778,7 @@ function showPracticeRecap(c){
          PRACTICE_DONE.delete(c.id); PRACTICE_SKIPPED.delete(c.id);
          renderQueue(); saveState();
          hideOverlay(); runCurrent(); } },
-     { label:"Exit", ghost:true, onClick:()=>backToSession() }]);
+     { label:"EXIT", ghost:true, onClick:()=>backToSession() }]);
 }
 
 /* ===========================================================================
@@ -8560,111 +8829,159 @@ let AUDIBILITY = { tones:null, digits:null };
    participant who failed, was re-checked and then passed is a different participant from one
    who passed first time, and only this list says which. Every trial record carries it. */
 let AUDIBILITY_CLEARED=[];
-// Which form a task needs, or null for a task with no auditory stream.
-const audibilityForm = taskId => byId(taskId) && byId(taskId).audio ? avKind(taskId) : null;
+/* WHICH FORM A TASK NEEDS, or null for a task that is not checked.
+
+   ONLY THE TONES ARE CHECKED, by decision of 2026-10-04. The digit conditions present
+   recognisable spoken words rather than two pitches a few hundred hertz apart, and the
+   examiner hears whether the participant is answering them.
+
+   What that gives up, since it cannot be recovered afterwards: telling two pure tones apart
+   and understanding a spoken "two" are different abilities, and a tone check does not stand
+   in for a speech one. A participant who passes the beeps and still mishears the word has
+   nothing in the record to say so. */
+const audibilityForm = taskId => {
+  const c=byId(taskId);
+  return c && c.audio && avKind(taskId)==="tones" ? "tones" : null;
+};
 // The outcome standing against a task, whatever form it uses.
 const audibilityFor = taskId => { const f=audibilityForm(taskId); return f ? AUDIBILITY[f] : null; };
+/* Two outcomes are offered now, not three. "Pass after repeat" was defined as all six
+   correct on the SECOND presentation, and with the six replaced by buttons the examiner
+   presses as often as they like, there is no first or second presentation for it to mean.
+   It stays in this list so a session saved before 2026-10-04 still reads as a pass. */
 const AUDIBILITY_PASSES = ["pass","pass_after_repeat"];
 const audibilityBlocks = taskId => { const o=audibilityFor(taskId);
   return !!(o && !AUDIBILITY_PASSES.includes(o.outcome)); };
 
-/* The check, as a screen. Stepped one stimulus at a time rather than played as a run of
-   six, because the examiner has to ask after each one and record the answer -- "I'll play
-   six numbers, tell me each number you hear" is a six-turn exchange, not a six-stimulus
-   burst. Marking each item also means a fail says WHICH ones were missed, which a single
-   pass/fail verdict does not. */
-function showAudibilityCheck(kind, cont){
-  const seq=AUDIBILITY_SEQ[kind];
-  const st={ played:0, attempt:1, examinerHeard:false };
-  const isTarget = k => kind==="tones" ? seq[k] : seq[k]===DIGIT_SET.target;
-  const nameOf = k => kind==="tones" ? (seq[k]?"the HIGH beep":"the LOW beep") : String(seq[k]);
-  const play = k => {
-    if(kind==="digits"){
-      // Straight through, inside the button press: see speakDigitAt. A timer here loses the
-      // gesture and iOS plays nothing.
-      primeSpeech(); clearSpeech(); speakDigitAt(seq[k], 0);
-      return;
-    }
-    newMaster();
-    tone(audio().currentTime+0.08, isTarget(k)?+$("ftgt").value:+$("fstd").value,
-         100, +$("lvl").value);
-  };
-  const script = kind==="tones"
-    ? "I’ll play six beeps. After each one, tell me whether it was the low beep or the high beep."
-    : "I’ll play six numbers. Tell me each number you hear.";
-  const finish=outcome=>{
-    AUDIBILITY[kind]={ outcome, form:kind, attempts:st.attempt,
-      sequence: seq.slice(), presented: st.played,
+/* THE AUDIBILITY CHECK AND THE PRACTICE ON ONE SCREEN.
+
+   Replaces the six-stimulus presentation of 2026-10-01, which drove the presenting itself,
+   printed the answer key in the body where the participant could read it, and buried "pass
+   after repeat" in a browser dialog.
+
+   The beep buttons play ONE beep per press and may be pressed as often as needed, so the
+   examiner demonstrates and tests in whatever order the participant needs rather than
+   working through a script the app imposes. The screen says nothing about which beep is
+   which: the examiner knows from the button they pressed, and the participant must not.
+
+   NEXT AND PRACTICE APPEAR ONLY ONCE AN OUTCOME IS RECORDED, on the conditions that carry a
+   check. A trial with no audibility outcome is a hole that cannot be filled afterwards --
+   it is the only thing separating "could not do the task" from "could not hear the task"
+   when the counts are read months later. BACK and INSTRUCTION are present throughout, so
+   nobody is held on this screen; what is gated is starting the trial, not leaving.
+
+   On a condition with no check (the digits) the same screen renders the practice half
+   alone, so there is one practice screen in the battery rather than two. */
+function showCheckAndPractice(c, seq, form){
+  const practice = !!(TRIAL && TRIAL.practice && !TRIAL.introDone);
+  const st={ examinerHeard:false };
+  const beep = high => { newMaster();
+    tone(audio().currentTime+0.08, high?+$("ftgt").value:+$("fstd").value,
+         100, +$("lvl").value); };
+  const record = outcome => {
+    AUDIBILITY[form]={ outcome, form, attempts:1,
+      presentation:"on_demand_buttons",
       examiner_could_hear: st.examinerHeard,
-      level: +$("lvl").value, volume_step: $("volstep")?+$("volstep").value:null,
+      level:+$("lvl").value, volume_step: $("volstep")?+$("volstep").value:null,
       route_declared: $("audioroute")?$("audioroute").value:null,
-      digit_set: kind==="digits" ? (digitStandin()? "standin/speech_synthesis" : DIGIT_SET.id) : null,
-      at_iso: new Date().toISOString() };
+      digit_set:null, at_iso:new Date().toISOString() };
     saveState();
+  };
+  // Straight into the run, rather than by way of the ready screen: PRACTICE is specified as
+  // "runs the practice sequence", and readyTrial's START would be a second tap for a screen
+  // the examiner has already read. Called inside the click handler so the gesture that iOS
+  // requires before it will speak or play is still the one in progress.
+  const runPractice = () => { TRIAL.introDone=true; hideOverlay(); readyTrial(seq, c, false, true); };
+  const onward = () => {
     hideOverlay();
-    if(AUDIBILITY_PASSES.includes(outcome)) cont();
-    else audibilityFailed(kind);
+    // NEXT with the practice never run is the examiner choosing to skip it, and every trial
+    // of this task records that it was skipped -- "this participant practised" and "the
+    // examiner went straight to the trial" are different facts about every trial.
+    if(practice){ skipRemainingPractice(c.id); return; }
+    readyTrial(seq, c, false);
   };
-  /* THE SPECIFICATION RECORDS ONE OUTCOME, AND THE APP MUST NOT ENFORCE MORE THAN THAT.
 
-     What it says is: present six stimuli in a fixed order, ask the participant to identify
-     each one, and record pass, pass after repeat, or fail. It does not say the app has to
-     drive the presenting, and an earlier version of this screen made that a requirement --
-     the way forward appeared only after six presses of Play. An examiner who did not realise
-     that, or who presented the stimuli some other way, was left on a screen whose only
-     buttons were Play and Exit, with the task unreachable. That is the app inventing a
-     procedure and then blocking the session on it.
-
-     So the answer is available from the first moment. Play is an AID for pacing the six --
-     press it, ask, press the next -- and the outcome can be recorded whenever the examiner
-     is ready, including immediately. The screen says how many have been played, so nobody
-     has to remember; it just does not refuse to proceed. */
+  const detail=()=>{
+    if(c.audio && !c.spiral)
+      return `<p style="font-size:16px;color:#5d6570">${AV_PRACTICE.durS} s containing
+        ${AV_PRACTICE.targets} targets.</p>`;
+    const bits=[];
+    if(c.spiral){
+      const tpl=practiceTemplateName(geomPitch(c), TRIAL.drawHand);
+      const same=geomTurns_raw(c)<=PRACTICE_TURNS;
+      if(tpl) bits.push(`<p style="font-size:16px;color:#5d6570">Template <code>${tpl}</code>${
+        same?" — this condition's test template is already three turns, so the practice runs the same one"
+            :" — three turns, the small spiral"}.</p>`);
+      if(c.audio) bits.push(`<p style="font-size:16px;color:#5d6570">${AV_PRACTICE.durS} s of
+        the stream, containing ${AV_PRACTICE.targets} targets.</p>`);
+      if(c.sustainedS) bits.push(`<p style="font-size:17px;color:#5d6570">Press <b>END</b>
+        once they have done one or two spirals — the practice runs on the same clock as the
+        trial and will not stop on its own before then.</p>`);
+    }
+    return bits.join("");
+  };
   const render=()=>{
-    const all=st.played>=seq.length;
-    const cur=st.played-1;
-    const body = `<h3>Audibility check — ${kind==="tones"?"tones":"spoken numbers"}</h3>
-      <p style="font-size:19px">${script}</p>
-      <p style="font-size:17px;color:#5d6570">
-        ${st.played===0
-          ? `Six stimuli${st.attempt>1?", second presentation":""}, in a fixed order. Press
-             <b>Play</b>, ask what it was, then play the next.`
-          : all
-            ? `All six presented${st.attempt>1?", second time":""}.`
-            : `Played <b>${st.played} of ${seq.length}</b> — that one was
-               <b>${nameOf(cur)}</b>.`}
-        ${st.played>0 && !all
-          ? ` <button class="ghost sm" style="margin-left:8px"
-                onclick="window.__audAgain()">Play that one again</button>` : ""}</p>
-      <p class="note" style="margin:10px auto 0;max-width:520px">In order they are:
-        ${seq.map((_,k)=>nameOf(k)).join(", ")}. Record the outcome whenever you are ready —
-        the buttons below do not wait for all six.</p>
-      <label style="display:flex;align-items:center;gap:9px;justify-content:center;
-        font-size:16px;margin-top:12px;max-width:460px;margin-left:auto;margin-right:auto">
+    const done = form ? AUDIBILITY[form] : true;
+    const head = practice
+      ? `${TRIAL.task} · practice ${TRIAL.practice.step} of ${TRIAL.practice.of}`
+      : `${c.id} · before the trial`;
+    const check = form ? `
+      <h3 style="font-size:26px;line-height:1.3">Audibility check</h3>
+      <p style="font-size:21px;line-height:1.45">“This is the low beep. And this is the high
+        beep. Now tell me which one this is.”</p>
+      <div style="display:flex;gap:14px;justify-content:center;margin:16px 0 4px">
+        <button class="ghost" style="min-width:150px" onclick="window.__cpBeep(0)">LOW BEEP</button>
+        <button class="ghost" style="min-width:150px" onclick="window.__cpBeep(1)">HIGH BEEP</button>
+      </div>
+      <p class="note" style="margin:0 auto 14px;max-width:520px">One beep per press. Press
+        either as many times as you need.</p>
+      <label style="display:inline-flex;align-items:flex-start;gap:10px;
+        font-size:16px;margin:0 auto 16px;max-width:430px;text-align:left;line-height:1.4">
         <input type="checkbox" ${st.examinerHeard?"checked":""}
-          style="width:auto;flex:0 0 auto" onchange="window.__audHeard(this.checked)">
-        <span style="text-align:left">I can hear it clearly from where I am sitting, at the
-        volume that is set</span></label>`;
-    const btns=[];
-    if(!all) btns.push({ label:`Play ${st.played+1} of ${seq.length}`,
-      onClick:()=>{ play(st.played); st.played++; render(); } });
-    btns.push({ label:"All six correct", ghost:!all,
-      onClick:()=>finish(st.attempt===1?"pass":"pass_after_repeat") });
-    btns.push({ label:"Not all six", ghost:true, onClick:()=>{
-      if(st.attempt===1){
-        if(confirm("Present the six again?\n\nOne repetition is allowed. All six correct on "+
-                   "the second presentation is recorded as a pass after repeat.\n\n"+
-                   "Cancel records a fail instead, and the conditions using this stimulus "+
-                   "are left out of the session.")){
-          st.attempt=2; st.played=0; render(); return; }
-      }
-      finish("fail"); } });
-    btns.push({ label:"Exit", ghost:true, onClick:()=>backToSession() });
-    showOverlay(body, btns);
+          style="width:auto;flex:0 0 auto;margin-top:2px" onchange="window.__cpHeard(this.checked)">
+        <span>I can hear it clearly from where I am sitting, at the volume that is
+        set</span></label>
+      ${done
+        ? `<p style="font-size:17px;color:#155e39;font-weight:600">Recorded:
+           ${AUDIBILITY[form].outcome==="fail"?"fail":"pass"}.</p>`
+        : `<p style="font-size:17px;color:#1f2933;margin-bottom:8px">Can they tell them
+             apart?</p>
+           <div style="display:flex;gap:14px;justify-content:center">
+             <button style="min-width:130px" onclick="window.__cpPass()">PASS</button>
+             <button class="ghost" style="min-width:130px" onclick="window.__cpFail()">FAIL</button>
+           </div>`}` : "";
+    const prac = practice ? `
+      ${form?`<hr style="border:0;border-top:1px solid #dfe3e8;margin:22px auto;max-width:560px">`:""}
+      <h3 style="font-size:26px;line-height:1.3">Practice</h3>
+      <p style="font-size:21px;line-height:1.45">“${practiceScript(c, TRIAL.practice.hand,
+        TRIAL.practice.step-1)}”</p>
+      ${detail()}
+      <p class="note" style="margin-top:10px">Nothing here is saved — run it as often as the
+        participant needs.</p>` : "";
+    showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em;
+        margin:0 0 14px">${head}</div>${check}${prac}`, (()=>{
+      const btns=[];
+      if(done && practice) btns.push({ label:"PRACTICE", onClick:runPractice });
+      if(done) btns.push({ label:"NEXT", ghost:practice, onClick:onward });
+      /* INSTRUCTION already IS "back to the previous screen" here, so a separate BACK would
+         be the same control twice. EXIT is the one that does something different. */
+      btns.push({ label:"INSTRUCTION", ghost:true,
+        onClick:()=>showInstructionScreen(seq, c, practice?{practice:true}:{seq}) });
+      btns.push({ label:"EXIT", ghost:true, onClick:()=>backToSession() });
+      return btns;
+    })());
   };
-  window.__audAgain = () => { if(st.played>0) play(st.played-1); };
-  window.__audHeard = v => { st.examinerHeard=!!v; };
+  window.__cpBeep = h => beep(!!h);
+  window.__cpHeard = v => { st.examinerHeard=!!v; };
+  window.__cpPass = () => { record("pass"); render(); };
+  window.__cpFail = () => {
+    if(!confirm("Record a FAIL?\n\nThe conditions that use this stimulus are left out of "+
+                "the session, each one recording the reason. It can be cleared again from "+
+                "the session page.")) return;
+    record("fail"); hideOverlay(); audibilityFailed(form); };
   render();
 }
+
 /* A FAILED CHECK TAKES EVERY CONDITION OF THAT KIND OUT OF THE SESSION, not just the one
    that was about to run. The check is a statement about the participant, so a second
    condition using the same stimuli would fail it for the same reason, and presenting one
@@ -8706,10 +9023,10 @@ function audibilityFailed(kind){
     <p style="font-size:17px;color:#5d6570">Headphones raise the level but do not correct
     impaired frequency discrimination or word intelligibility, so retrying with headphones is
     not a way past this. Run the conditions that need no sound and leave the rest.</p>`,
-    [{ label:"Back to the session", onClick:()=>{ hideOverlay(); backToSession(); } }]);
+    [{ label:"EXIT", onClick:()=>{ hideOverlay(); backToSession(); } }]);
 }
 
-function readyTrial(seq,c,justInstructed){
+function readyTrial(seq,c,justInstructed,autoStart){
   // THE CHECK COMES BEFORE THE TRIAL IS SET UP, AND GATES IT. Placed here rather than on
   // the instruction screen's Ready button because readyTrial is the one door every trial
   // goes through -- a repeat, an ad-hoc run, and a trial reached after the instruction page
@@ -8717,13 +9034,39 @@ function readyTrial(seq,c,justInstructed){
   // It self-gates on the session outcome, so it presents once per form and never again.
   {
     const form=audibilityForm(TRIAL.task);
-    if(form && !AUDIBILITY[form]){ showAudibilityCheck(form, ()=>readyTrial(seq,c,justInstructed)); return; }
     if(form && audibilityBlocks(TRIAL.task)){ audibilityFailed(form); return; }
-    // THE PRACTICE INTRO, which carries the line the examiner reads. It sits after the
-    // audibility check and before the practice run, which is the order the description
-    // gives, and it is reached through readyTrial because that is the one door every run
-    // goes through -- a Run-it-again lands here too and gets the same screen.
-    if(TRIAL.practice && !TRIAL.introDone){ showPracticeIntro(c, seq); return; }
+    const needCheck = !!(form && !AUDIBILITY[form]);
+    const needPractice = !!(TRIAL.practice && !TRIAL.introDone);
+    /* ONE SCREEN CARRIES BOTH. The check is a thing said once and the practice follows it
+       immediately, so they were two screens with one NEXT between them for no clinical
+       gain. Either half renders alone when the other is not wanted: the digits have no
+       check, and a tone condition reached without a practice row still has to be checked.
+
+       WHICH CONDITION CARRIES THE TONE CHECK is not named anywhere. It is simply the first
+       tone condition the session reaches, because the outcome is stored per form and tested
+       here -- normally VOC_VODD, and PEN_VODD when VOC_VODD is not in the session. That is
+       why removing the check from the dual tasks needed no code: by the time they run, it
+       has already been recorded. */
+    if(needCheck || needPractice){ showCheckAndPractice(c, seq, needCheck?form:null); return; }
+    /* THE INSTRUCTION REPEAT, for a task with no practice to carry it. On every other task
+       this line is shown by practiceResult once the last practice row is done; PEN_VODD and
+       PEN_VDGT have no practice row, so without this they would go from the instruction
+       screen straight into a sixty-second dual trial with nobody having said what doing
+       both at once means. Once per task per session. */
+    if(!TRIAL.practice && !RECAP_SHOWN.has(TRIAL.task) && NO_PRACTICE_DUAL.has(TRIAL.task)){
+      const recap=practiceRecap(c);
+      if(recap){
+        RECAP_SHOWN.add(TRIAL.task);
+        showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;
+            letter-spacing:.04em;margin:0 0 14px">${c.id} · before the first trial</div>
+          <h3 style="font-size:24px">Read this, then start</h3>
+          <p style="font-size:22px;line-height:1.5">“${recap}”</p>`,
+          [{ label:"NEXT", onClick:()=>{ hideOverlay(); readyTrial(seq,c,false); } },
+           { label:"INSTRUCTION", ghost:true, onClick:()=>showInstructionScreen(seq,c,{seq}) },
+           { label:"EXIT", ghost:true, onClick:()=>backToSession() }]);
+        return;
+      }
+    }
   }
   $("hud").classList.remove("cue"); $("hud").classList.remove("big");
   $("hud").textContent = (TRIAL.lengthS===null && !c.audio) ? "" : (TRIAL.lengthS??"")+" s";
@@ -8740,21 +9083,41 @@ function readyTrial(seq,c,justInstructed){
 
   // What changed since the last trial is the thing that gets missed once the instruction
   // page stops appearing, so it is stated large on the screen itself.
-  const handNow = TRIAL.drawHand || TRIAL.tapHand || "both";
-  const changed = !justInstructed && LAST_HAND && handNow!==LAST_HAND && TRIAL.task===LAST_TASK;
+  /* A TASK WITH NO HAND GETS NO HAND SCREEN. VOC_VODD and VOC_VDGT are listening and
+     speaking: drawHand and tapHand are both null on them, so `|| "both"` invented a hand,
+     and the effector fell through the spiral test to the tapping branch. Between them they
+     put "Now tap with the BOTH index finger" in 34-point type in front of a participant
+     about to count beeps. It needed a hand-using task to have run first -- the instruction
+     screen's Ready sets LAST_TASK, so by the time this ran the task matched while LAST_HAND
+     still held the previous task's side -- which is why it never appeared in a single-task
+     test and appeared immediately in a real battery.
+
+     LAST_HAND is left alone on a hand-less task too: it describes the last hand the
+     participant was asked to use, and a listening task does not change that. */
+  const cc0 = byId(TRIAL.task) || {};
+  const taskHasHand = !!(cc0.spiral || cc0.tap || cc0.pent);
+  const handNow = taskHasHand ? (TRIAL.drawHand || TRIAL.tapHand || "both") : null;
+  /* AND NOT ON A PRACTICE ROW. The practice screen the examiner has just read already says
+     which hand -- "Now try it with your LEFT hand" -- so the banner repeats it, and because
+     PRACTICE starts the run in the same click, the banner went up OVER a practice that was
+     already running: the template drawn, the clock going, and a full-screen panel in front
+     of it saying to use the other hand. That is what "the left hand practice is glitched"
+     was. The banner is for a hand that changes BETWEEN TRIALS, where nothing else says so. */
+  const changed = !justInstructed && !TRIAL.practice && taskHasHand && LAST_HAND
+                  && handNow!==LAST_HAND && TRIAL.task===LAST_TASK;
   if(changed){
     // Name the effector, not just the side: "the right hand" is ambiguous when the task
     // is drawn with a fingertip.
     const cc=byId(TRIAL.task);
-    const what = cc.spiral
+    const what = (cc.spiral || cc.pent)
       ? (TRIAL.implement==="finger"
           ? `Now use the <b>index finger</b> of the <b>${handNow.toUpperCase()}</b> hand to draw`
           : `Now draw with the <b>${handNow.toUpperCase()}</b> hand`)
       : `Now tap with the <b>${handNow.toUpperCase()}</b> index finger`;
     showOverlay(`<h3 style="font-size:34px;line-height:1.3">${what}</h3>
       <p style="font-size:19px;color:#5d6570">${TRIAL.task} · ${positionWord()}</p>`,
-      [{label:"Ready", onClick:hideOverlay},
-       {label:"Exit", ghost:true, onClick:()=>backToSession()}]);
+      [{label:"NEXT", onClick:hideOverlay},
+       {label:"EXIT", ghost:true, onClick:()=>backToSession()}]);
   } else hideOverlay();
 
   // WHAT TO SAY, ON THE SCREEN THE EXAMINER IS LOOKING AT WHEN THEY HAVE TO SAY IT. In
@@ -8773,7 +9136,8 @@ function readyTrial(seq,c,justInstructed){
       : "";
   }
   const start=document.createElement("button"); start.textContent="START";
-  start.onclick=()=>{ $("ctrl").innerHTML=""; LAST_TASK=TRIAL.task; LAST_HAND=handNow;
+  start.onclick=()=>{ $("ctrl").innerHTML=""; LAST_TASK=TRIAL.task;
+                      if(taskHasHand) LAST_HAND=handNow;
                       if($("saypre")) $("saypre").innerHTML="";
                       // The one gesture every trial has. iOS will not speak before one, and
                       // on a spiral condition the stream starts at the first pen contact,
@@ -8781,13 +9145,17 @@ function readyTrial(seq,c,justInstructed){
                       if(digitStandin()) primeSpeech();
                       runTrial(seq,c); };
   $("ctrl").appendChild(start);
+  // PRACTICE on the merged screen means "run it", not "show me the screen that runs it".
+  // Fired here, inside the same click, so the user gesture iOS requires before it will play
+  // or speak has not been lost to a timer.
+  if(autoStart){ start.onclick(); return; }
 
-  const ins=document.createElement("button"); ins.textContent="Instruction";
+  const ins=document.createElement("button"); ins.textContent="INSTRUCTION";
   ins.className="ghost"; ins.style.minWidth="0";
   ins.onclick=()=>showInstructionScreen(seq,c,{seq});
   $("ctrl").appendChild(ins);
 
-  const lst=document.createElement("button"); lst.textContent="List";
+  const lst=document.createElement("button"); lst.textContent="LIST";
   lst.className="ghost"; lst.style.minWidth="0";
   lst.onclick=()=>showQueueOverlay(seq,c);
   $("ctrl").appendChild(lst);
@@ -8810,7 +9178,7 @@ function showQueueOverlay(seq,c){
           (i===QPOS?"<b>now</b>":"")}</td></tr>`).join("");
   showOverlay(`<h3>Trial list</h3>
     <div style="width:min(90vw,620px)"><table style="font-size:16px">${rows}</table></div>`,
-    [{label:"Back", onClick:hideOverlay},
+    [{label:"BACK", onClick:hideOverlay},
      {label: isPracticeRow(QUEUE[QPOS])?"Skip this practice":"Skip this trial", ghost:true,
       onClick:()=>{
         if(isPracticeRow(QUEUE[QPOS])){ hideOverlay(); skipCurrent();
@@ -9419,7 +9787,7 @@ function runTrial(seq,c){
       gh.innerHTML=`<b>window finished</b> · press END`; return; }
     if(RUN.windowStart==null){
       gh.innerHTML=`waiting for the first contact in the green circle`; return; }
-    const GATE=advanceGate(geomTurns(byId(TRIAL.task)));
+    const GATE=advanceGate(geomTurns(byId(TRIAL.task)), !!(TRIAL&&TRIAL.practice));
     const laps=RUN.angle?RUN.angle.lapsSwept:0, rings=RUN.angle?RUN.angle.bandsDrawn:0;
     const since=RUN.passStartedAt?(performance.now()-RUN.passStartedAt)/1000:0;
     const holdFor=RUN.endZoneSince!=null ? (performance.now()-RUN.endZoneSince)/1000 : null;
@@ -9476,7 +9844,7 @@ function runTrial(seq,c){
     // this line with it. Every frame after the rings test then threw ReferenceError: GATE is
     // not defined, out of the animation loop -- so the loop died, the readout froze on its
     // last values, and the spiral could never advance however well it was drawn.
-    const GATE=advanceGate(geomTurns(byId(TRIAL.task)));
+    const GATE=advanceGate(geomTurns(byId(TRIAL.task)), !!(TRIAL&&TRIAL.practice));
     if(!RUN.angle || RUN.angle.bandsDrawn < GATE.rings){ RUN.endZoneSince=null; return; }
     // Laps are signed crossings of the template's own end ray, so a five-turn spiral crosses
     // five times whether it is drawn at 60 mm or 90 mm. That is what makes the gate
@@ -9559,7 +9927,7 @@ function runTrial(seq,c){
   $("ctrl").innerHTML="";
   const eb=document.createElement("button"); eb.textContent="END";
   eb.onclick=()=>stopTrial(false); $("ctrl").appendChild(eb);
-  const rb=document.createElement("button"); rb.textContent="Reset"; rb.className="ghost";
+  const rb=document.createElement("button"); rb.textContent="RESET"; rb.className="ghost";
   rb.onclick=()=>resetTrial(); $("ctrl").appendChild(rb);
   // Examiner intervention marker. A reminder to a participant who has gone quiet, or an
   // interruption in the room, changes the load the trial was measuring -- a trial where one
@@ -9571,7 +9939,7 @@ function runTrial(seq,c){
   // "Event" named nothing and "Log event" named a filing action rather than a thing. What it
   // marks is anything that happened which was not the task -- a reminder to a participant who
   // has gone quiet, a phone going off, somebody walking in.
-  ev.textContent="Interruption"; ev.title="Timestamp something that was not the task: a prompt to the participant, or an interruption in the room";
+  ev.textContent="INTERRUPTION"; ev.title="Timestamp something that was not the task: a prompt to the participant, or an interruption in the room";
   ev.onclick=()=>markExaminerEvent(); $("ctrl").appendChild(ev);
   // EXCEPTION PATH, for one case: a participant who stops short and never reaches the end
   // zone. Deliberately not the normal way to advance -- an examiner pressing at every
@@ -9580,7 +9948,7 @@ function runTrial(seq,c){
   // by the button is identifiable afterwards rather than indistinguishable from a clean one.
   if(sustained){
     const nx=document.createElement("button"); nx.id="nextpass"; nx.className="ghost";
-    nx.textContent="Next spiral";
+    nx.textContent="NEXT SPIRAL";
     nx.title="Only for a participant who has stopped short of the end zone";
     nx.onclick=()=>advancePass("examiner"); $("ctrl").appendChild(nx);
   }
@@ -9590,7 +9958,14 @@ function runTrial(seq,c){
   const cfgA=cfgL;
   const fluencyWinMs = (c.verbal && TRIAL.verbal && TRIAL.verbal.fluency_window_s)
     ? TRIAL.verbal.fluency_window_s*1000 : null;
-  const loop=()=>{ drawScene();
+  const loop=()=>{
+    /* THE LOOP OUTLIVES THE TRIAL BY ONE FRAME. Leaving a running trial -- EXIT, or anything
+       that sets RUN to null -- can land between the cancelAnimationFrame and the frame that
+       was already scheduled, and every line below reads RUN. It threw
+       "Cannot read properties of null (reading 'meter')" straight into the error banner,
+       which is a real fault in the one place an examiner is already walking away from. */
+    if(!RUN){ cancelAnimationFrame(RAF); return; }
+    drawScene();
     noteTrialScale();
     noteRouteSample();
     if(RUN.meter){ const db=RUN.meter.read(); RUN.levels.push(db); updateLevelMeter(db); }
@@ -10068,15 +10443,46 @@ const AV_SWITCH = [
   ["both",            "Both, at different points"],
   ["not_observed",    "Could not tell"]
 ];
-// Which fields a condition has. Field 2 exists only where a running total is held, so the
-// digit conditions do not have it: there is no total to report, which is the point of them.
+/* ONE COUNT FIELD, which one depending on whether there is a total to ask for.
+
+   Until 2026-10-04 this screen had five fields, taken from the auditory-verbal spec: the
+   examiner's own observed count, the participant's reported total, a quality rating, a note,
+   and the task-switching flag. The task description asks for one -- "How many high beeps?",
+   with a place to enter the number, left blank if they give none -- and that is what runs.
+
+   The counting aloud is not lost by dropping the examiner's field: it is in the voice
+   recording, which the specification already calls the primary record, captured in the same
+   file as the stimulus.
+
+   The digit conditions have no running total to ask the participant for, which is the whole
+   point of them, so their one field is the examiner's count of "yes" responses instead.
+
+   The task-switching flag stays on the two dual tasks. Nothing said about this screen
+   addressed dual tasks, the auditory-verbal spec asks for it there, and it is the only
+   record of a participant who did one half by abandoning the other. */
 const avEntrySpec = c => ({
-  observe: c.avObserve || null,
-  report:  !!c.count,
-  switch:  isDualTask(c)
+  /* THE DIGIT CONDITIONS ASK NOTHING. The auditory-verbal spec has the examiner record "the
+     number of yes responses heard" for them; the task description does not, and the decision
+     of 2026-10-04 is that nobody -- participant or examiner -- keeps a running tally on those
+     trials. That is the point of the pair: the digit task removes the count the tone task
+     requires, so a field asking for one puts the load back on the examiner's side of the
+     table. The yes responses are in the voice recording either way. */
+  observe: false,
+  report:  !!c.count,          // tones only: the participant's own total
+  /* NO TASK-SWITCHING FLAG. The auditory-verbal spec asks for one on the dual conditions;
+     section 5.5 of the task description says the dual save screen is "Same as VOC_VODD",
+     which is one question and nothing else, and the task description governs.
+
+     What goes with it, since it cannot be recovered: a participant who did the dual task by
+     abandoning half of it -- stopping the drawing whenever they counted, or the reverse --
+     produces a clean spiral and a clean count that were never concurrent, and the pen trace
+     shows the pause without saying why. */
+  switch:  false
 });
-// Does this trial need the entry screen at all?
-const needsAvEntry = c => !!(c && c.audio && c.respond==="speak" && c.avObserve);
+/* Does this trial need the entry screen at all? VOC_VDGT now needs nothing and goes straight
+   to the save controls; PEN_VDGT still stops for the one dual-task question. */
+const needsAvEntry = c => !!(c && c.audio && c.respond==="speak"
+                             && (avEntrySpec(c).report || avEntrySpec(c).switch));
 
 function askExaminerEntry(seq){
   const c=RUN.c, spec=avEntrySpec(c);
@@ -10084,72 +10490,20 @@ function askExaminerEntry(seq){
     observed_count:null, observed_unable:false, observed_entered:false,
     reported_kind:null, reported_value:null,
     quality:null, note:"", task_switch:null };
-  const observedLabel = spec.observe==="yes_responses"
-    ? "How many “yes” responses did you hear?"
-    : "What was the last number you heard them reach?";
   const render=()=>{
-    const locked=E.observed_entered;
     const rows=[];
-    // NUMBERED CONSECUTIVELY AS SHOWN, not by the specification's field numbers. A digit
-    // condition has no field 2, and printing "1, 3, 4" on screen reads as a field that
-    // failed to render rather than as one that does not exist for this condition. The
-    // specification's numbering is what `field_order` in the record preserves; this counter
-    // is only what the examiner reads down the page.
-    let fieldNo=0;
-    const num=()=>String(++fieldNo);
-    // ---- field 1 -----------------------------------------------------------------
-    rows.push(`<div style="text-align:left;max-width:560px;margin:0 auto 18px">
-      <div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em">${num()} · WHAT YOU HEARD</div>
-      <div style="font-size:21px;margin:4px 0 8px">${observedLabel}</div>
-      ${locked
-        ? `<div style="font-size:24px"><b>${E.observed_unable?"Unable to track":E.observed_count}</b>
-           <span class="note" style="margin:0 0 0 10px">recorded, and not editable — see below</span></div>`
-        : `<input id="obsInput" type="number" min="0" max="500" value="${E.observed_count??""}"
-             style="max-width:170px;font-size:26px;text-align:center">
-           <label style="display:flex;align-items:center;gap:9px;font-size:16px;margin-top:9px">
-             <input type="checkbox" ${E.observed_unable?"checked":""}
-               onchange="window.__avEntry('unable',this.checked)">
-             I could not follow it well enough to say</label>`}
+    // ---- the count -----------------------------------------------------------------
+    if(spec.report) rows.push(`<div style="text-align:center;max-width:560px;margin:0 auto 22px">
+      <div style="font-size:26px;margin:4px 0 14px">“How many ${c.countOf==="all"?"beeps":"high beeps"} in total?”</div>
+      <input id="repInput" type="number" min="0" max="500"
+        value="${E.reported_kind==="integer"?E.reported_value:""}"
+        style="max-width:190px;font-size:34px;text-align:center"
+        oninput="window.__avEntry('repNum',this.value)">
+      <div class="note" style="margin:10px auto 0">Leave blank if they do not give a number.</div>
     </div>`);
-    // ---- field 2 -----------------------------------------------------------------
-    if(spec.report) rows.push(`<div style="text-align:left;max-width:560px;margin:0 auto 18px;
-        ${locked?"":"opacity:.4;pointer-events:none"}">
-      <div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em">${num()} · WHAT THEY REPORT</div>
-      <div style="font-size:21px;margin:4px 0 8px">“How many high beeps in total?”</div>
-      ${locked
-        ? `<input id="repInput" type="number" min="0" max="500"
-             value="${E.reported_kind==="integer"?E.reported_value:""}"
-             placeholder="their number"
-             style="max-width:170px;font-size:26px;text-align:center"
-             oninput="window.__avEntry('repNum',this.value)">
-           <div style="margin-top:9px">${AV_REPORT_OPTS.map(([k,l])=>
-             `<button class="ghost sm" style="margin:3px 6px 3px 0;${E.reported_kind===k
-               ?"background:#e3f3ea;border-color:#9ecfb5;font-weight:600":""}"
-               onclick="window.__avEntry('repKind','${k}')">${l}</button>`).join("")}</div>`
-        : `<div class="note" style="margin:0">Available once field 1 is recorded.</div>`}
-    </div>`);
-    // ---- field 3 -----------------------------------------------------------------
-    rows.push(`<div style="text-align:left;max-width:560px;margin:0 auto 18px">
-      <div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em">${num()} · QUALITY</div>
-      <div style="margin-top:6px">${AV_QUALITY.map(([k,l])=>
-        `<button class="ghost sm" style="margin:3px 6px 3px 0;${E.quality===k
-          ?"background:#e3f3ea;border-color:#9ecfb5;font-weight:600":""}"
-          onclick="window.__avEntry('quality','${k}')">${l}</button>`).join("")}</div>
-    </div>`);
-    // ---- field 4 -----------------------------------------------------------------
-    rows.push(`<div style="text-align:left;max-width:560px;margin:0 auto 4px">
-      <div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em">${num()} · NOTE</div>
-      <textarea id="avNote" rows="2" style="width:100%;font-size:17px;margin-top:6px"
-        oninput="window.__avEntry('note',this.value)"
-        placeholder="anything about this trial worth recording">${esc(E.note||"")}</textarea>
-    </div>`);
-    // ---- field 5 -----------------------------------------------------------------
-    // LAST, which is the order the specification states. An earlier draft put it above the
-    // note so the free text would be the final thing typed; the note no longer re-renders
-    // on each keystroke, so there is nothing to gain from the swap and a stated order is
-    // worth more than the convenience was.
+    // ---- the dual-task flag ----------------------------------------------------------
     if(spec.switch) rows.push(`<div style="text-align:left;max-width:560px;margin:0 auto 18px">
-      <div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em">${num()} · TASK SWITCHING</div>
+      <div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em">TASK SWITCHING</div>
       <div style="font-size:17px;margin:4px 0 6px;color:#5d6570">Did either task stop while the
         other one was being done?</div>
       <div>${AV_SWITCH.map(([k,l])=>
@@ -10157,23 +10511,13 @@ function askExaminerEntry(seq){
           ?"background:#e3f3ea;border-color:#9ecfb5;font-weight:600":""}"
           onclick="window.__avEntry('switch','${k}')">${l}</button>`).join("")}</div>
     </div>`);
+    // A BLANK COUNT IS A VALID ANSWER and must not be nagged about -- the description says
+    // to leave it blank when no number is given. The dual-task flag is the only thing the
+    // examiner cannot answer later from the recording, so it is the only thing required.
     const missing=[];
-    if(!E.observed_entered) missing.push("field 1");
-    if(spec.report && E.observed_entered && !E.reported_kind) missing.push("field 2");
-    if(!E.quality) missing.push("the quality rating");
     if(spec.switch && !E.task_switch) missing.push("the task-switching answer");
     const btns=[];
-    if(!E.observed_entered) btns.push({ label:"Record what you heard", onClick:()=>{
-        const el=$("obsInput"), v=el?el.value:"";
-        if(!E.observed_unable && v===""){
-          alert("Enter the number you heard, or tick that you could not follow it.\n\n"+
-                "This field is what you heard, and it is recorded before you ask them for "+
-                "their total — which is why it cannot be left for later.");
-          return; }
-        E.observed_count = E.observed_unable ? null : +v;
-        E.observed_entered=true;
-        render(); } });
-    btns.push({ label:"Save the trial", ghost:!!missing.length, onClick:()=>{
+    btns.push({ label:"SAVE", ghost:!!missing.length, onClick:()=>{
         if(missing.length){ alert("Still to complete: "+missing.join(", ")+"."); return; }
         hideOverlay();
         E.done=true;
@@ -10181,30 +10525,23 @@ function askExaminerEntry(seq){
         // record all read reportedCount and it still means the same thing.
         RUN.reportedCount = E.reported_kind==="integer" ? E.reported_value : null;
         finish(); } });
-    btns.push({ label:"Exit", ghost:true, onClick:()=>{
+    btns.push({ label:"EXIT", ghost:true, onClick:()=>{
         if(!confirm("Leave without recording this trial?\n\nThe trial is lost, including "+
                     "what you heard and anything the participant said.")) return;
         backToSession(); } });
     showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em;
-        margin:0 0 14px">${RUN.task} · trial complete — your record of it</div>`+
+        margin:0 0 18px">${RUN.task} · trial complete</div>`+
       rows.join("") +
       `<div class="note" style="max-width:560px;margin:14px auto 0;text-align:left">
-        Do not tell them the number. Three more trials of this kind may follow, and an
-        examiner who knows the answer prompts differently.</div>`, btns);
+        Do not tell them the number. More trials of this kind may follow, and an examiner
+        who knows the answer prompts differently.</div>`, btns);
   };
   window.__avEntry=(what,v)=>{
-    if(what==="unable"){ E.observed_unable=!!v; if(v && $("obsInput")) $("obsInput").value=""; render(); return; }
-    if(what==="repKind"){ E.reported_kind=v; E.reported_value=null;
-      if($("repInput")) $("repInput").value=""; render(); return; }
     if(what==="repNum"){
-      if(v===""){ if(E.reported_kind==="integer"){ E.reported_kind=null; E.reported_value=null; } }
+      if(v===""){ E.reported_kind=null; E.reported_value=null; }
       else { E.reported_kind="integer"; E.reported_value=+v; }
-      render(); return; }
-    if(what==="quality"){ E.quality=v; render(); return; }
+      return; }
     if(what==="switch"){ E.task_switch=v; render(); return; }
-    // The note must not re-render: doing so would rebuild the textarea and lose the caret
-    // on every keystroke.
-    if(what==="note"){ E.note=v; return; }
   };
   render();
 }
@@ -10254,7 +10591,7 @@ function showEndControls(seq,c,pts,rate,att,tp){
   // LIST, not Exit. The trial list is where an examiner goes to pick a different task or to
   // see what is left, and it was reachable DURING a trial but not after one -- so the only
   // route to it from here was to leave the stage altogether.
-  const ls=document.createElement("button"); ls.textContent="List"; ls.className="ghost";
+  const ls=document.createElement("button"); ls.textContent="LIST"; ls.className="ghost";
   ls.style.minWidth="0"; ls.onclick=()=>showQueueOverlay(seq,c); $("ctrl").appendChild(ls);
   // "Show the drawing" and "Exit" are gone.
   //
@@ -11024,10 +11361,18 @@ function buildRecord(){
       const level = rep==null ? (E.reported_kind || "no_number")
         : (want!=null && Math.abs(rep-want)<=2 ? "plausible" : "grossly_discrepant");
       return {
-        field_order:["observed_count","participant_reported_total","quality","note","task_switch"],
+        // WHAT THE SCREEN ACTUALLY ASKED, which from 2026-10-04 is one count and, on a dual
+        // task, the switching flag. The other three keys below are still written so the
+        // export keeps one shape across the whole pilot; they are null on every trial run
+        // by this build, and non-null only on trials collected before the change.
+        field_order: c.count ? (isDualTask(c) ? ["participant_reported_total","task_switch"]
+                                              : ["participant_reported_total"])
+                             : (isDualTask(c) ? ["observed_count","task_switch"]
+                                              : ["observed_count"]),
+        entry_screen_version:"one_count_2026_10_04",
         observed_count: E.observed_unable ? null : (E.observed_count??null),
         observed_unable_to_track: !!E.observed_unable,
-        observed_of: c.avObserve || null,
+        observed_of: null,   // nothing is asked of the examiner about the count
         // Present and false on every digit condition, because "this condition has no field
         // 2" is a fact about the condition and an empty field is not the same statement.
         has_participant_report: !!c.count,
@@ -11040,8 +11385,8 @@ function buildRecord(){
         quality: E.quality||null,
         note: E.note||"",
         task_switch: isDualTask(c) ? (E.task_switch||null) : "not_applicable",
-        entry_order_enforced:true,
-        note_on_order:"field 1 is recorded before the participant is asked for their total, and is not editable afterwards. Both fields are the examiner's judgment about the same quantity and the second arrives with the answer attached, so the order is what keeps field 1 independent of it."
+        entry_order_enforced:false,
+        note_on_order:"one count field, left blank when the participant gives no number. The count spoken aloud during the trial is in the voice recording, which is the primary record; the examiner's own observed count, the quality rating and the free-text note were removed from this screen on 2026-10-04 and are null on every trial from this build."
       }; })() : null,
     verbal: c.verbal ? { ...(TRIAL.verbal||{}),
         fluency_cue_ms: R.fluencyCueMs ?? null,
@@ -11159,39 +11504,58 @@ function showRescueOverlay(errName){
   const body=()=>`<h3>Storage is full</h3>
     <p>This trial could not be written to the device (${errName}). It is <b>held in memory</b>
     and is included in an export — but a reload loses it.</p>
+    <p style="font-size:17px"><b>The participant does not repeat anything.</b> The trial on
+    screen is finished and is still in memory; CLEAR AND SAVE empties the device and writes
+    that same trial straight back to it. Nothing is re-administered.</p>
     <p style="font-size:16px;color:#5d6570">${u.n} trial${u.n===1?"":"s"} stored,
-    ${(u.bytes/1024/1024).toFixed(1)} MB. Export, then clear, then retry.</p>
-    <p style="font-size:16px;color:#5d6570">Voice clips are not in this store and are not
-    affected by clearing it.</p>
+    ${(u.bytes/1024/1024).toFixed(1)} MB.</p>
     <div id="rescueNote" style="font-size:16px;margin-top:6px">${
       RESCUE_EXPORTED
-        ? `<span style="color:var(--ok)">Exported. Now clear and retry.</span>`
-        : `Export first — the file includes this trial.`}</div>
+        ? `<span style="color:var(--ok)">Exported. Now press CLEAR AND SAVE.</span>`
+        : `Export first — the files include this trial.`}</div>`+
+    `<div style="font-size:16px;color:#5d6570;margin-top:10px">Voice clips are exported with
+     the rest and cleared with it.</div>
     <textarea id="rescueBox" class="hidden" rows="8" readonly
       style="width:100%;margin-top:12px;font:12px/1.4 ui-monospace,Menlo,monospace"></textarea>`;
 
   const markExported=()=>{ RESCUE_EXPORTED=true;
     const n=$("rescueNote");
-    if(n) n.innerHTML=`<span style="color:var(--ok)">Exported. Now clear and retry.</span>`; };
+    if(n) n.innerHTML=`<span style="color:var(--ok)">Exported. Now press CLEAR AND SAVE.</span>`; };
 
   showOverlay(body(), [
-    { label:"Export CSV", onClick:()=>{ exportAllCSV(); markExported(); } },
-    { label:"Export JSON", ghost:true, onClick:()=>{ exportAllJSON(); markExported(); } },
+    { label:"EXPORT EVERYTHING", onClick:()=>{
+        exportEverything(l=>{ markExported(); alert("Exported "+l+".\n\nCheck the files are "+
+          "in your Downloads, then press CLEAR AND SAVE."); }); } },
     { label:"Show as text", ghost:true, onClick:()=>{
         // downloads can be blocked; this is the copy-and-paste fallback, rendered here
         // on the stage rather than on page 6 where the trial screen would hide it
         const recs=listTrials().map(t=>getTrial(t.key)).filter(Boolean);
         const b=$("rescueBox"); b.classList.remove("hidden");
         b.value=csvText(recs); b.focus(); b.select(); markExported(); } },
-    { label:"Clear and retry", ghost:true, onClick:()=>{
+    { label:"CLEAR AND SAVE", ghost:true, onClick:()=>{
         if(!RESCUE_EXPORTED &&
            !confirm("You have not exported in this recovery.\n\nClearing destroys every saved trial on this device. Continue?")) return;
         if(!confirm("Delete every saved trial on this device and retry the save?\n\nThe trial on screen is re-saved from memory straight afterwards. Voice clips and screening records are NOT deleted.")) return;
-        listTrials().forEach(t=>{ try{ localStorage.removeItem(t.key); }catch(e){} delete MEM[t.key]; });
-        renderSaved(); RESCUE_EXPORTED=false; hideOverlay();
-        const sb=[...$("ctrl").querySelectorAll("button")].find(b=>/^SAVE/.test(b.textContent));
-        if(sb){ sb.disabled=false; sb.textContent="SAVE"; saveTrial(sb); } } },
-    { label:"Back", ghost:true, onClick:hideOverlay }
+        /* The clips go too. Clearing only the trial records freed well under a megabyte
+           while tens of megabytes of recordings stayed, so the next save hit the same wall
+           and the examiner saw the warning return. The trial on screen keeps its own clip:
+           it is still in RUN and is written again by the save below. */
+        const before = storageUsed();
+        clearEverything().then(()=>{
+          RESCUE_EXPORTED=false; hideOverlay();
+          const sb=[...$("ctrl").querySelectorAll("button")].find(b=>/^SAVE/.test(b.textContent));
+          if(sb){ sb.disabled=false; sb.textContent="SAVE"; saveTrial(sb); }
+          refreshQuota().then(()=>{
+            const freed = before.totalBytes - storageUsed().totalBytes;
+            // Said out loud, because a clear that frees nothing used to be silent.
+            if(freed < 1024*1024)
+              alert(`Cleared, but only ${mb(Math.max(0,freed))} was freed.\n\n`+
+                    `If the warning returns, the space is being held by something other than `+
+                    `this app — close other Safari tabs for this site, or clear the site data `+
+                    `in Settings.`);
+          });
+        }); } },
+    { label:"BACK", ghost:true, onClick:hideOverlay }
   ]);
 }
 
@@ -11581,6 +11945,8 @@ function renderSaved(){
 /* ------------------------------------------------------- voice clip store */
 let AUDIO_INDEX=[];
 function renderAudioStore(){
+  // Keeps the figure the warnings use in step with what the store actually holds.
+  refreshAudioBytes().then(()=>refreshQuota());
   if(!$("audioBody")) return;
   idbAll().then(list=>{
     AUDIO_INDEX=(list||[]).map(r=>({ audio_id:r.audio_id, trial_id:r.trial_id,
@@ -11680,6 +12046,63 @@ function exportAllJSON(){
       note:"the voice clip store could not be read, so audio_index is empty; the clips may still exist on the device.",
       trials, screening, audio_index:[]
     },null,2),"application/json");
+  });
+}
+/* EVERYTHING, IN ONE PRESS, and then the device is empty.
+
+   There were four export buttons and a fifth for the clips, and an examiner at the end of a
+   session had to know that trials, screening, the JSON and the audio are four separate
+   things in three separate stores. They are not four decisions. This writes all of them,
+   reports what it wrote, and then offers to clear -- which is the only moment when clearing
+   is safe, because it is the only moment when something has just been written.
+
+   CLEARING IS STILL CONFIRMED, and that is deliberate against the instruction to clear
+   automatically. A download can fail silently -- Safari refuses a second download, the
+   sheet is dismissed, the file lands somewhere nobody looks -- and a silent failure
+   followed by an automatic wipe is how a whole session disappears. The confirm is the
+   examiner saying they can see the files. */
+function exportEverything(then){
+  const trials=listTrials().map(t=>getTrial(t.key)).filter(Boolean);
+  const screening=listScreens().map(t=>getScreen(t.key)).filter(Boolean);
+  if(!trials.length && !screening.length){ alert("Nothing saved to export."); return; }
+  const wrote=[];
+  if(trials.length){ save(`${fileStem()}.csv`, csvText(trials), "text/csv");
+                     wrote.push(`${trials.length} trial${trials.length===1?"":"s"} as CSV`); }
+  if(screening.length){ setTimeout(()=>save(`${fileStem()}_screening.csv`,
+      screenCSVText(screening), "text/csv"), 400);
+    wrote.push(`${screening.length} screening record${screening.length===1?"":"s"} as CSV`); }
+  setTimeout(()=>{ exportAllJSON(); wrote.push("the full JSON"); }, 800);
+  idbAll().then(list=>{
+    const clips=(list||[]).filter(r=>r.blob);
+    // Spaced out: Safari refuses a burst of downloads, and a refused clip is a lost
+    // recording that the CSV still claims exists.
+    clips.forEach((r,i)=>setTimeout(()=>{ try{ saveBlob(audioFileName(r), r.blob); }catch(e){} },
+      1200 + i*450));
+    setTimeout(()=>{
+      const line = wrote.join(", ") + (clips.length
+        ? `, and ${clips.length} voice clip${clips.length===1?"":"s"}` : ", and no voice clips");
+      if(then) then(line, trials.length, clips.length);
+    }, 1400 + clips.length*450);
+  }).catch(()=>{ if(then) then(wrote.join(", ")+" (the clip store could not be read)",
+                              trials.length, 0); });
+}
+// The whole device, after an export has just happened. Trials, screening and clips.
+function clearEverything(){
+  listTrials().forEach(t=>{ try{ localStorage.removeItem(t.key); }catch(e){} delete MEM[t.key]; });
+  listScreens().forEach(t=>{ try{ localStorage.removeItem(t.key); }catch(e){} });
+  return idbAll().then(list=>Promise.all((list||[]).map(r=>idbDel(r.audio_id))))
+                 .catch(()=>null)
+                 .then(()=>refreshAudioBytes())
+                 .then(()=>refreshQuota())
+                 .then(()=>{ renderSaved(); if(typeof renderAudioStore==="function") renderAudioStore(); });
+}
+function exportThenClear(){
+  exportEverything((line, nTrials, nClips)=>{
+    alert("Exported "+line+".\n\nCheck the files are in your Downloads before clearing.");
+    if(!confirm(`Clear the device now?\n\nThis deletes every saved trial, every screening `+
+                `record and every voice clip on this iPad. Do it only if you can see the `+
+                `files you just exported.`)) return;
+    clearEverything().then(()=>alert("Cleared. The device is empty and ready for the next participant."));
   });
 }
 function showCSVText(){ const r=listTrials().map(t=>getTrial(t.key)).filter(Boolean);
@@ -12134,6 +12557,7 @@ bootStep("spoken digits", ()=>{ if(typeof renderStandinNote==="function") render
 // on top -- the same reason AUDIO_SHIPPED is taken where it is. Without it there is no way
 // to put a setting back to what this build ships, because by then nothing remembers.
 bootStep("shipped values", snapshotShippedFields);
+bootStep("storage figures", ()=>{ refreshAudioBytes(); refreshQuota(); });
 
 // Nothing below start-up should be able to leave a blank page.
 // restoreState() reads first, THEN saving is armed. Both branches arm it: a session that
