@@ -1275,7 +1275,7 @@ window.addEventListener("unhandledrejection", e => {
   const r=e && e.reason;
   __report("promise", (r && (r.message||r.name)) || r, "", 0, 0, r && r.stack);
 });
-const BUILD = "v14.03 2026-10-06";
+const BUILD = "v14.04 2026-10-06";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -1434,7 +1434,9 @@ const CATALOGUE = [
   { id:"FIN_SPR60", label:"Spiral, finger, 60 s", order:88, tier:"second", spiral:1, tap:0, audio:0, zones:0, hands:"each", repeats:1, lengthS:null, implement:"finger", sustainedS:60, windowLocked:1 },
 
   // --- Block F: tapping -------------------------------------------------------------
-  { id:"TAP_FAST", label:"Tapping, as fast as you can", order:100, tier:"core", spiral:0, tap:1, audio:0, zones:1, hands:"each", repeats:3, lengthS:10 },
+  // 15 s and two trials per hand as of 2026-10-06, from 10 s and three. Every other place
+  // that states either number reads it from here.
+  { id:"TAP_FAST", label:"Tapping, as fast as you can", order:100, tier:"core", spiral:0, tap:1, audio:0, zones:1, hands:"each", repeats:2, lengthS:15 },
   { id:"TAP_BMIN", label:"Bimanual tapping, in phase",  order:110, tier:"core", spiral:0, tap:1, audio:0, zones:2, hands:"both", repeats:3, lengthS:10 },
   { id:"TAP_BANT", label:"Bimanual tapping, antiphase", order:120, tier:"core", spiral:0, tap:1, audio:0, zones:2, hands:"both", repeats:3, lengthS:10 },
   // TWO PER HAND, ALTERNATING, 50 s each. Four trials at a 1000 ms mean yields about 200
@@ -8379,11 +8381,10 @@ const TRIAL_SCRIPTS = {
              "Now your {H} hand.",
              "Let’s do a second one with your {H} hand.",
              "Now your {H} hand."],
+  // Four lines for four trials: D, ND, D, ND.
   TAP_FAST: ["Now use your {H} hand.",
              "Now your {H} hand.",
              "Let’s do a second trial with your {H} hand.",
-             "Now your {H} hand.",
-             "Last one with your {H} hand.",
              "Now your {H} hand."],
   TAP_BMIN: ["Are you ready? Use both hands together.", "Let’s do it again.", "Last one."],
   TAP_BANT: ["Are you ready? Alternate between your two hands.", "Let’s do it again.", "Last one."],
