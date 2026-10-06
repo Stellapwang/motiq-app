@@ -1275,7 +1275,7 @@ window.addEventListener("unhandledrejection", e => {
   const r=e && e.reason;
   __report("promise", (r && (r.message||r.name)) || r, "", 0, 0, r && r.stack);
 });
-const BUILD = "v14.02 2026-10-04";
+const BUILD = "v14.03 2026-10-06";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -7795,6 +7795,9 @@ function storageWarnBeforeSave(){
 }
 
 let LAST_TASK=null, LAST_HAND=null;      // what the participant was last shown
+/* Set by REPEAT on the practice result, read and cleared by readyTrial. A one-shot rather
+   than a parameter because openTrial sits between the two and has no business knowing. */
+let PRACTICE_AUTOSTART=false;
 
 // D4. Runs ONE trial of a task immediately, outside the queue. Uses the current visit and
 // session numbers so provenance is intact, ignores the task's repeats, and marks the record
@@ -8748,9 +8751,13 @@ function practiceResult(){
   showOverlay(`<div style="font-size:13px;color:#8a9099;font-weight:600;letter-spacing:.04em;
       margin:0 0 14px">${TRIAL.task} · practice ${step} of ${of} · not saved</div>
     ${head}${ask}`,
+    /* REPEAT RUNS IT, the way PRACTICE does on the screen before this one. It used to drop
+       to the ready screen and wait for START -- the same action under two names behaving two
+       ways, and an extra tap in the one place an examiner is already repeating themselves. */
     [{ label:"NEXT", onClick:advance },
      { label:"REPEAT", ghost:!nothing, onClick:()=>{
-         hideOverlay(); RUN=null; TRIAL.introDone=true; openTrial(false); } },
+         hideOverlay(); hideStopSign(); RUN=null; TRIAL.introDone=true;
+         PRACTICE_AUTOSTART=true; openTrial(false); } },
      { label:"INSTRUCTION", ghost:true,
        onClick:()=>showInstructionScreen(null, c, {practice:true}) },
      { label:"EXIT", ghost:true, onClick:()=>backToSession() }]);
@@ -8758,6 +8765,9 @@ function practiceResult(){
 function showPracticeRecap(c){
   const recap=practiceRecap(c);
   if(!recap){ runCurrent(); return; }
+  // Marked here as well as in readyTrial: both are routes to the same line, and it is read
+  // once per task per session however the task got here.
+  RECAP_SHOWN.add(c.id);
   // THE RECAP IS A SCREEN HERE, which the description calls "no screen". It means there is no
   // screen for the PARTICIPANT, and that is still true -- this one faces the examiner and
   // holds the words they have to say before the first trial. Without it the recap is a
@@ -9048,12 +9058,20 @@ function readyTrial(seq,c,justInstructed,autoStart){
        why removing the check from the dual tasks needed no code: by the time they run, it
        has already been recorded. */
     if(needCheck || needPractice){ showCheckAndPractice(c, seq, needCheck?form:null); return; }
-    /* THE INSTRUCTION REPEAT, for a task with no practice to carry it. On every other task
-       this line is shown by practiceResult once the last practice row is done; PEN_VODD and
-       PEN_VDGT have no practice row, so without this they would go from the instruction
-       screen straight into a sixty-second dual trial with nobody having said what doing
-       both at once means. Once per task per session. */
-    if(!TRIAL.practice && !RECAP_SHOWN.has(TRIAL.task) && NO_PRACTICE_DUAL.has(TRIAL.task)){
+    /* THE INSTRUCTION REPEAT, BEFORE THE FIRST TRIAL, WHATEVER HAPPENED TO THE PRACTICE.
+
+       It used to be shown only by practiceResult, when the last practice row FINISHED. So a
+       task whose practice was skipped -- which is what NEXT on the check-and-practice screen
+       does -- went from that screen into the trial with the recap never read, and the recap
+       is a specified script: "Now we'll do it for one minute. Count the high beeps out loud
+       and keep going up. Say nothing for the low beeps." Skipping the practice is the
+       examiner's call; losing the words that follow it was not.
+
+       Keyed on RECAP_SHOWN rather than on how the practice ended, so the three routes --
+       practice completed, practice skipped, task has no practice at all -- all arrive here
+       exactly once. showPracticeRecap marks the same set, so a completed practice does not
+       show it twice. */
+    if(!TRIAL.practice && !RECAP_SHOWN.has(TRIAL.task)){
       const recap=practiceRecap(c);
       if(recap){
         RECAP_SHOWN.add(TRIAL.task);
@@ -9145,10 +9163,20 @@ function readyTrial(seq,c,justInstructed,autoStart){
                       if(digitStandin()) primeSpeech();
                       runTrial(seq,c); };
   $("ctrl").appendChild(start);
-  // PRACTICE on the merged screen means "run it", not "show me the screen that runs it".
-  // Fired here, inside the same click, so the user gesture iOS requires before it will play
-  // or speak has not been lost to a timer.
-  if(autoStart){ start.onclick(); return; }
+  /* PRACTICE on the merged screen means "run it", not "show me the screen that runs it".
+     Fired here, inside the same click, so the user gesture iOS requires before it will play
+     or speak has not been lost to a timer.
+
+     AND THE END SIGN HAS TO COME DOWN FIRST. It is raised sticky when a run finishes --
+     cleared by hideStopSign, never by a timer -- and the only call that cleared it sits
+     thirteen lines below this return, in the part of readyTrial that builds the ready
+     screen. A practice started from this early return therefore ran underneath the PREVIOUS
+     run's "END — you can stop drawing", full width, with the new template ghosted behind
+     it. That is "I pressed PRACTICE and it showed me the end screen", and it lands hardest
+     on the second practice of a task, which is the non-dominant hand. */
+  const auto = autoStart || (PRACTICE_AUTOSTART && TRIAL.practice);
+  PRACTICE_AUTOSTART=false;
+  if(auto){ hideStopSign(); start.onclick(); return; }
 
   const ins=document.createElement("button"); ins.textContent="INSTRUCTION";
   ins.className="ghost"; ins.style.minWidth="0";
