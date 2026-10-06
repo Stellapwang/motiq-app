@@ -1275,7 +1275,7 @@ window.addEventListener("unhandledrejection", e => {
   const r=e && e.reason;
   __report("promise", (r && (r.message||r.name)) || r, "", 0, 0, r && r.stack);
 });
-const BUILD = "v14.02 2026-10-04";
+const BUILD = "v14.03 2026-10-06";
 
 /* ============================================================================
    CATALOGUE — the one place tasks are defined.
@@ -9145,10 +9145,18 @@ function readyTrial(seq,c,justInstructed,autoStart){
                       if(digitStandin()) primeSpeech();
                       runTrial(seq,c); };
   $("ctrl").appendChild(start);
-  // PRACTICE on the merged screen means "run it", not "show me the screen that runs it".
-  // Fired here, inside the same click, so the user gesture iOS requires before it will play
-  // or speak has not been lost to a timer.
-  if(autoStart){ start.onclick(); return; }
+  /* PRACTICE on the merged screen means "run it", not "show me the screen that runs it".
+     Fired here, inside the same click, so the user gesture iOS requires before it will play
+     or speak has not been lost to a timer.
+
+     AND THE END SIGN HAS TO COME DOWN FIRST. It is raised sticky when a run finishes --
+     cleared by hideStopSign, never by a timer -- and the only call that cleared it sits
+     thirteen lines below this return, in the part of readyTrial that builds the ready
+     screen. A practice started from this early return therefore ran underneath the PREVIOUS
+     run's "END — you can stop drawing", full width, with the new template ghosted behind
+     it. That is "I pressed PRACTICE and it showed me the end screen", and it lands hardest
+     on the second practice of a task, which is the non-dominant hand. */
+  if(autoStart){ hideStopSign(); start.onclick(); return; }
 
   const ins=document.createElement("button"); ins.textContent="INSTRUCTION";
   ins.className="ghost"; ins.style.minWidth="0";
